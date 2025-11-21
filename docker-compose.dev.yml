@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  python-worker:
+    build: .
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=db_korektor_buku
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - BASE_PATH=/data/cek-ta
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./src:/app/src  # Mount source code for development
+      - ./storage:/data/cek-ta  # Shared storage with .NET service
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=db_korektor_buku
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
