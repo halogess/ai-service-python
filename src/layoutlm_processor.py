@@ -25,6 +25,7 @@ def load_model():
         # Use GPU if available
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
+        model.eval()  # Set to eval mode for stable predictions
         print(f"Model loaded on {device}")
     
     return model, processor
@@ -48,118 +49,105 @@ def process_image_with_layoutlm(image_path, text_data=None):
     
     # Prepare input
     if text_data:
-        # Use text from PDF
+        # Use word-level data from PDF
         words = []
         boxes = []
         
-        # Get PDF page dimensions from text_data
+        # Get PDF page dimensions
         pdf_width = text_data.get("width", image.size[0])
         pdf_height = text_data.get("height", image.size[1])
         
-        # Use block-level data from PDF
-        for block in text_data.get("blocks", []):
-            text = block["text"].strip()
+        # Use word-level bboxes directly from PDF
+        for word_data in text_data.get("words", []):
+            text = word_data["text"].strip()
             if text:
-                # Get bbox from PDF (absolute coordinates)
-                x0, y0, x1, y1 = block["bbox"]
+                x0, y0, x1, y1 = word_data["bbox"]
                 
-                # Split into words and distribute bbox horizontally
-                words_in_block = text.split()
-                n = len(words_in_block)
+                # Normalize to 0-1000 range
+                normalized_box = [
+                    int((x0 / pdf_width) * 1000),
+                    int((y0 / pdf_height) * 1000),
+                    int((x1 / pdf_width) * 1000),
+                    int((y1 / pdf_height) * 1000)
+                ]
                 
-                for i, word in enumerate(words_in_block):
-                    # Distribute bbox horizontally (rough approximation)
-                    word_x0 = x0 + (x1 - x0) * i / n
-                    word_x1 = x0 + (x1 - x0) * (i + 1) / n
-                    word_bbox = [word_x0, y0, word_x1, y1]
-                    
-                    # Normalize to 0-1000 range
-                    normalized_box = [
-                        int((word_bbox[0] / pdf_width) * 1000),
-                        int((word_bbox[1] / pdf_height) * 1000),
-                        int((word_bbox[2] / pdf_width) * 1000),
-                        int((word_bbox[3] / pdf_height) * 1000)
-                    ]
-                    
-                    words.append(word)
-                    boxes.append(normalized_box)
+                words.append(text)
+                boxes.append(normalized_box)
         
-        # Sliding window with overlap
-        max_seq_len = 450  # Reduced to account for subword tokenization
-        stride = 64  # Overlap tokens
-        total_words = len(words)
+        # Use tokenizer overflow mechanism
+        encoding = processor(
+            image,
+            words,
+            boxes=boxes,
+            return_tensors="pt",
+            truncation=True,
+            padding="max_length",
+            max_length=512,
+            stride=128,
+            return_overflowing_tokens=True
+        )
         
-        # Store predictions with probabilities for voting
-        token_predictions = {}  # token_id -> list of (label_id, probability)
+        # pixel_values is a list when using overflow tokens, extract the tensor
+        if isinstance(encoding.pixel_values, list):
+            pixel_values_tensor = encoding.pixel_values[0].unsqueeze(0).to(device)  # Add batch dimension
+        else:
+            pixel_values_tensor = encoding.pixel_values.to(device)
         
-        # Process with sliding window
-        start_idx = 0
-        window_num = 0
+        encoding = encoding.to(device)
+        num_windows = len(encoding["input_ids"])
+        logger.info(f"Processing {len(words)} words in {num_windows} windows")
         
-        while start_idx < total_words:
-            end_idx = min(start_idx + max_seq_len, total_words)
-            window_words = words[start_idx:end_idx]
-            window_boxes = boxes[start_idx:end_idx]
-            
-            window_num += 1
-            logger.info(f"Processing window {window_num}: tokens {start_idx}-{end_idx} ({len(window_words)} words)")
-            
-            # Process window
-            encoding = processor(image, window_words, boxes=window_boxes, return_tensors="pt", padding="max_length", truncation=True)
-            
-            # Move to device
-            for k, v in encoding.items():
-                encoding[k] = v.to(device)
+        # Store predictions with probabilities
+        token_predictions = {}  # word_idx -> list of (label_id, probability)
+        
+        # Process each window
+        for window_idx in range(num_windows):
+            # Get window data - pixel_values is shared across all windows
+            window_encoding = {
+                "input_ids": encoding["input_ids"][window_idx:window_idx+1],
+                "attention_mask": encoding["attention_mask"][window_idx:window_idx+1],
+                "bbox": encoding["bbox"][window_idx:window_idx+1],
+                "pixel_values": pixel_values_tensor
+            }
             
             # Inference
             with torch.no_grad():
-                outputs = model(**encoding)
+                outputs = model(**window_encoding)
             
             # Get predictions and probabilities
-            logits = outputs.logits[0]  # [seq_len, num_labels]
+            logits = outputs.logits[0]
             probs = torch.softmax(logits, dim=-1)
-            pred_ids = logits.argmax(-1)  # [seq_len]
+            pred_ids = logits.argmax(-1)
             
-            # Map token predictions to word predictions using word_ids
-            word_ids = encoding.word_ids(batch_index=0)
+            # Map tokens to words
+            word_ids = encoding.word_ids(batch_index=window_idx)
             
             for token_idx, word_id in enumerate(word_ids):
                 if word_id is None:
-                    continue  # Skip special tokens, padding
-                
-                if word_id >= len(window_words):
-                    continue  # Safety check
-                
-                global_word_idx = start_idx + word_id
+                    continue
                 
                 label_id = pred_ids[token_idx].item()
                 label_prob = probs[token_idx, label_id].item()
                 
-                if global_word_idx not in token_predictions:
-                    token_predictions[global_word_idx] = []
+                if word_id not in token_predictions:
+                    token_predictions[word_id] = []
                 
-                token_predictions[global_word_idx].append((label_id, label_prob))
-            
-            # Move window with stride
-            if end_idx >= total_words:
-                break
-            start_idx += (max_seq_len - stride)
+                token_predictions[word_id].append((label_id, label_prob))
         
         # Aggregate predictions using highest probability
         all_predictions = []
-        for token_id in sorted(token_predictions.keys()):
-            preds = token_predictions[token_id]
-            # Choose prediction with highest probability
+        for word_id in sorted(token_predictions.keys()):
+            preds = token_predictions[word_id]
             best_pred, best_prob = max(preds, key=lambda x: x[1])
             
             all_predictions.append({
-                "token_id": token_id,
+                "token_id": word_id,
                 "label": model.config.id2label.get(best_pred, "UNKNOWN"),
                 "label_id": best_pred,
                 "confidence": best_prob
             })
         
-        logger.info(f"Processed {total_words} tokens in {window_num} windows with stride {stride}")
+        logger.info(f"Processed {len(words)} words in {num_windows} windows")
         
         # Return results with all predictions
         return {
@@ -169,11 +157,7 @@ def process_image_with_layoutlm(image_path, text_data=None):
         }
     
     # If no text data, process without text (layout only)
-    encoding = processor(image, return_tensors="pt")
-    
-    # Move to device
-    for k, v in encoding.items():
-        encoding[k] = v.to(device)
+    encoding = processor(image, return_tensors="pt").to(device)
     
     # Inference
     with torch.no_grad():
@@ -305,45 +289,50 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
             all_labels = []
             
             if text_data:
-                # Map word predictions back to blocks
-                word_to_block = []  # word_idx -> block_idx
-                word_idx = 0
+                # Map word predictions back to blocks using block_no
+                word_to_block = [w["block_no"] for w in text_data.get("words", [])]
                 
-                for block_idx, block in enumerate(text_data.get("blocks", [])):
-                    words_in_block = len(block["text"].split())
-                    for _ in range(words_in_block):
-                        word_to_block.append(block_idx)
-                        word_idx += 1
+                # Aggregate predictions per block with confidence scores
+                from collections import Counter, defaultdict
+                block_label_scores = defaultdict(Counter)
                 
-                # Aggregate predictions per block
-                block_labels = {}  # block_idx -> list of labels
                 if page_result.get("predictions"):
                     for pred in page_result["predictions"]:
-                        token_id = pred.get("token_id")
-                        if token_id is not None and token_id < len(word_to_block):
-                            block_idx = word_to_block[token_id]
-                            if block_idx not in block_labels:
-                                block_labels[block_idx] = []
-                            block_labels[block_idx].append(pred.get("label", "Text"))
+                        word_idx = pred.get("token_id")
+                        if word_idx is not None and word_idx < len(word_to_block):
+                            block_idx = word_to_block[word_idx]
+                            label = pred.get("label", "Text")
+                            conf = pred.get("confidence", 0.0)
+                            block_label_scores[block_idx][label] += conf
                 
-                # Draw blocks with majority vote label
+                # Draw blocks with confidence-based label
                 for block_idx, block in enumerate(text_data.get("blocks", [])):
                     if block["text"].strip():
                         all_boxes.append(block["bbox"])
                         
-                        # Use majority vote from word predictions
-                        if block_idx in block_labels:
-                            labels = block_labels[block_idx]
-                            # Majority vote
-                            label = max(set(labels), key=labels.count)
-                            all_labels.append(label)
-                        else:
+                        scores = block_label_scores.get(block_idx)
+                        if not scores:
                             all_labels.append("Text")
+                            continue
+                        
+                        # Prioritize Section-header and Title
+                        text_score = scores.get("Text", 0)
+                        section_score = scores.get("Section-header", 0)
+                        title_score = scores.get("Title", 0)
+                        
+                        if section_score > text_score * 0.7:
+                            label = "Section-header"
+                        elif title_score > text_score * 0.7:
+                            label = "Title"
+                        else:
+                            label = scores.most_common(1)[0][0]
+                        
+                        all_labels.append(label)
             
-            # Draw all boxes
+            # Draw all boxes with confidence-based aggregation
             if all_boxes:
                 pdf_dims = {"width": text_data.get("width"), "height": text_data.get("height")} if text_data else None
                 draw_boxes_on_image(image_path, all_boxes, all_labels, output_path, pdf_dims)
-                print(f"Saved visualization with {len(all_boxes)} boxes ({len(page_result.get('predictions', []))} processed by LayoutLM)")
+                print(f"Saved visualization with {len(all_boxes)} blocks ({len(page_result.get('predictions', []))} words processed)")
     
     return results

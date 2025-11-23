@@ -3,13 +3,13 @@ import fitz  # PyMuPDF
 
 def extract_text_from_pdf(pdf_path):
     """
-    Extract text and bounding boxes from PDF per block
+    Extract text and bounding boxes from PDF per word
     
     Args:
         pdf_path: Path to PDF file
     
     Returns:
-        list: Text data per page with block-level bounding boxes
+        list: Text data per page with word-level bounding boxes
     """
     pdf_document = fitz.open(pdf_path)
     pages_data = []
@@ -17,30 +17,36 @@ def extract_text_from_pdf(pdf_path):
     for page_num in range(len(pdf_document)):
         page = pdf_document[page_num]
         
-        # Extract text with bounding boxes
-        text_data = page.get_text("dict")
-        
         page_info = {
             "page_number": page_num + 1,
             "width": page.rect.width,
             "height": page.rect.height,
-            "blocks": []
+            "words": [],
+            "blocks": []  # Keep for visualization
         }
         
-        # Extract blocks (paragraphs)
+        # Extract words with actual bboxes
+        words_data = page.get_text("words")  # (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+        for word_tuple in words_data:
+            x0, y0, x1, y1, text, block_no, line_no, word_no = word_tuple
+            page_info["words"].append({
+                "text": text,
+                "bbox": [x0, y0, x1, y1],
+                "block_no": block_no
+            })
+        
+        # Extract blocks for visualization
+        text_data = page.get_text("dict")
         for block in text_data.get("blocks", []):
-            if block.get("type") == 0:  # Text block
-                block_info = {
-                    "bbox": block["bbox"],
-                    "text": ""
-                }
-                
-                # Extract lines
+            if block.get("type") == 0:
+                block_text = ""
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
-                        block_info["text"] += span.get("text", "") + " "
-                
-                page_info["blocks"].append(block_info)
+                        block_text += span.get("text", "") + " "
+                page_info["blocks"].append({
+                    "bbox": block["bbox"],
+                    "text": block_text.strip()
+                })
         
         pages_data.append(page_info)
     

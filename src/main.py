@@ -61,12 +61,21 @@ def check_visual_queue():
                 else:
                     raise Exception(f"Unknown antrian_tipe: {task.antrian_tipe}")
                 
-                # Get images directory
-                images_dir = get_images_dir_from_docx(docx_path)
+                # Get base directory (buku/id_orang/id_dokumen or dokumen/id_orang/id_dokumen)
+                pdf_dir = os.path.dirname(pdf_path)  # e.g., buku/222117032/5639/pdf
+                base_dir = os.path.dirname(pdf_dir)  # e.g., buku/222117032/5639
+                
+                # Get filename without extension for subdirectory
+                pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]  # e.g., Bab 1 - Pendahuluan
+                
+                # Create separate directories per bab
+                images_dir = os.path.join(base_dir, 'images', pdf_filename)
+                image_result_dir = os.path.join(base_dir, 'image-result', pdf_filename)
                 
                 # Full paths
                 full_pdf_path = os.path.join(STORAGE_BASE, pdf_path)
                 full_images_dir = os.path.join(STORAGE_BASE, images_dir)
+                full_image_result_dir = os.path.join(STORAGE_BASE, image_result_dir)
                 
                 logger.info(f"Converting PDF: {full_pdf_path}")
                 
@@ -79,12 +88,9 @@ def check_visual_queue():
                 
                 logger.info(f"Created {len(image_paths)} images")
                 
-                # Create image-result directory
-                image_result_dir = full_images_dir.replace('/images', '/image-result')
-                
                 # Process with LayoutLMv3
                 logger.info(f"Processing with LayoutLMv3...")
-                results = process_document(image_paths, output_dir=image_result_dir, pdf_text_data=pdf_text_data)
+                results = process_document(image_paths, output_dir=full_image_result_dir, pdf_text_data=pdf_text_data)
                 
                 # Save results to JSON
                 results_path = os.path.join(full_images_dir, "layoutlm_results.json")
