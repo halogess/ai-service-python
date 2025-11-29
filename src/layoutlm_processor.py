@@ -324,6 +324,8 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
                     if img_idx not in img_best or conf > img_best[img_idx][1]:
                         img_best[img_idx] = (label, conf)
 
+            image_blocks = [b for b in text_data.get("blocks", []) if b.get("type") == "image"]
+
             for block in text_data.get("blocks", []):
                 bbox = block.get("bbox")
                 if not bbox or len(bbox) != 4:
@@ -344,11 +346,27 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
                     scores = block_label_scores.get(block_idx)
                     if scores:
                         label = scores.most_common(1)[0][0]
-                        logger.info(
-                            f"Block {block_idx} scores: {dict(scores.most_common(3))} -> {label}"
-                        )
                     else:
                         label = "Text"
+                    
+                    text_lower = block.get("text", "").lower()
+                    is_gambar = text_lower.startswith("gambar ") or text_lower.startswith("figure ")
+                    is_tabel = text_lower.startswith("tabel ") or text_lower.startswith("table ")
+                    
+                    if is_gambar or is_tabel:
+                        y_top = bbox[1]
+                        y_bot = bbox[3]
+                        
+                        for img_block in image_blocks:
+                            img_bbox = img_block.get("bbox")
+                            if img_bbox:
+                                img_y_top = img_bbox[1]
+                                img_y_bot = img_bbox[3]
+                                
+                                if abs(y_top - img_y_bot) < 40 or abs(img_y_top - y_bot) < 40:
+                                    label = "Caption"
+                                    logger.info(f"Block {block_idx} forced to Caption (keyword + near image)")
+                                    break
 
                 all_boxes.append(bbox)
                 all_labels.append(label)
