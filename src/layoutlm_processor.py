@@ -238,14 +238,15 @@ def draw_boxes_on_image(image_path, boxes, labels, output_path, pdf_dimensions=N
     colors = {
         "Title": "red",
         "Text": "blue",
-        "List": "green",
+        "List-item": "green",
         "Table": "orange",
-        "Figure": "purple",
         "Picture": "purple",
         "Caption": "cyan",
         "Section-header": "magenta",
         "Page-header": "yellow",
         "Page-footer": "pink",
+        "Footnote": "brown",
+        "Formula": "teal"
     }
 
     for box, label in zip(boxes, labels):
@@ -318,8 +319,12 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
                     block_label_scores[word_to_block[word_idx]][label] += conf
                 elif word_idx in image_token_map:
                     img_idx = image_token_map[word_idx]
+                    
+                    if label != "Picture":
+                        label = "Picture"
+                    
                     logger.info(
-                        f"[IMG] token at word_idx={word_idx} predicted as: {label} (conf={conf:.3f})"
+                        f"[IMG] token at word_idx={word_idx} normalized to: {label} (conf={conf:.3f})"
                     )
                     if img_idx not in img_best or conf > img_best[img_idx][1]:
                         img_best[img_idx] = (label, conf)
@@ -334,7 +339,7 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
                 block_type = block.get("type")
 
                 if block_type == "image":
-                    label = "Figure"
+                    label = "Picture"
                     for img_idx, (pred_label, conf) in img_best.items():
                         if img_idx < len(text_data.get("images", [])):
                             img_data = text_data["images"][img_idx]
@@ -349,23 +354,20 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
                     else:
                         label = "Text"
                     
-                    text_lower = block.get("text", "").lower()
+                    text_lower = block.get("text", "").lower().strip()
                     is_gambar = text_lower.startswith("gambar ") or text_lower.startswith("figure ")
                     is_tabel = text_lower.startswith("tabel ") or text_lower.startswith("table ")
                     
                     if is_gambar or is_tabel:
-                        y_top = bbox[1]
-                        y_bot = bbox[3]
+                        y_top, y_bot = bbox[1], bbox[3]
                         
                         for img_block in image_blocks:
                             img_bbox = img_block.get("bbox")
                             if img_bbox:
-                                img_y_top = img_bbox[1]
-                                img_y_bot = img_bbox[3]
+                                img_y_top, img_y_bot = img_bbox[1], img_bbox[3]
                                 
                                 if abs(y_top - img_y_bot) < 40 or abs(img_y_top - y_bot) < 40:
                                     label = "Caption"
-                                    logger.info(f"Block {block_idx} forced to Caption (keyword + near image)")
                                     break
 
                 all_boxes.append(bbox)
