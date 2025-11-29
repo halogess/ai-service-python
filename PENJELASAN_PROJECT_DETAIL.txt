@@ -1,0 +1,695 @@
+================================================================================
+                    PENJELASAN DETAIL PROJECT AI SERVICE PYTHON
+                         VISUAL WORKER - LAYOUTLMV3 PROCESSOR
+================================================================================
+
+================================================================================
+1. OVERVIEW PROJECT
+================================================================================
+
+Project ini adalah BACKGROUND SERVICE (Worker) yang berjalan terus-menerus untuk
+memproses dokumen PDF menggunakan AI model LayoutLMv3. Tujuannya adalah untuk
+menganalisis struktur visual dokumen dan mengklasifikasikan elemen-elemen 
+dokumen seperti Title, Text, Table, Figure, Caption, Section-header, dll.
+
+ARSITEKTUR:
+- Background Worker (polling-based)
+- Database MySQL (untuk antrian task)
+- LayoutLMv3 Model (AI untuk document layout analysis)
+- Docker Container (untuk deployment)
+
+FLOW UTAMA:
+1. Worker polling database setiap 5 detik
+2. Ambil task dari antrian dengan status "in_queue"
+3. Proses PDF → Extract text → Convert ke images → Analisis dengan LayoutLMv3
+4. Simpan hasil analisis (JSON + visualisasi gambar)
+5. Update status task ke "completed" atau "failed"
+
+
+================================================================================
+2. STRUKTUR DATABASE & ANTRIAN
+================================================================================
+
+TABEL: antrian
+--------------
+Kolom penting:
+- antrian_id: ID unik task
+- antrian_tipe: 'dokumen' atau 'buku'
+- buku_id, bab_id, dokumen_id: Referensi ke dokumen yang diproses
+- antrian_worker: Jenis worker ('convert_pdf', 'struktur', 'visual')
+- antrian_visual_status: Status task visual ('in_queue', 'processing', 'completed', 'failed')
+- antrian_error_message: Pesan error jika gagal
+- antrian_created_at: Timestamp untuk FIFO ordering
+
+MEKANISME ANTRIAN:
+- Worker hanya ambil task dengan antrian_visual_status = 'in_queue'
+- Sorting berdasarkan antrian_created_at (FIFO - First In First Out)
+- Hanya 1 task diproses per iterasi
+- Status diupdate ke 'processing' saat mulai, 'completed' saat selesai, 'failed' jika error
+
+
+================================================================================
+3. ALUR KERJA WORKER (main.py)
+================================================================================
+
+FUNGSI UTAMA: run_visual_worker()
+----------------------------------
+- Loop infinite dengan interval 5 detik
+- Setiap iterasi panggil check_visual_queue()
+
+FUNGSI: check_visual_queue()
+----------------------------
+Step 1: AMBIL TASK DARI DATABASE
+   - Query task dengan status 'in_queue'
+   - Order by antrian_created_at (FIFO)
+   - Ambil 1 task pertama
+
+Step 2: UPDATE STATUS KE 'processing'
+   - Commit ke database agar task tidak diambil worker lain
+
+Step 3: DAPATKAN PATH PDF
+   - Jika antrian_tipe = 'buku':
+     * Query tabel Bab berdasarkan bab_id
+     * Ambil bab_pdf_path (contoh: buku/222117032/5639/pdf/Bab 1 - Pendahuluan.pdf)
+   
+   - Jika antrian_tipe = 'dokumen':
+     * Query tabel Dokumen berdasarkan dokumen_id
+     * Ambil dokumen_pdf_path
+
+Step 4: SETUP DIREKTORI
+   - Base directory: buku/222117032/5639/
+   - Images directory: buku/222117032/5639/images/Bab 1 - Pendahuluan/
+   - Image result directory: buku/222117032/5639/image-result/Bab 1 - Pendahuluan/
+   - Full path: /app/storage/ + relative path
+
+Step 5: EXTRACT TEXT DARI PDF
+   - Panggil extract_text_from_pdf(full_pdf_path)
+   - Hasil: List data per halaman dengan word-level bounding boxes
+
+Step 6: CONVERT PDF KE IMAGES
+   - Panggil convert_pdf_to_images(full_pdf_path, full_images_dir)
+   - Hasil: List path gambar (JPG, 300 DPI)
+
+Step 7: PROSES DENGAN LAYOUTLMV3
+   - Panggil process_document(image_paths, output_dir, pdf_text_data)
+   - Hasil: JSON dengan klasifikasi elemen dokumen
+
+Step 8: SIMPAN HASIL KE JSON
+   - Path: images/Bab 1 - Pendahuluan/layoutlm_results.json
+   - Format: Array hasil per halaman
+
+Step 9: UPDATE STATUS KE 'completed'
+   - Commit ke database
+
+Step 10: ERROR HANDLING
+   - Jika ada error, update status ke 'failed'
+   - Simpan error message ke antrian_error_message
+
+
+================================================================================
+4. PDF PROCESSOR (pdf_processor.py)
+================================================================================
+
+FUNGSI: extract_text_from_pdf(pdf_path)
+----------------------------------------
+Menggunakan PyMuPDF (fitz) untuk extract text dan bounding boxes dari PDF.
+
+PROSES:
+1. Buka PDF dengan fitz.open()
+2. Loop setiap halaman
+3. Untuk setiap halaman:
+   
+   a) EXTRACT WORDS (Word-level):
+      - Gunakan page.get_text("words")
+      - Hasil: Tuple (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+      - Simpan: text, bbox [x0, y0, x1, y1], block_no
+      - block_no: Nomor blok teks (untuk grouping)
+   
+   b) EXTRACT BLOCKS (Block-level):
+      - Gunakan page.get_text("dict")
+      - Hasil: Struktur hierarki blocks → lines → spans
+      - Simpan: bbox, text (untuk visualisasi)
+   
+   c) DIMENSI HALAMAN:
+      - width: page.rect.width
+      - height: page.rect.height
+
+OUTPUT PER HALAMAN:
+{
+  "page_number": 1,
+  "width": 595.0,
+  "height": 842.0,
+  "words": [
+    {"text": "Pendahuluan", "bbox": [72, 100, 150, 120], "block_no": 0},
+    {"text": "Bab", "bbox": [72, 80, 95, 100], "block_no": 0},
+    ...
+  ],
+  "blocks": [
+    {"bbox": [72, 80, 520, 200], "text": "Bab Pendahuluan ..."},
+    ...
+  ]
+}
+
+FUNGSI: convert_pdf_to_images(pdf_path, output_dir)
+----------------------------------------------------
+Convert PDF ke gambar JPG dengan resolusi tinggi.
+
+PROSES:
+1. Buka PDF dengan fitz.open()
+2. Loop setiap halaman
+3. Convert halaman ke pixmap (gambar):
+   - Matrix(300/72, 300/72) = 300 DPI
+   - 300 DPI untuk kualitas OCR yang baik
+4. Simpan sebagai JPG:
+   - Format: {filename}-page-{page_num}.jpg
+   - Contoh: Bab 1 - Pendahuluan-page-1.jpg
+
+OUTPUT:
+List path gambar: [
+  "/app/storage/buku/222117032/5639/images/Bab 1 - Pendahuluan/Bab 1 - Pendahuluan-page-1.jpg",
+  "/app/storage/buku/222117032/5639/images/Bab 1 - Pendahuluan/Bab 1 - Pendahuluan-page-2.jpg",
+  ...
+]
+
+
+================================================================================
+5. LAYOUTLM PROCESSOR (layoutlm_processor.py) - INTI PROSES AI
+================================================================================
+
+MODEL: LayoutLMv3
+-----------------
+- Model: Kwan0/layoutlmv3-base-finetune-DocLayNet-100k
+- Tipe: AutoModelForTokenClassification
+- Input: Image + Text + Bounding Boxes
+- Output: Klasifikasi elemen dokumen per token/word
+
+LABEL YANG DIKENALI:
+- Title: Judul dokumen/bab
+- Section-header: Judul section/sub-bab
+- Text: Paragraf teks biasa
+- List: Daftar/bullet points
+- Table: Tabel
+- Figure: Gambar/diagram
+- Caption: Caption gambar/tabel
+- Page-header: Header halaman
+- Page-footer: Footer halaman
+
+--------------------------------------------------------------------------------
+5.1. LOAD MODEL
+--------------------------------------------------------------------------------
+
+FUNGSI: load_model()
+--------------------
+- Load model dan processor sekali saja (singleton pattern)
+- Model path: /app/models/layoutlmv3/
+- Processor: AutoProcessor dengan apply_ocr=False (karena kita sudah punya text dari PDF)
+- Device: GPU jika tersedia, CPU jika tidak
+- Model.eval(): Set ke evaluation mode untuk prediksi stabil
+
+--------------------------------------------------------------------------------
+5.2. PROSES SINGLE IMAGE
+--------------------------------------------------------------------------------
+
+FUNGSI: process_image_with_layoutlm(image_path, text_data)
+-----------------------------------------------------------
+
+INPUT:
+- image_path: Path ke gambar halaman PDF
+- text_data: Data text dan bounding boxes dari PDF (hasil extract_text_from_pdf)
+
+PROSES DETAIL:
+
+Step 1: LOAD IMAGE
+   - Buka gambar dengan PIL
+   - Convert ke RGB
+
+Step 2: PREPARE INPUT DATA
+   
+   a) EXTRACT WORDS DAN BOXES DARI PDF:
+      - Loop setiap word dari text_data["words"]
+      - Ambil text dan bbox [x0, y0, x1, y1]
+      - Skip word kosong
+   
+   b) NORMALISASI BOUNDING BOXES:
+      - PDF bbox dalam koordinat absolut (pixel)
+      - LayoutLM butuh koordinat normalized (0-1000)
+      - Formula: normalized = (coord / pdf_dimension) * 1000
+      - Contoh:
+        * PDF width = 595, word x0 = 72
+        * Normalized x0 = (72 / 595) * 1000 = 121
+   
+   c) HASIL:
+      - words: ["Bab", "Pendahuluan", "Latar", "Belakang", ...]
+      - boxes: [[121, 134, 159, 168], [180, 134, 280, 168], ...]
+
+Step 3: TOKENIZATION & ENCODING
+   
+   processor() melakukan:
+   - Tokenize words menjadi subword tokens
+   - Encode image menjadi pixel_values
+   - Align bounding boxes dengan tokens
+   - Handle overflow tokens (jika words > 512 tokens)
+   
+   PARAMETER PENTING:
+   - truncation=True: Potong jika terlalu panjang
+   - padding="max_length": Pad ke panjang maksimal
+   - max_length=512: Maksimal 512 tokens per window
+   - stride=128: Overlap 128 tokens antar window
+   - return_overflowing_tokens=True: Buat multiple windows jika perlu
+   
+   CONTOH:
+   - Input: 800 words
+   - Window 1: tokens 0-512 (words 0-400)
+   - Window 2: tokens 384-896 (words 300-700, overlap 100 words)
+   - Window 3: tokens 768-1280 (words 600-800, overlap 100 words)
+
+Step 4: INFERENCE PER WINDOW
+   
+   Loop setiap window:
+   
+   a) PREPARE WINDOW DATA:
+      - input_ids: Token IDs untuk window ini
+      - attention_mask: Mask untuk padding
+      - bbox: Bounding boxes untuk window ini
+      - pixel_values: Image (shared untuk semua window)
+   
+   b) FORWARD PASS:
+      - outputs = model(**window_encoding)
+      - outputs.logits: [batch_size, seq_len, num_labels]
+      - Shape: [1, 512, 9] (9 = jumlah label)
+   
+   c) GET PREDICTIONS:
+      - logits = outputs.logits[0]  # [512, 9]
+      - probs = softmax(logits)  # Convert ke probabilitas
+      - pred_ids = argmax(logits)  # Ambil label dengan prob tertinggi
+   
+   d) MAP TOKENS KE WORDS:
+      - word_ids = encoding.word_ids(batch_index=window_idx)
+      - word_ids: [None, 0, 0, 1, 1, 1, 2, 2, None, ...]
+      - None = special tokens ([CLS], [SEP], [PAD])
+      - Angka = index word asli
+   
+   e) AGGREGATE PREDICTIONS:
+      - Setiap word bisa punya multiple tokens
+      - Setiap token punya prediksi sendiri
+      - Simpan semua prediksi dengan probabilitas
+      - Format: token_predictions[word_id] = [(label_id, prob), ...]
+
+Step 5: AGGREGATE PREDICTIONS ACROSS WINDOWS
+   
+   - Setiap word bisa muncul di multiple windows (karena overlap)
+   - Pilih prediksi dengan probabilitas tertinggi
+   - Formula: best_pred, best_prob = max(preds, key=lambda x: x[1])
+
+Step 6: FORMAT OUTPUT
+   
+   OUTPUT:
+   {
+     "image": "/path/to/image.jpg",
+     "predictions": [
+       {
+         "token_id": 0,  # Index word
+         "label": "Section-header",
+         "label_id": 6,
+         "confidence": 0.95
+       },
+       {
+         "token_id": 1,
+         "label": "Text",
+         "label_id": 1,
+         "confidence": 0.88
+       },
+       ...
+     ],
+     "boxes": [[121, 134, 159, 168], ...]  # Original normalized boxes
+   }
+
+CONTOH KONKRET:
+---------------
+Input PDF text:
+  "Bab 1 Pendahuluan
+   1.1 Latar Belakang
+   Penelitian ini membahas tentang..."
+
+Setelah extract_text_from_pdf:
+  words: ["Bab", "1", "Pendahuluan", "1.1", "Latar", "Belakang", "Penelitian", ...]
+  boxes: [[72,80,95,100], [100,80,110,100], [115,80,200,100], ...]
+
+Setelah normalisasi (PDF width=595, height=842):
+  boxes: [[121,95,159,119], [168,95,185,119], [193,95,336,119], ...]
+
+Setelah tokenization:
+  tokens: ["[CLS]", "Bab", "1", "Pend", "##ahul", "##an", "1", ".", "1", ...]
+  word_ids: [None, 0, 1, 2, 2, 2, 3, 3, 3, ...]
+
+Setelah inference:
+  predictions:
+    - word 0 ("Bab"): Title (0.92)
+    - word 1 ("1"): Title (0.90)
+    - word 2 ("Pendahuluan"): Title (0.95)
+    - word 3 ("1.1"): Section-header (0.93)
+    - word 4 ("Latar"): Section-header (0.91)
+    - word 5 ("Belakang"): Section-header (0.89)
+    - word 6 ("Penelitian"): Text (0.87)
+
+--------------------------------------------------------------------------------
+5.3. VISUALISASI
+--------------------------------------------------------------------------------
+
+FUNGSI: draw_boxes_on_image(image_path, boxes, labels, output_path, pdf_dimensions)
+------------------------------------------------------------------------------------
+
+PROSES:
+1. Load image
+2. Get dimensi image dan PDF
+3. Scale bounding boxes dari PDF ke image:
+   - scale_x = img_width / pdf_width
+   - scale_y = img_height / pdf_height
+   - x1_img = x1_pdf * scale_x
+4. Draw rectangle untuk setiap box dengan warna sesuai label:
+   - Title: red
+   - Section-header: magenta
+   - Text: blue
+   - Table: orange
+   - Figure: purple
+5. Draw label text di atas box
+6. Save image
+
+--------------------------------------------------------------------------------
+5.4. PROSES MULTIPLE IMAGES (FULL DOCUMENT)
+--------------------------------------------------------------------------------
+
+FUNGSI: process_document(image_paths, output_dir, pdf_text_data)
+-----------------------------------------------------------------
+
+PROSES:
+1. Loop setiap halaman (image)
+2. Untuk setiap halaman:
+   
+   a) PROSES DENGAN LAYOUTLM:
+      - Panggil process_image_with_layoutlm()
+      - Hasil: predictions per word
+   
+   b) AGGREGATE WORD PREDICTIONS KE BLOCK:
+      - Word-level predictions terlalu granular
+      - Aggregate ke block-level untuk visualisasi lebih baik
+      
+      CARA AGGREGATE:
+      - Gunakan block_no dari PDF extraction
+      - Setiap word punya block_no
+      - Group predictions berdasarkan block_no
+      - Sum confidence scores per label per block
+      - Pilih label dengan total confidence tertinggi
+      
+      PRIORITAS KHUSUS:
+      - Section-header dan Title diprioritaskan
+      - Jika section_score > text_score * 0.7, pilih Section-header
+      - Jika title_score > text_score * 0.7, pilih Title
+      - Threshold 0.7 untuk menghindari false positive
+   
+   c) VISUALISASI:
+      - Draw boxes untuk setiap block
+      - Gunakan label hasil aggregate
+      - Save ke output_dir
+   
+   d) LOG:
+      - Print jumlah blocks dan words yang diproses
+      - Contoh: "Saved visualization with 15 blocks (120 words processed)"
+
+OUTPUT:
+[
+  {
+    "page_number": 1,
+    "image": "/path/to/page-1.jpg",
+    "predictions": [...],
+    "boxes": [...]
+  },
+  {
+    "page_number": 2,
+    "image": "/path/to/page-2.jpg",
+    "predictions": [...],
+    "boxes": [...]
+  },
+  ...
+]
+
+
+================================================================================
+6. HASIL AKHIR
+================================================================================
+
+STRUKTUR DIREKTORI HASIL:
+--------------------------
+buku/222117032/5639/
+├── pdf/
+│   └── Bab 1 - Pendahuluan.pdf
+├── images/
+│   └── Bab 1 - Pendahuluan/
+│       ├── Bab 1 - Pendahuluan-page-1.jpg
+│       ├── Bab 1 - Pendahuluan-page-2.jpg
+│       └── layoutlm_results.json
+└── image-result/
+    └── Bab 1 - Pendahuluan/
+        ├── Bab 1 - Pendahuluan-page-1.jpg  (dengan bounding boxes)
+        └── Bab 1 - Pendahuluan-page-2.jpg  (dengan bounding boxes)
+
+FILE: layoutlm_results.json
+----------------------------
+[
+  {
+    "page_number": 1,
+    "image": "/app/storage/buku/222117032/5639/images/Bab 1 - Pendahuluan/Bab 1 - Pendahuluan-page-1.jpg",
+    "predictions": [
+      {
+        "token_id": 0,
+        "label": "Title",
+        "label_id": 0,
+        "confidence": 0.95
+      },
+      {
+        "token_id": 1,
+        "label": "Title",
+        "label_id": 0,
+        "confidence": 0.92
+      },
+      {
+        "token_id": 2,
+        "label": "Section-header",
+        "label_id": 6,
+        "confidence": 0.89
+      },
+      {
+        "token_id": 3,
+        "label": "Text",
+        "label_id": 1,
+        "confidence": 0.87
+      },
+      ...
+    ],
+    "boxes": [
+      [121, 95, 159, 119],
+      [168, 95, 185, 119],
+      ...
+    ]
+  },
+  ...
+]
+
+
+================================================================================
+7. TEKNOLOGI & DEPENDENCIES
+================================================================================
+
+PYTHON LIBRARIES:
+-----------------
+- sqlalchemy: ORM untuk database MySQL
+- pymysql: MySQL driver
+- python-dotenv: Load environment variables
+- transformers: Hugging Face library untuk LayoutLMv3
+- torch: PyTorch untuk deep learning
+- pillow: Image processing
+- pymupdf (fitz): PDF processing
+
+MODEL:
+------
+- Kwan0/layoutlmv3-base-finetune-DocLayNet-100k
+- Pre-trained pada DocLayNet dataset (100k dokumen)
+- Fine-tuned untuk document layout analysis
+- Size: ~500MB
+
+DOCKER:
+-------
+- Base image: python:3.11-slim
+- Volume mounts:
+  * ./logs → /app/logs (logs)
+  * ./models → /app/models (model files)
+  * ./src → /app/src (source code)
+  * ${VOLUME_BASE_PATH} → /app/storage (PDF files)
+- Network: bridge network untuk komunikasi dengan services lain
+
+
+================================================================================
+8. FLOW DIAGRAM LENGKAP
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          VISUAL WORKER LIFECYCLE                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+[START] run_visual_worker()
+    │
+    ├─→ [LOOP EVERY 5 SECONDS]
+    │       │
+    │       ├─→ check_visual_queue()
+    │       │       │
+    │       │       ├─→ [1] Query database: SELECT * FROM antrian 
+    │       │       │                        WHERE antrian_visual_status = 'in_queue'
+    │       │       │                        ORDER BY antrian_created_at LIMIT 1
+    │       │       │
+    │       │       ├─→ [2] Update status: antrian_visual_status = 'processing'
+    │       │       │
+    │       │       ├─→ [3] Get PDF path from Bab/Dokumen table
+    │       │       │
+    │       │       ├─→ [4] extract_text_from_pdf()
+    │       │       │       │
+    │       │       │       ├─→ Open PDF with PyMuPDF
+    │       │       │       ├─→ For each page:
+    │       │       │       │   ├─→ page.get_text("words") → word-level data
+    │       │       │       │   ├─→ page.get_text("dict") → block-level data
+    │       │       │       │   └─→ Store: words, boxes, blocks, dimensions
+    │       │       │       └─→ Return: List[page_data]
+    │       │       │
+    │       │       ├─→ [5] convert_pdf_to_images()
+    │       │       │       │
+    │       │       │       ├─→ Open PDF with PyMuPDF
+    │       │       │       ├─→ For each page:
+    │       │       │       │   ├─→ page.get_pixmap(300 DPI)
+    │       │       │       │   └─→ Save as JPG
+    │       │       │       └─→ Return: List[image_paths]
+    │       │       │
+    │       │       ├─→ [6] process_document()
+    │       │       │       │
+    │       │       │       ├─→ For each image:
+    │       │       │       │   │
+    │       │       │       │   ├─→ process_image_with_layoutlm()
+    │       │       │       │   │   │
+    │       │       │       │   │   ├─→ [A] Load image
+    │       │       │       │   │   │
+    │       │       │       │   │   ├─→ [B] Prepare input:
+    │       │       │       │   │   │   ├─→ Extract words & boxes from PDF data
+    │       │       │       │   │   │   └─→ Normalize boxes (0-1000)
+    │       │       │       │   │   │
+    │       │       │       │   │   ├─→ [C] Tokenization:
+    │       │       │       │   │   │   ├─→ processor(image, words, boxes)
+    │       │       │       │   │   │   ├─→ Truncation, padding, overflow
+    │       │       │       │   │   │   └─→ Create multiple windows if needed
+    │       │       │       │   │   │
+    │       │       │       │   │   ├─→ [D] Inference per window:
+    │       │       │       │   │   │   ├─→ For each window:
+    │       │       │       │   │   │   │   ├─→ model(**window_encoding)
+    │       │       │       │   │   │   │   ├─→ Get logits → softmax → predictions
+    │       │       │       │   │   │   │   ├─→ Map tokens to words
+    │       │       │       │   │   │   │   └─→ Store predictions with confidence
+    │       │       │       │   │   │   └─→ Aggregate across windows
+    │       │       │       │   │   │
+    │       │       │       │   │   └─→ [E] Return: predictions per word
+    │       │       │       │   │
+    │       │       │       │   ├─→ Aggregate word predictions to blocks
+    │       │       │       │   │   ├─→ Group by block_no
+    │       │       │       │   │   ├─→ Sum confidence scores per label
+    │       │       │       │   │   └─→ Choose best label with priority rules
+    │       │       │       │   │
+    │       │       │       │   └─→ draw_boxes_on_image()
+    │       │       │       │       ├─→ Scale boxes from PDF to image
+    │       │       │       │       ├─→ Draw rectangles with colors
+    │       │       │       │       └─→ Save visualization
+    │       │       │       │
+    │       │       │       └─→ Return: List[page_results]
+    │       │       │
+    │       │       ├─→ [7] Save results to JSON
+    │       │       │
+    │       │       ├─→ [8] Update status: antrian_visual_status = 'completed'
+    │       │       │
+    │       │       └─→ [ERROR HANDLING]
+    │       │               └─→ Update status: antrian_visual_status = 'failed'
+    │       │                   └─→ Save error message
+    │       │
+    │       └─→ sleep(5)
+    │
+    └─→ [REPEAT]
+
+
+================================================================================
+9. KEUNGGULAN PENDEKATAN INI
+================================================================================
+
+1. AKURASI TINGGI:
+   - Menggunakan text extraction dari PDF (bukan OCR)
+   - Bounding boxes akurat dari PDF metadata
+   - LayoutLMv3 model yang sudah fine-tuned
+
+2. HANDLING DOKUMEN PANJANG:
+   - Tokenization dengan overflow mechanism
+   - Multiple windows dengan stride/overlap
+   - Aggregate predictions across windows
+
+3. VISUALISASI INFORMATIF:
+   - Block-level aggregation untuk hasil lebih clean
+   - Color-coded bounding boxes per label
+   - Confidence-based label selection
+
+4. ROBUST ERROR HANDLING:
+   - Try-catch di setiap level
+   - Status tracking di database
+   - Error message logging
+
+5. SCALABLE:
+   - Background worker yang bisa di-scale horizontal
+   - Docker container untuk easy deployment
+   - Database-based queue untuk distributed processing
+
+
+================================================================================
+10. CONTOH USE CASE
+================================================================================
+
+SKENARIO: Upload dokumen skripsi "Bab 1 - Pendahuluan.pdf"
+
+1. User upload PDF via web interface
+2. Backend create task di tabel antrian:
+   - antrian_tipe = 'buku'
+   - bab_id = 5639
+   - antrian_worker = 'visual'
+   - antrian_visual_status = 'in_queue'
+
+3. Visual worker detect task (dalam 5 detik)
+4. Worker proses:
+   - Extract text: 150 words, 5 blocks
+   - Convert to images: 3 pages
+   - LayoutLM inference:
+     * Page 1: 50 words → 2 windows → 50 predictions
+     * Page 2: 60 words → 2 windows → 60 predictions
+     * Page 3: 40 words → 1 window → 40 predictions
+   - Aggregate to blocks:
+     * Block 0: "BAB 1 PENDAHULUAN" → Title
+     * Block 1: "1.1 Latar Belakang" → Section-header
+     * Block 2: "Penelitian ini..." → Text
+     * Block 3: "1.2 Rumusan Masalah" → Section-header
+     * Block 4: "Bagaimana cara..." → Text
+
+5. Hasil disimpan:
+   - layoutlm_results.json: Predictions per word
+   - image-result/*.jpg: Visualisasi dengan bounding boxes
+
+6. Status updated: antrian_visual_status = 'completed'
+
+7. Backend bisa gunakan hasil untuk:
+   - Auto-generate table of contents
+   - Extract sections automatically
+   - Validate document structure
+   - Search by document element type
+
+
+================================================================================
+SELESAI - PENJELASAN DETAIL PROJECT AI SERVICE PYTHON
+================================================================================

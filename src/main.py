@@ -4,7 +4,7 @@ import os
 from sqlalchemy import and_
 from database import SessionLocal, engine
 from models import Base, Antrian, Bab, Dokumen
-from pdf_processor import convert_pdf_to_images, get_images_dir_from_docx, extract_text_from_pdf
+from pdf_processor import convert_pdf_to_images, get_images_dir_from_docx, extract_layout_data_from_pdf
 from layoutlm_processor import process_document
 import json
 
@@ -79,9 +79,9 @@ def check_visual_queue():
                 
                 logger.info(f"Converting PDF: {full_pdf_path}")
                 
-                # Extract text from PDF
-                logger.info(f"Extracting text from PDF...")
-                pdf_text_data = extract_text_from_pdf(full_pdf_path)
+                # Extract layout data from PDF
+                logger.info(f"Extracting layout data from PDF...")
+                pdf_text_data = extract_layout_data_from_pdf(full_pdf_path)
                 
                 # Convert PDF to images
                 image_paths = convert_pdf_to_images(full_pdf_path, full_images_dir)
@@ -101,17 +101,24 @@ def check_visual_queue():
                 
                 # Update status ke completed
                 task.antrian_visual_status = 'completed'
+                task.antrian_error_message = None
                 db.commit()
+                db.refresh(task)
                 
-                logger.info(f"Visual task {task.antrian_id} completed")
+                logger.info(f"Visual task {task.antrian_id} completed successfully")
                 
             except Exception as e:
-                # Update status ke failed
-                task.antrian_visual_status = 'failed'
-                task.antrian_error_message = str(e)
-                db.commit()
+                try:
+                    db.rollback()
+                    task = db.query(Antrian).filter(Antrian.antrian_id == task.antrian_id).first()
+                    if task:
+                        task.antrian_visual_status = 'failed'
+                        task.antrian_error_message = str(e)[:255]
+                        db.commit()
+                except Exception as commit_error:
+                    logger.error(f"Failed to update error status: {commit_error}")
                 
-                logger.error(f"Visual task {task.antrian_id} failed: {str(e)}")
+                logger.error(f"Visual task {task.antrian_id} failed: {str(e)}", exc_info=True)
         
     except Exception as e:
         logger.error(f"Error checking visual queue: {str(e)}")

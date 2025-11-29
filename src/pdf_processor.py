@@ -1,6 +1,105 @@
 import os
 import fitz  # PyMuPDF
 
+def extract_layout_data_from_pdf(pdf_path):
+    """
+    Mengekstrak teks, gambar, dan blok dari setiap halaman PDF.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    doc = fitz.open(pdf_path)
+    all_pages_data = []
+
+    for page_num, page in enumerate(doc):
+        blocks = page.get_text("dict")
+        page_width, page_height = page.rect.width, page.rect.height
+        
+        page_data = {
+            "width": page_width,
+            "height": page_height,
+            "words": [],
+            "blocks": [],
+            "images": []
+        }
+
+        page_blocks = sorted(blocks["blocks"], key=lambda b: (b['bbox'][1], b['bbox'][0]))
+        block_idx = 0
+        text_blocks = 0
+        image_blocks = 0
+
+        for b in page_blocks:
+            block_bbox = b["bbox"]
+
+            if b["type"] == 0:
+                text_blocks += 1
+                block_text = ""
+                for line in b.get("lines", []):
+                    for span in line.get("spans", []):
+                        block_text += span.get("text", "") + " "
+                        for word in span.get("text", "").split():
+                            if word.strip():
+                                page_data["words"].append({
+                                    "text": word,
+                                    "bbox": span["bbox"],
+                                    "block_no": block_idx
+                                })
+                
+                page_data["blocks"].append({
+                    "text": block_text.strip(),
+                    "bbox": block_bbox,
+                    "type": "text"
+                })
+                block_idx += 1
+
+            elif b["type"] == 1:
+                image_blocks += 1
+                page_data["images"].append({
+                    "bbox": block_bbox,
+                    "block_no": block_idx
+                })
+                page_data["blocks"].append({
+                    "text": "",
+                    "bbox": block_bbox,
+                    "type": "image"
+                })
+                block_idx += 1
+        
+        logger.info(f"Page {page_num+1}: {text_blocks} text blocks, {image_blocks} image blocks from get_text()")
+        
+        image_list = page.get_images()
+        logger.info(f"Page {page_num+1}: {len(image_list)} images from get_images()")
+        
+        if image_list and not page_data["images"]:
+            logger.info(f"Page {page_num+1}: Using fallback method to extract images")
+            for img_idx, img in enumerate(image_list):
+                try:
+                    xref = img[0]
+                    img_rects = page.get_image_rects(xref)
+                    if img_rects:
+                        for rect in img_rects:
+                            bbox = [rect.x0, rect.y0, rect.x1, rect.y1]
+                            page_data["images"].append({
+                                "bbox": bbox,
+                                "block_no": block_idx
+                            })
+                            page_data["blocks"].append({
+                                "text": "",
+                                "bbox": bbox,
+                                "type": "image"
+                            })
+                            logger.info(f"  Found image at bbox: {bbox}")
+                            block_idx += 1
+                except Exception as e:
+                    logger.warning(f"  Failed to extract image {img_idx}: {e}")
+        
+        logger.info(f"Page {page_num+1}: Total {len(page_data['images'])} images detected")
+
+        all_pages_data.append(page_data)
+        
+    doc.close()
+    return all_pages_data
+
 def extract_text_from_pdf(pdf_path):
     """
     Extract text and bounding boxes from PDF per word
