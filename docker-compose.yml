@@ -3,12 +3,23 @@ services:
     build: .
     container_name: visual-worker
     restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
+      - ENABLE_VERSION_FULL=${ENABLE_VERSION_FULL:-true}
+      - ENABLE_VERSION_PDF=${ENABLE_VERSION_PDF:-true}
+      - ENABLE_VERSION_OCR=${ENABLE_VERSION_OCR:-true}
+      - ENABLE_VERSION_LAYOUTLM_OCR=${ENABLE_VERSION_LAYOUTLM_OCR:-false}
     volumes:
       - ./logs:/app/logs
       - ./models:/app/models
