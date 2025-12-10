@@ -1,14 +1,9 @@
 import time
 import logging
 import os
-from sqlalchemy import and_
 from database import SessionLocal, engine
 from models import Base, Antrian, Bab, Dokumen
-from pdf_processor import convert_pdf_to_images, get_images_dir_from_docx, extract_layout_data_from_pdf
-from ocr_processor import extract_text_with_tesseract
-from layoutlm_processor import process_document
-from PIL import Image
-import json
+from pdf_processor import convert_pdf_to_images
 
 STORAGE_BASE = "/app/storage"
 
@@ -63,103 +58,24 @@ def check_visual_queue():
                 else:
                     raise Exception(f"Unknown antrian_tipe: {task.antrian_tipe}")
                 
-                # Get base directory (buku/id_orang/id_dokumen or dokumen/id_orang/id_dokumen)
-                pdf_dir = os.path.dirname(pdf_path)  # e.g., buku/222117032/5639/pdf
-                base_dir = os.path.dirname(pdf_dir)  # e.g., buku/222117032/5639
+                # Get base directory
+                pdf_dir = os.path.dirname(pdf_path)
+                base_dir = os.path.dirname(pdf_dir)
                 
-                # Get filename without extension for subdirectory
-                pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]  # e.g., Bab 1 - Pendahuluan
+                # Get filename without extension
+                pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
                 
-                # Create separate directories per bab
+                # Create images directory
                 images_dir = os.path.join(base_dir, 'images', pdf_filename)
-                image_result_dir = os.path.join(base_dir, 'image-result', pdf_filename)
-                image_result_pdf_dir = os.path.join(base_dir, 'image-result-pdf', pdf_filename)
-                image_result_ocr_dir = os.path.join(base_dir, 'image-result-ocr', pdf_filename)
-                image_result_layoutlm_ocr_dir = os.path.join(base_dir, 'image-result-layoutlm-ocr', pdf_filename)
-                
-                # Full paths
                 full_pdf_path = os.path.join(STORAGE_BASE, pdf_path)
                 full_images_dir = os.path.join(STORAGE_BASE, images_dir)
-                full_image_result_dir = os.path.join(STORAGE_BASE, image_result_dir)
-                full_image_result_pdf_dir = os.path.join(STORAGE_BASE, image_result_pdf_dir)
-                full_image_result_ocr_dir = os.path.join(STORAGE_BASE, image_result_ocr_dir)
-                full_image_result_layoutlm_ocr_dir = os.path.join(STORAGE_BASE, image_result_layoutlm_ocr_dir)
-                
-                # Check ENV for enabled versions
-                enable_full = os.getenv('ENABLE_VERSION_FULL', 'true').lower() == 'true'
-                enable_pdf = os.getenv('ENABLE_VERSION_PDF', 'true').lower() == 'true'
-                enable_ocr = os.getenv('ENABLE_VERSION_OCR', 'true').lower() == 'true'
-                enable_layoutlm_ocr = os.getenv('ENABLE_VERSION_LAYOUTLM_OCR', 'false').lower() == 'true'
                 
                 logger.info(f"Converting PDF: {full_pdf_path}")
                 
-                # Extract layout data from PDF
-                logger.info(f"Extracting layout data from PDF...")
-                pdf_text_data = extract_layout_data_from_pdf(full_pdf_path)
-                
-                # Convert PDF to images
+                # Convert PDF to images only
                 image_paths = convert_pdf_to_images(full_pdf_path, full_images_dir)
                 
                 logger.info(f"Created {len(image_paths)} images")
-                
-                # VERSION 1: /image-result (full post-processing: 1,2,3,4)
-                if enable_full:
-                    logger.info(f"Processing VERSION 1: Full post-processing (PyMuPDF)...")
-                    results_full = process_document(image_paths, output_dir=full_image_result_dir, pdf_text_data=pdf_text_data, post_processing_level="full")
-                    
-                    results_full_path = os.path.join(full_images_dir, "layoutlm_results_full.json")
-                    with open(results_full_path, 'w', encoding='utf-8') as f:
-                        json.dump(results_full, f, indent=2, ensure_ascii=False)
-                    
-                    logger.info(f"VERSION 1 (full post-processing) saved to {results_full_path}")
-                else:
-                    logger.info(f"VERSION 1 (full) DISABLED by ENV - skipping...")
-                    results_full = None
-                
-                # VERSION 2: /image-result-pdf (sliding_window post-processing: hanya #3)
-                if enable_pdf:
-                    logger.info(f"Processing VERSION 2: Sliding window aggregation only (PyMuPDF)...")
-                    results_pdf = process_document(image_paths, output_dir=full_image_result_pdf_dir, pdf_text_data=pdf_text_data, post_processing_level="sliding_window")
-                    
-                    results_pdf_path = os.path.join(full_images_dir, "layoutlm_results_pdf.json")
-                    with open(results_pdf_path, 'w', encoding='utf-8') as f:
-                        json.dump(results_pdf, f, indent=2, ensure_ascii=False)
-                    
-                    logger.info(f"VERSION 2 (sliding window aggregation only) saved to {results_pdf_path}")
-                else:
-                    logger.info(f"VERSION 2 (pdf) DISABLED by ENV")
-                
-                # VERSION 3: /image-result-ocr (no post-processing - Tesseract OCR)
-                if enable_ocr:
-                    logger.info(f"Processing VERSION 3: No post-processing (Tesseract OCR)...")
-                    ocr_text_data = []
-                    for img_path in image_paths:
-                        image = Image.open(img_path).convert("RGB")
-                        ocr_data = extract_text_with_tesseract(image)
-                        ocr_text_data.append(ocr_data)
-                    
-                    results_ocr = process_document(image_paths, output_dir=full_image_result_ocr_dir, pdf_text_data=ocr_text_data, post_processing_level="none")
-                    
-                    results_ocr_path = os.path.join(full_images_dir, "layoutlm_results_ocr.json")
-                    with open(results_ocr_path, 'w', encoding='utf-8') as f:
-                        json.dump(results_ocr, f, indent=2, ensure_ascii=False)
-                    
-                    logger.info(f"VERSION 3 (Tesseract OCR) saved to {results_ocr_path}")
-                else:
-                    logger.info(f"VERSION 3 (ocr) DISABLED by ENV")
-                
-                # VERSION 4: /image-result-layoutlm-ocr (LayoutLMv3 built-in OCR)
-                if enable_layoutlm_ocr:
-                    logger.info(f"Processing VERSION 4: LayoutLMv3 built-in OCR (no text_data)...")
-                    results_layoutlm_ocr = process_document(image_paths, output_dir=full_image_result_layoutlm_ocr_dir, pdf_text_data=None, post_processing_level="none", use_builtin_ocr=True)
-                    
-                    results_layoutlm_ocr_path = os.path.join(full_images_dir, "layoutlm_results_layoutlm_ocr.json")
-                    with open(results_layoutlm_ocr_path, 'w', encoding='utf-8') as f:
-                        json.dump(results_layoutlm_ocr, f, indent=2, ensure_ascii=False)
-                    
-                    logger.info(f"VERSION 4 (LayoutLMv3 OCR) saved to {results_layoutlm_ocr_path}")
-                else:
-                    logger.info(f"VERSION 4 (layoutlm-ocr) DISABLED by ENV")
                 
                 # Update status ke completed
                 task.antrian_visual_status = 'completed'
@@ -167,12 +83,7 @@ def check_visual_queue():
                 db.commit()
                 db.refresh(task)
                 
-                enabled_versions = []
-                if enable_full: enabled_versions.append('Full')
-                if enable_pdf: enabled_versions.append('PDF')
-                if enable_ocr: enabled_versions.append('OCR')
-                if enable_layoutlm_ocr: enabled_versions.append('LayoutLM-OCR')
-                logger.info(f"Visual task {task.antrian_id} completed successfully ({len(enabled_versions)} versions: {' + '.join(enabled_versions)})")
+                logger.info(f"Visual task {task.antrian_id} completed successfully")
                 
             except Exception as e:
                 try:
