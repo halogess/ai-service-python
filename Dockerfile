@@ -19,6 +19,7 @@ RUN python3.11 -m pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
+COPY generate_debug_html.py .
 COPY .env .
 
 # Run the worker

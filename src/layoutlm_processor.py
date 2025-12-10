@@ -81,7 +81,7 @@ def process_image_with_layoutlm(image_path, text_data):
         truncation=True,
         padding="max_length",
         max_length=512,
-        stride=128,
+        stride=1,
         return_overflowing_tokens=True
     )
 
@@ -102,6 +102,7 @@ def process_image_with_layoutlm(image_path, text_data):
     logger.info(f"Processing {len(words)} words in {num_windows} windows")
 
     token_predictions = {}
+    debug_predictions = []  # For HTML debug
 
     for window_idx in range(num_windows):
         with torch.no_grad():
@@ -121,7 +122,17 @@ def process_image_with_layoutlm(image_path, text_data):
             if word_id is not None:
                 label_id = pred_ids[token_idx].item()
                 label_prob = probs[token_idx, label_id].item()
+                
+                # Store for debug HTML (all predictions)
+                debug_predictions.append({
+                    'word_idx': word_id,
+                    'window_idx': window_idx,
+                    'label': model.config.id2label.get(label_id, "UNKNOWN"),
+                    'label_id': label_id,
+                    'confidence': label_prob
+                })
 
+                # Keep best prediction for final result
                 if word_id not in token_predictions or label_prob > token_predictions[word_id][1]:
                     token_predictions[word_id] = (label_id, label_prob)
 
@@ -142,6 +153,9 @@ def process_image_with_layoutlm(image_path, text_data):
         "predictions": all_predictions,
         "boxes": original_boxes,  # Use original bbox for visualization
         "image_token_map": {},
+        "debug_predictions": debug_predictions,
+        "words": words,
+        "final_predictions": {word_id: {"label": model.config.id2label.get(pred[0], "UNKNOWN"), "confidence": pred[1]} for word_id, pred in token_predictions.items()}
     }
 
 
@@ -205,6 +219,18 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
         page_result = process_image_with_layoutlm(image_path, text_data)
         page_result["page_number"] = i
         results.append(page_result)
+        
+        # Save debug JSON for HTML generation
+        if output_dir and "debug_predictions" in page_result:
+            import json
+            debug_json_path = os.path.join(output_dir, f"debug_page_{i}.json")
+            with open(debug_json_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'words': page_result.get('words', []),
+                    'debug_predictions': page_result.get('debug_predictions', []),
+                    'final_predictions': page_result.get('final_predictions', {})
+                }, f, indent=2, ensure_ascii=False)
+            print(f"Saved debug JSON: {debug_json_path}")
 
         if not output_dir:
             continue
@@ -220,5 +246,11 @@ def process_document(image_paths, output_dir=None, pdf_text_data=None):
             pdf_dims = {"width": text_data.get("width"), "height": text_data.get("height")}
             draw_boxes_on_image(image_path, all_boxes, all_labels, output_path, pdf_dims)
             print(f"Saved visualization with {len(all_boxes)} words ({len(page_result.get('predictions', []))} tokens processed)")
+            
+            # Generate debug HTML
+            if "debug_predictions" in page_result:
+                debug_html_path = os.path.join(output_dir, f"debug_page_{i}.html")
+                os.system(f'python3.11 generate_debug_html.py "{os.path.join(output_dir, f"debug_page_{i}.json")}" "{debug_html_path}"')
+                print(f"Saved debug HTML: {debug_html_path}")
 
     return results

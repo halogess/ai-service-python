@@ -6,3 +6,5 @@ torch
 pillow
 pymupdf
 pytesseract
+flask
+scikit-learn
