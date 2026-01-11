@@ -3,3 +3,5 @@ pymysql==1.1.2
 python-dotenv
 pillow
 pymupdf
+docling
+rapidfuzz

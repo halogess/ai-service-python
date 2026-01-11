@@ -15,8 +15,8 @@ build/
 .env
 .env.local
 
-# Models
-models/
+# Models (root level only, not src/models)
+/models/
 
 # IDE
 .vscode/

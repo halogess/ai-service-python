@@ -1,0 +1,2214 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+    <title>PDF Viewer - {{ doc.testing_dokumen_nama }}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f5f7fa;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+        }
+
+        .viewer-container {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+
+        .sidebar {
+            width: 250px;
+            background: white;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+
+        .sidebar-right {
+            width: 350px;
+            background: white;
+            border-left: 1px solid #ddd;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .sidebar-right.active {
+            display: block;
+        }
+
+        .unaligned-token {
+            display: block;
+            padding: 4px 8px;
+            margin: 4px;
+            background: #ffebee;
+            border: 1px solid #FF5722;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .unaligned-token:hover {
+            background: #ffcdd2;
+        }
+
+        .main-viewer {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .canvas-container {
+            background: white;
+            display: inline-block;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .page-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        .page-item:hover {
+            background: #f8f9fa;
+        }
+
+        .page-item.active {
+            background: #e3f2fd;
+            border-left: 3px solid #2196F3;
+        }
+
+        .controls {
+            background: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-control {
+            margin: 0 5px;
+        }
+
+        .element-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+            transition: background-color 0.2s;
+        }
+
+        .element-item:hover {
+            background: #f0f0f0;
+        }
+
+        .element-item.selected {
+            background: #e3f2fd !important;
+            border-left: 3px solid #2196F3;
+        }
+
+        .element-text {
+            color: #333;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .element-meta {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .docling-legend {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            font-size: 12px;
+            z-index: 1000;
+            display: none;
+        }
+
+        .docling-legend.active {
+            display: block;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 12px;
+            margin-right: 8px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-0"><i class="fas fa-file-pdf me-2"></i>{{ doc.testing_dokumen_nama }}</h5>
+        </div>
+        <div>
+            <a href="/pdf-documents" class="btn btn-light btn-sm"><i class="fas fa-arrow-left me-2"></i>Back</a>
+        </div>
+    </div>
+
+    <div class="viewer-container">
+        <div class="sidebar">
+            <div class="p-3 border-bottom">
+                <strong>Pages ({{ doc.testing_dokumen_total_pages }})</strong>
+            </div>
+            {% for i in range(1, doc.testing_dokumen_total_pages + 1) %}
+            <div class="page-item {% if i == 1 %}active{% endif %}" onclick="loadPage({{ i }})">
+                <i class="fas fa-file-alt me-2"></i>Page {{ i }}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="main-viewer">
+            <div class="controls">
+                <button class="btn btn-sm btn-primary btn-control" onclick="zoomIn()"><i
+                        class="fas fa-search-plus"></i></button>
+                <button class="btn btn-sm btn-primary btn-control" onclick="zoomOut()"><i
+                        class="fas fa-search-minus"></i></button>
+                <button class="btn btn-sm btn-secondary btn-control" onclick="resetZoom()"><i class="fas fa-undo"></i>
+                    Reset</button>
+                <span class="ms-3">Zoom: <strong id="zoomLevel">100</strong>%</span>
+                <span class="ms-4">
+                    <button class="btn btn-sm btn-outline-primary btn-control" onclick="toggleBeforeView()">Before
+                        Align</button>
+                    <button class="btn btn-sm btn-outline-success btn-control" id="btnAlignDifflib"
+                        onclick="performAlignDifflib()">Align Difflib</button>
+                    <button class="btn btn-sm btn-outline-success btn-control" id="btnShowDifflib"
+                        onclick="toggleDifflibView()" style="display:none;">Show Difflib</button>
+                    <button class="btn btn-sm btn-outline-info btn-control" id="btnAlignDifflibBackup"
+                        onclick="performAlignDifflibBackup()">Align Monolith</button>
+                    <button class="btn btn-sm btn-outline-info btn-control" id="btnShowDifflibBackup"
+                        onclick="toggleDifflibBackupView()" style="display:none;">Show Monolith</button>
+                    <button class="btn btn-sm btn-outline-warning btn-control" id="btnAnalyzeDocling"
+                        onclick="analyzeDocling()">Analyze with Docling</button>
+                    <button class="btn btn-sm btn-outline-warning btn-control" id="btnShowDocling"
+                        onclick="toggleDoclingView()" style="display:none;">Show Docling</button>
+                    <button class="btn btn-sm btn-outline-danger btn-control" id="btnReassign1" onclick="runReassign1()"
+                        style="display:none;">Reassign 1</button>
+                    <button class="btn btn-sm btn-outline-primary btn-control" id="btnShowReassign1"
+                        onclick="toggleReassign1View()" style="display:none;">Show Reassign1</button>
+                    <button class="btn btn-sm btn-outline-danger btn-control" id="btnReassign2" onclick="runReassign2()"
+                        style="display:none;">Reassign 2</button>
+                    <button class="btn btn-sm btn-outline-primary btn-control" id="btnShowReassign2"
+                        onclick="toggleReassign2View()" style="display:none;">Show Reassign2</button>
+                    <button class="btn btn-sm btn-outline-danger btn-control" id="btnRunMerge"
+                        onclick="runMergeAlignment()" style="display:none;">Merge</button>
+                    <button class="btn btn-sm btn-outline-info btn-control" id="btnShowMerged"
+                        onclick="toggleMergedView()" style="display:none;">Show Merged</button>
+                </span>
+            </div>
+
+            <div class="canvas-container">
+                <canvas id="canvas"></canvas>
+            </div>
+        </div>
+
+        <div class="sidebar-right" id="sidebarRight">
+            <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+                <strong>Aligned Elements</strong>
+                <div>
+                    <label class="me-2" style="font-size: 12px;">
+                        <input type="checkbox" id="showUnaligned" onchange="toggleUnalignedView()"> Show Unaligned
+                    </label>
+                    <button class="btn btn-sm btn-close" onclick="closeSidebar()"></button>
+                </div>
+            </div>
+            <div id="elementList"></div>
+            <div id="unalignedList" style="display:none; border-top: 2px solid #FF5722; background: #ffebee;">
+                <div class="p-2" style="background:#ffcdd2;">
+                    <strong style="color:#FF5722;">?? Unaligned Tokens (<span id="unalignedCount">0</span>)</strong>
+                </div>
+                <div id="unalignedTokens" class="p-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="docling-legend" id="doclingLegend">
+        <strong>Docling Labels</strong>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#FF6B6B;"></div>title
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#4ECDC4;"></div>paragraph
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#45B7D1;"></div>section_header
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#FFA07A;"></div>table
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#98D8C8;"></div>list_item
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#F7DC6F;"></div>caption
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#BB8FCE;"></div>figure
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#FF1493;"></div>picture
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#85C1E2;"></div>page_header
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#F8B739;"></div>page_footer
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#52B788;"></div>footnote
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#E63946;"></div>formula
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background:#999;"></div>other
+        </div>
+    </div>
+
+    <script>
+        const docId = {{ doc.testing_dokumen_id }};
+        const totalPages = {{ doc.testing_dokumen_total_pages }};
+        let currentPage = 1;
+        let zoomLevel = 50;
+        let canvas, ctx, img;
+        let pageWords = {};
+        let pageWordsRaw = {};
+        let openxmlAlignData = null;
+        let difflibAlignData = null;
+        let difflibBackupAlignData = null;
+        let finalAlignData = null;
+        let viewMode = 'before';
+        let showDifflib = false;
+        let showDifflibBackup = false;
+        let showFinal = false;
+        let showBefore = false;
+        let selectedElement = null;
+        let selectedWordIndex = null;
+        let selectedContentIndex = null;  // Track selected content item
+        let elementWordBboxes = {};
+        let elementContentBboxes = {};  // Store content-level bboxes
+
+        // Helper: Filter out tiny bboxes (width < 5px) which are ghost tokens
+        function isValidBbox(bbox) {
+            if (!bbox || typeof bbox !== 'object') return false;
+            const width = (bbox.x1 || 0) - (bbox.x0 || 0);
+            return width >= 5;  // Ignore bboxes narrower than 5px
+        }
+        let doclingData = null;
+        let showDocling = false;
+        let mergedData = null;
+        let mergedUnalignedTokens = null;
+        let reassign1Data = null;
+        let reassign1UnalignedTokens = null;
+        let reassign2Data = null;
+        let reassign2UnalignedTokens = null;
+        let showMerged = false;
+        let showReassign1 = false;
+        let showReassign2 = false;
+        const doclingColors = {
+            'title': '#FF6B6B',
+            'paragraph': '#4ECDC4',
+            'section_header': '#45B7D1',
+            'table': '#FFA07A',
+            'list_item': '#98D8C8',
+            'caption': '#F7DC6F',
+            'figure': '#BB8FCE',
+            'picture': '#FF1493',
+            'page_header': '#85C1E2',
+            'page_footer': '#F8B739',
+            'footnote': '#52B788',
+            'formula': '#E63946',
+            'text': '#4ECDC4'
+        };
+
+        async function loadPage(pageNum) {
+            currentPage = pageNum;
+            selectedElement = null;
+            selectedWordIndex = null;
+            selectedContentIndex = null;
+
+            // Update sidebar
+            document.querySelectorAll('.page-item').forEach((item, idx) => {
+                item.classList.toggle('active', idx + 1 === pageNum);
+            });
+
+            // Load image
+            img = new Image();
+            img.onload = () => {
+                drawCanvas();
+                if (showDifflib || showFinal) {
+                    if (showFinal) {
+                        updateElementListFinal();
+                    } else {
+                        updateElementList();
+                    }
+                }
+                if (showDocling) {
+                    loadDoclingData();
+                }
+                if (showMerged) {
+                    loadMergedData();
+                }
+                if (showReassign1) {
+                    loadReassign1Data();
+                }
+                if (showReassign2) {
+                    loadReassign2Data();
+                }
+            };
+            img.src = `/document/${docId}/image/${pageNum}?t=${Date.now()}`;
+
+            // Load grouped words (after) - add cache buster
+            const response = await fetch(`/pdf-words/${docId}/${pageNum}?t=${Date.now()}`);
+            const data = await response.json();
+            console.log('PDF Words response:', data);
+            pageWords[pageNum] = Array.isArray(data) ? data : [];
+            console.log('Elements count:', pageWords[pageNum].length);
+
+            // Load raw PDF words (before) - add cache buster
+            const responseRaw = await fetch(`/pdf-words-raw/${docId}/${pageNum}?t=${Date.now()}`);
+            const dataRaw = await responseRaw.json();
+            pageWordsRaw[pageNum] = Array.isArray(dataRaw) ? dataRaw : [];
+        }
+
+        function toggleView(mode) {
+            viewMode = mode;
+            selectedElement = null;
+            if (mode === 'openxml' && !openxmlAlignData) {
+                loadOpenXMLAlign();
+            } else if (mode === 'difflib' && !difflibAlignData) {
+                loadDifflibAlign();
+            } else {
+                if (mode === 'difflib' || mode === 'openxml') {
+                    updateElementList();
+                    document.getElementById('sidebarRight').classList.add('active');
+                } else {
+                    document.getElementById('sidebarRight').classList.remove('active');
+                }
+                drawCanvas();
+            }
+        }
+
+        async function checkAlignmentStatus() {
+            try {
+                const response = await fetch(`/openxml-align-status/${docId}`);
+                const result = await response.json();
+
+                const btnShowAlign = document.getElementById('btnShowAlign');
+                if (btnShowAlign && result.exists) {
+                    btnShowAlign.classList.remove('btn-outline-info');
+                    btnShowAlign.classList.add('btn-info');
+                    btnShowAlign.style.opacity = '1';
+                } else if (btnShowAlign) {
+                    btnShowAlign.style.opacity = '0.5';
+                    btnShowAlign.disabled = true;
+                }
+            } catch (error) {
+                console.error('Failed to check alignment status:', error);
+            }
+
+            try {
+                const response = await fetch(`/difflib-align-status/${docId}`);
+                const result = await response.json();
+
+                const btnShowDifflib = document.getElementById('btnShowDifflib');
+                const btnReassign1 = document.getElementById('btnReassign1');
+                const btnRunMerge = document.getElementById('btnRunMerge');
+                if (result.exists) {
+                    btnShowDifflib.style.display = 'inline-block';
+                    btnReassign1.style.display = 'inline-block';
+                    btnRunMerge.style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.error('Failed to check difflib status:', error);
+            }
+
+            try {
+                const response = await fetch(`/difflib-align-backup-status/${docId}`);
+                const result = await response.json();
+
+                const btnShowBackup = document.getElementById('btnShowDifflibBackup');
+                if (result.exists) {
+                    btnShowBackup.style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.error('Failed to check backup status:', error);
+            }
+
+            try {
+                const response = await fetch(`/show-alignment/${docId}/final`);
+                const result = await response.json();
+
+                const btnShowReassign = document.getElementById('btnShowReassign');
+                if (result.success) {
+                    btnShowReassign.style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.log('No final alignment found');
+            }
+
+            try {
+                const response = await fetch(`/docling-status/${docId}`);
+                const result = await response.json();
+
+                const btnShowDocling = document.getElementById('btnShowDocling');
+                if (result.exists) {
+                    btnShowDocling.style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.error('Failed to check docling status:', error);
+            }
+        }
+
+        async function performAlign() {
+            const btn = document.getElementById('btnAlign');
+            btn.disabled = true;
+            btn.textContent = 'Aligning...';
+
+            try {
+                const response = await fetch(`/openxml-align/${docId}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                openxmlAlignData = result.data;
+                console.log('Alignment completed:', openxmlAlignData.stats);
+                alert(`Alignment completed!\nCoverage: ${(openxmlAlignData.stats.coverage * 100).toFixed(2)}%\nTotal words: ${openxmlAlignData.stats.total_words}`);
+
+                const btnShowAlign = document.getElementById('btnShowAlign');
+                btnShowAlign.disabled = false;
+                btnShowAlign.style.opacity = '1';
+                btnShowAlign.classList.remove('btn-outline-info');
+                btnShowAlign.classList.add('btn-info');
+
+            } catch (error) {
+                alert('Failed to perform alignment: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Align OpenXML';
+            }
+        }
+
+        async function performAlignDifflib() {
+            const btn = document.getElementById('btnAlignDifflib');
+            btn.disabled = true;
+            btn.textContent = 'Aligning...';
+
+            // Reset cache untuk memastikan data baru dimuat
+            difflibAlignData = null;
+
+            try {
+                const response = await fetch(`/difflib-align/${docId}?t=${Date.now()}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                // Set data baru
+                difflibAlignData = result.data;
+                console.log('Difflib alignment completed:', difflibAlignData.stats);
+                console.log('Sample words:', difflibAlignData.aligned_words.slice(0, 5));
+                alert(`Difflib Alignment completed!\nTotal elements: ${difflibAlignData.stats.total_words}\nAssigned: ${difflibAlignData.stats.assigned_words}`);
+
+                const btnShowDifflib = document.getElementById('btnShowDifflib');
+                btnShowDifflib.style.display = 'inline-block';
+
+                // Otomatis tampilkan hasil baru
+                showDifflib = true;
+                btnShowDifflib.classList.remove('btn-outline-success');
+                btnShowDifflib.classList.add('btn-success');
+                updateElementList();
+                document.getElementById('sidebarRight').classList.add('active');
+                drawCanvas();
+
+            } catch (error) {
+                alert('Failed to perform difflib alignment: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Align Difflib';
+            }
+        }
+
+        async function performAlignDifflibBackup() {
+            const btn = document.getElementById('btnAlignDifflibBackup');
+            btn.disabled = true;
+            btn.textContent = 'Aligning...';
+
+            try {
+                const response = await fetch(`/difflib-align-backup/${docId}?t=${Date.now()}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                alert('Monolith Alignment completed!');
+                const btnShowBackup = document.getElementById('btnShowDifflibBackup');
+                btnShowBackup.style.display = 'inline-block';
+
+            } catch (error) {
+                alert('Failed: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Align Monolith';
+            }
+        }
+
+        async function toggleDifflibBackupView() {
+            showDifflibBackup = !showDifflibBackup;
+            showDifflib = false;
+            const btnBackup = document.getElementById('btnShowDifflibBackup');
+            const btnDifflib = document.getElementById('btnShowDifflib');
+
+            if (showDifflibBackup) {
+                if (!difflibBackupAlignData) {
+                    await loadDifflibBackupAlign();
+                }
+                btnBackup.classList.remove('btn-outline-info');
+                btnBackup.classList.add('btn-info');
+                if (btnDifflib) {
+                    btnDifflib.classList.remove('btn-success');
+                    btnDifflib.classList.add('btn-outline-success');
+                }
+                updateElementListBackup();
+                document.getElementById('sidebarRight').classList.add('active');
+            } else {
+                btnBackup.classList.remove('btn-info');
+                btnBackup.classList.add('btn-outline-info');
+                document.getElementById('sidebarRight').classList.remove('active');
+            }
+            drawCanvas();
+        }
+
+        async function loadDifflibBackupAlign() {
+            try {
+                const response = await fetch(`/difflib-align-backup-load/${docId}?t=${Date.now()}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                difflibBackupAlignData = result.data;
+                console.log('Monolith loaded:', difflibBackupAlignData.stats);
+                updateElementListBackup();
+                document.getElementById('sidebarRight').classList.add('active');
+                drawCanvas();
+            } catch (error) {
+                alert('Failed to load: ' + error.message);
+            }
+        }
+
+        function updateElementListBackup() {
+            const data = difflibBackupAlignData;
+            if (!data) return;
+
+            const wordsOnPage = data.aligned_words.filter(w => w.page === currentPage - 1);
+            elementWordBboxes = {};
+
+            const itemsById = {};
+            const rootItems = [];
+
+            wordsOnPage.forEach(w => {
+                if (!itemsById[w.element_id]) {
+                    itemsById[w.element_id] = w;
+                    if (!w.parent_element_id) {
+                        rootItems.push(w);
+                    }
+                }
+            });
+
+            let globalIdx = 0;
+            function renderItem(item, depth = 0) {
+                const uniqueKey = `${item.element_id}_${globalIdx}`;
+                const indent = depth * 20;
+                const text = item.text || '';
+                const truncated = text.length > 50 ? text.substring(0, 50) + '...' : text;
+
+                let html = `
+                    <div class="element-item" style="padding-left:${indent}px;" onclick="selectElement('${uniqueKey}', event)">
+                        <div class="element-text">${truncated}</div>
+                        <div class="element-meta">ID: ${item.element_id}</div>
+                    </div>
+                `;
+                globalIdx++;
+
+                const children = Object.values(itemsById).filter(w => w.parent_element_id === item.element_id);
+                children.forEach(child => {
+                    html += renderItem(child, depth + 1);
+                });
+
+                return html;
+            }
+
+            const listHtml = rootItems.map(item => renderItem(item)).join('');
+            document.getElementById('elementList').innerHTML = listHtml || '<div class="p-3 text-muted">No elements</div>';
+        }
+
+        async function loadDifflibAlign() {
+            // Load dari file yang sudah ada tanpa generate ulang
+            const btn = document.getElementById('btnShowDifflib');
+            const origText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                // Add cache buster to force fresh data
+                const response = await fetch(`/difflib-align-load/${docId}?t=${Date.now()}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                difflibAlignData = result.data;
+                console.log('Difflib Align loaded for doc:', docId);
+                console.log('Stats:', difflibAlignData.stats);
+                console.log('Total elements:', difflibAlignData.aligned_words.length);
+                updateElementList();
+                document.getElementById('sidebarRight').classList.add('active');
+                drawCanvas();
+            } catch (error) {
+                alert('Failed to load difflib alignment: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = origText;
+            }
+        }
+
+        async function loadOpenXMLAlign() {
+            if (openxmlAlignData) {
+                drawCanvas();
+                return;
+            }
+
+            const btn = document.getElementById('btnShowAlign');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                const response = await fetch(`/openxml-align/${docId}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                openxmlAlignData = result.data;
+                console.log('OpenXML Align loaded:', openxmlAlignData.stats);
+                drawCanvas();
+            } catch (error) {
+                alert('Failed to load OpenXML alignment: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Show Alignment';
+            }
+        }
+
+        function drawCanvas() {
+            if (!img || !img.complete) return;
+
+            const scale = zoomLevel / 100;
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // PDF bbox in 72 DPI, image in 300 DPI
+            const dpiScale = 300 / 72;
+            const scaleX = dpiScale * scale;
+            const scaleY = dpiScale * scale;
+
+            if (showBefore) {
+                const words = pageWordsRaw[currentPage] || [];
+                ctx.strokeStyle = '#2196F3';
+                ctx.lineWidth = 1;
+
+                words.forEach(word => {
+                    const [x0, y0, x1, y1] = word.bbox;
+                    const sx0 = x0 * scaleX;
+                    const sy0 = y0 * scaleY;
+                    const sx1 = x1 * scaleX;
+                    const sy1 = y1 * scaleY;
+                    ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                });
+            }
+
+            if (showFinal && finalAlignData) {
+                const wordsOnPage = finalAlignData.aligned_words.filter(w => w.page === currentPage - 1);
+
+                if (document.getElementById('showUnaligned') && document.getElementById('showUnaligned').checked) {
+                    const unalignedTokens = finalAlignData.unaligned_tokens || [];
+                    const pageUnaligned = unalignedTokens.filter(t => t.page === currentPage - 1);
+
+                    ctx.strokeStyle = '#FF5722';
+                    ctx.lineWidth = 2;
+                    pageUnaligned.forEach(token => {
+                        const bbox = token.bbox;
+                        const sx0 = bbox.x0 * scaleX;
+                        const sy0 = bbox.y0 * scaleY;
+                        const sx1 = bbox.x1 * scaleX;
+                        const sy1 = bbox.y1 * scaleY;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+                }
+
+                if (selectedElement !== null && selectedWordIndex !== null) {
+                    const tokenBboxes = elementWordBboxes[selectedElement] || [];
+
+                    tokenBboxes.forEach((bbox, idx) => {
+                        if (!isValidBbox(bbox)) return;  // Skip tiny/ghost bboxes
+                        const sx0 = bbox.x0 * scaleX;
+                        const sy0 = bbox.y0 * scaleY;
+                        const sx1 = bbox.x1 * scaleX;
+                        const sy1 = bbox.y1 * scaleY;
+
+                        ctx.strokeStyle = '#FF5722';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+
+                    const word = wordsOnPage[selectedWordIndex];
+                    if (word && word.bbox) {
+                        const sx0 = word.bbox.x0 * scaleX;
+                        const sy0 = word.bbox.y0 * scaleY;
+                        const sx1 = word.bbox.x1 * scaleX;
+                        const sy1 = word.bbox.y1 * scaleY;
+
+                        ctx.strokeStyle = '#4CAF50';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    }
+                } else {
+                    wordsOnPage.forEach(word => {
+                        if (!word.element_id) return;
+
+                        const sx0 = word.bbox.x0 * scaleX;
+                        const sy0 = word.bbox.y0 * scaleY;
+                        const sx1 = word.bbox.x1 * scaleX;
+                        const sy1 = word.bbox.y1 * scaleY;
+
+                        ctx.strokeStyle = '#4CAF50';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+                }
+            } else if (showDifflibBackup && difflibBackupAlignData) {
+                const wordsOnPage = difflibBackupAlignData.aligned_words.filter(w => w.page === currentPage - 1);
+
+                wordsOnPage.forEach(word => {
+                    if (!word.element_id) return;
+
+                    const sx0 = word.bbox.x0 * scaleX;
+                    const sy0 = word.bbox.y0 * scaleY;
+                    const sx1 = word.bbox.x1 * scaleX;
+                    const sy1 = word.bbox.y1 * scaleY;
+
+                    ctx.strokeStyle = '#00BCD4';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                });
+            } else if (showDifflib && difflibAlignData) {
+                const wordsOnPage = difflibAlignData.aligned_words.filter(w => w.page === currentPage - 1);
+
+                // Draw unaligned tokens if checkbox is checked
+                if (document.getElementById('showUnaligned') && document.getElementById('showUnaligned').checked) {
+                    const unalignedTokens = difflibAlignData.unaligned_tokens || [];
+                    const pageUnaligned = unalignedTokens.filter(t => t.page === currentPage - 1);
+
+                    ctx.strokeStyle = '#FF5722';
+                    ctx.lineWidth = 2;
+                    pageUnaligned.forEach(token => {
+                        const bbox = token.bbox;
+                        const sx0 = bbox.x0 * scaleX;
+                        const sy0 = bbox.y0 * scaleY;
+                        const sx1 = bbox.x1 * scaleX;
+                        const sy1 = bbox.y1 * scaleY;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+                }
+
+                if (selectedElement !== null && selectedWordIndex !== null) {
+                    const contentBboxes = elementContentBboxes[selectedElement] || [];
+                    const tokenBboxes = elementWordBboxes[selectedElement] || [];
+
+                    console.log('Selected element:', selectedElement);
+                    console.log('Selected content index:', selectedContentIndex);
+                    console.log('Content bboxes:', contentBboxes);
+
+                    // FALLBACK: If no token bboxes but has content bboxes, draw content bboxes
+                    if (tokenBboxes.length === 0 && contentBboxes.length > 0) {
+                        contentBboxes.forEach((bbox, idx) => {
+                            const sx0 = bbox.x0 * scaleX;
+                            const sy0 = bbox.y0 * scaleY;
+                            const sx1 = bbox.x1 * scaleX;
+                            const sy1 = bbox.y1 * scaleY;
+
+                            ctx.strokeStyle = '#FF9800';
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                            ctx.fillStyle = '#FF9800';
+                            ctx.font = 'bold 12px Arial';
+                            ctx.fillText('???', sx0 + 4, sy0 + 16);
+                        });
+                    } else if (selectedContentIndex !== null && contentBboxes.length > selectedContentIndex) {
+                        // Show specific content item bbox (blue) and its tokens (red)
+                        const contentBbox = contentBboxes[selectedContentIndex];
+
+                        // Draw content bbox (blue)
+                        const sx0 = contentBbox.x0 * scaleX;
+                        const sy0 = contentBbox.y0 * scaleY;
+                        const sx1 = contentBbox.x1 * scaleX;
+                        const sy1 = contentBbox.y1 * scaleY;
+
+                        ctx.strokeStyle = '#2196F3';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                        ctx.fillStyle = '#2196F3';
+                        ctx.font = 'bold 14px Arial';
+                        ctx.fillText(`Content ${selectedContentIndex + 1}`, sx0 + 4, sy0 + 16);
+
+                        // Draw tokens inside this content item (red)
+                        tokenBboxes.forEach((bbox, idx) => {
+                            if (!isValidBbox(bbox)) return;  // Skip tiny/ghost bboxes
+                            // Check if token is inside content bbox
+                            if (bbox.x0 >= contentBbox.x0 - 5 && bbox.x1 <= contentBbox.x1 + 5 &&
+                                bbox.y0 >= contentBbox.y0 - 5 && bbox.y1 <= contentBbox.y1 + 5) {
+                                const tx0 = bbox.x0 * scaleX;
+                                const ty0 = bbox.y0 * scaleY;
+                                const tx1 = bbox.x1 * scaleX;
+                                const ty1 = bbox.y1 * scaleY;
+
+                                ctx.strokeStyle = '#FF5722';
+                                ctx.lineWidth = 1;
+                                ctx.strokeRect(tx0, ty0, tx1 - tx0, ty1 - ty0);
+                                ctx.fillStyle = '#FF5722';
+                                ctx.font = '9px Arial';
+                                ctx.fillText(idx + 1, tx0 + 2, ty0 + 9);
+                            }
+                        });
+                    } else if (contentBboxes.length > 0) {
+                        // Show all content item bboxes (blue)
+                        contentBboxes.forEach((bbox, idx) => {
+                            const sx0 = bbox.x0 * scaleX;
+                            const sy0 = bbox.y0 * scaleY;
+                            const sx1 = bbox.x1 * scaleX;
+                            const sy1 = bbox.y1 * scaleY;
+
+                            ctx.strokeStyle = '#2196F3';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                            ctx.fillStyle = '#2196F3';
+                            ctx.font = 'bold 12px Arial';
+                            ctx.fillText(idx + 1, sx0 + 4, sy0 + 14);
+                        });
+                    } else {
+                        console.log('No content bboxes, using token bboxes');
+                        // Fallback: draw individual token bboxes (red)
+                        tokenBboxes.forEach((bbox, idx) => {
+                            if (!isValidBbox(bbox)) return;  // Skip tiny/ghost bboxes
+                            const sx0 = bbox.x0 * scaleX;
+                            const sy0 = bbox.y0 * scaleY;
+                            const sx1 = bbox.x1 * scaleX;
+                            const sy1 = bbox.y1 * scaleY;
+
+                            ctx.strokeStyle = '#FF5722';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                            ctx.fillStyle = '#FF5722';
+                            ctx.font = '10px Arial';
+                            ctx.fillText(idx + 1, sx0 + 2, sy0 + 10);
+                        });
+                    }
+
+                    // Draw after-align bbox (green union)
+                    const word = wordsOnPage[selectedWordIndex];
+                    if (word && word.bbox) {
+                        const sx0 = word.bbox.x0 * scaleX;
+                        const sy0 = word.bbox.y0 * scaleY;
+                        const sx1 = word.bbox.x1 * scaleX;
+                        const sy1 = word.bbox.y1 * scaleY;
+
+                        ctx.strokeStyle = '#4CAF50';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    }
+                } else {
+                    // Draw all elements (after-align union bbox)
+                    wordsOnPage.forEach(word => {
+                        if (!word.element_id) return;
+
+                        const sx0 = word.bbox.x0 * scaleX;
+                        const sy0 = word.bbox.y0 * scaleY;
+                        const sx1 = word.bbox.x1 * scaleX;
+                        const sy1 = word.bbox.y1 * scaleY;
+
+                        // Use different color for images
+                        if (word.is_image || word.text === '[IMAGE]') {
+                            ctx.strokeStyle = '#FF9800';
+                        } else {
+                            ctx.strokeStyle = '#4CAF50';
+                        }
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+
+                    // Draw image bboxes from ALL cells (not just current page)
+                    // This handles cross-page image alignment
+                    difflibAlignData.aligned_words.forEach(word => {
+                        if (!word.content_bboxes || !word.content_items) return;
+
+                        word.content_items.forEach((item, idx) => {
+                            if (item.type === 'image' && word.content_bboxes[idx]) {
+                                const cbbox = word.content_bboxes[idx];
+                                const imgBbox = cbbox.bbox || cbbox;
+                                const imgPage = cbbox.page !== undefined ? cbbox.page : word.page;
+
+                                // Only draw image bbox on THIS page
+                                if (imgPage !== currentPage - 1) return;
+
+                                if (imgBbox && imgBbox.x0 !== undefined) {
+                                    const ix0 = imgBbox.x0 * scaleX;
+                                    const iy0 = imgBbox.y0 * scaleY;
+                                    const ix1 = imgBbox.x1 * scaleX;
+                                    const iy1 = imgBbox.y1 * scaleY;
+
+                                    ctx.strokeStyle = '#FF9800';
+                                    ctx.lineWidth = 3;
+                                    ctx.strokeRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
+                                    ctx.fillStyle = '#FF9800';
+                                    ctx.font = 'bold 11px Arial';
+                                    ctx.fillText('🖼️ ' + (item.rId || ''), ix0 + 4, iy0 + 14);
+                                }
+                            }
+                        });
+                    });
+                }
+
+            } else if (viewMode === 'openxml') {
+                // Draw OpenXML alignment
+                if (!openxmlAlignData) return;
+
+                const wordsOnPage = openxmlAlignData.aligned_words.filter(w => w.page === currentPage - 1);
+                const elementBboxes = {};
+
+                // Group by element_id
+                wordsOnPage.forEach(word => {
+                    if (!word.element_id || word.element_id < 0) return;
+                    if (!elementBboxes[word.element_id]) {
+                        elementBboxes[word.element_id] = [];
+                    }
+                    elementBboxes[word.element_id].push(word.bbox);
+                });
+
+                // Draw each element
+                Object.entries(elementBboxes).forEach(([elemId, bboxes]) => {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+                    bboxes.forEach(bbox => {
+                        const sx0 = bbox.x0 * scaleX;
+                        const sy0 = bbox.y0 * scaleY;
+                        const sx1 = bbox.x1 * scaleX;
+                        const sy1 = bbox.y1 * scaleY;
+
+                        minX = Math.min(minX, sx0);
+                        minY = Math.min(minY, sy0);
+                        maxX = Math.max(maxX, sx1);
+                        maxY = Math.max(maxY, sy1);
+                    });
+
+                    ctx.strokeStyle = '#00BCD4';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+                });
+            }
+
+            // Draw Docling overlay if enabled
+            if (showDocling && doclingData && doclingData.length > 0) {
+                ctx.lineWidth = 2;
+                doclingData.forEach(item => {
+                    const color = doclingColors[item.type] || '#999';
+                    ctx.strokeStyle = color;
+
+                    const sx0 = item.bbox[0] * scaleX;
+                    const sy0 = item.bbox[1] * scaleY;
+                    const sx1 = item.bbox[2] * scaleX;
+                    const sy1 = item.bbox[3] * scaleY;
+                    ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+
+                    // Draw label
+                    ctx.fillStyle = color;
+                    ctx.font = 'bold 10px Arial';
+                    ctx.fillText(item.type, sx0 + 2, sy0 + 12);
+                });
+            }
+
+            // Draw Merged alignment overlay if enabled
+            if (showMerged && mergedData && mergedData.length > 0) {
+                ctx.lineWidth = 3;
+                mergedData.forEach(item => {
+                    const color = item.docling_label ? doclingColors[item.docling_label] || '#999' : '#999';
+                    ctx.strokeStyle = color;
+
+                    const sx0 = item.bbox.x0 * scaleX;
+                    const sy0 = item.bbox.y0 * scaleY;
+                    const sx1 = item.bbox.x1 * scaleX;
+                    const sy1 = item.bbox.y1 * scaleY;
+                    ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+
+                    // Draw label with IoU
+                    ctx.fillStyle = color;
+                    ctx.font = 'bold 10px Arial';
+                    const label = item.docling_label || 'unknown';
+                    const iou = item.iou ? ` (${(item.iou * 100).toFixed(0)}%)` : '';
+                    ctx.fillText(label + iou, sx0 + 2, sy0 + 12);
+                });
+            }
+
+            // Draw Reassign1 alignment overlay if enabled
+            if (showReassign1 && reassign1Data && reassign1Data.length > 0) {
+                const pageData = reassign1Data.filter(e => e.page === currentPage - 1);
+
+                // Draw unaligned tokens if checked
+                if (document.getElementById('showUnaligned') && document.getElementById('showUnaligned').checked && reassign1UnalignedTokens) {
+                    const pageUnaligned = reassign1UnalignedTokens.filter(t => t.page === currentPage - 1);
+                    ctx.strokeStyle = '#FF5722';
+                    ctx.lineWidth = 2;
+                    pageUnaligned.forEach(token => {
+                        const bbox = token.bbox;
+                        const sx0 = bbox.x0 * scaleX;
+                        const sy0 = bbox.y0 * scaleY;
+                        const sx1 = bbox.x1 * scaleX;
+                        const sy1 = bbox.y1 * scaleY;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+                }
+
+                if (selectedElement !== null && selectedElement < pageData.length) {
+                    const elem = pageData[selectedElement];
+
+                    // Draw main bbox (green)
+                    ctx.strokeStyle = '#4CAF50';
+                    ctx.lineWidth = 3;
+                    const sx0 = elem.bbox.x0 * scaleX;
+                    const sy0 = elem.bbox.y0 * scaleY;
+                    const sx1 = elem.bbox.x1 * scaleX;
+                    const sy1 = elem.bbox.y1 * scaleY;
+                    ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+
+                    // Draw reassigned tokens (red)
+                    if (elem.reassigned_tokens && elem.reassigned_tokens.length > 0) {
+                        ctx.strokeStyle = '#FF9800';
+                        ctx.lineWidth = 2;
+                        elem.reassigned_tokens.forEach((token, i) => {
+                            const tx0 = token.x0 * scaleX;
+                            const ty0 = token.y0 * scaleY;
+                            const tx1 = token.x1 * scaleX;
+                            const ty1 = token.y1 * scaleY;
+                            ctx.strokeRect(tx0, ty0, tx1 - tx0, ty1 - ty0);
+                            ctx.fillStyle = '#FF9800';
+                            ctx.font = '10px Arial';
+                            ctx.fillText(token.text, tx0 + 2, ty0 + 10);
+                        });
+                    }
+                } else {
+                    ctx.lineWidth = 3;
+                    pageData.forEach(item => {
+                        const color = item.docling_label ? doclingColors[item.docling_label] || '#999' : '#999';
+                        ctx.strokeStyle = color;
+
+                        const sx0 = item.bbox.x0 * scaleX;
+                        const sy0 = item.bbox.y0 * scaleY;
+                        const sx1 = item.bbox.x1 * scaleX;
+                        const sy1 = item.bbox.y1 * scaleY;
+                        ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+                    });
+                }
+            }
+
+            // Draw Reassign2 alignment overlay if enabled
+            if (showReassign2 && reassign2Data && reassign2Data.length > 0) {
+                ctx.lineWidth = 3;
+                reassign2Data.forEach(item => {
+                    const color = item.docling_label ? doclingColors[item.docling_label] || '#999' : '#999';
+                    ctx.strokeStyle = color;
+
+                    const sx0 = item.bbox.x0 * scaleX;
+                    const sy0 = item.bbox.y0 * scaleY;
+                    const sx1 = item.bbox.x1 * scaleX;
+                    const sy1 = item.bbox.y1 * scaleY;
+                    ctx.strokeRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+
+                    ctx.fillStyle = color;
+                    ctx.font = 'bold 10px Arial';
+                    const label = item.docling_label || 'unknown';
+                    const iou = item.iou ? ` (${(item.iou * 100).toFixed(0)}%)` : '';
+                    ctx.fillText(label + iou, sx0 + 2, sy0 + 12);
+                });
+            }
+        }
+
+        function zoomIn() {
+            zoomLevel = Math.min(zoomLevel + 10, 200);
+            document.getElementById('zoomLevel').textContent = zoomLevel;
+            drawCanvas();
+        }
+
+        function zoomOut() {
+            zoomLevel = Math.max(zoomLevel - 10, 20);
+            document.getElementById('zoomLevel').textContent = zoomLevel;
+            drawCanvas();
+        }
+
+        function resetZoom() {
+            zoomLevel = 50;
+            document.getElementById('zoomLevel').textContent = zoomLevel;
+            drawCanvas();
+        }
+
+        function closeSidebar() {
+            document.getElementById('sidebarRight').classList.remove('active');
+            document.getElementById('showUnaligned').checked = false;
+            document.getElementById('unalignedList').style.display = 'none';
+            selectedElement = null;
+            selectedWordIndex = null;
+            drawCanvas();
+        }
+
+        function toggleUnalignedView() {
+            const checked = document.getElementById('showUnaligned').checked;
+            const unalignedList = document.getElementById('unalignedList');
+
+            if (checked) {
+                if (showReassign1) {
+                    showUnalignedReassign1();
+                } else if (showReassign2) {
+                    showUnalignedReassign2();
+                } else {
+                    showUnalignedPanel();
+                }
+                unalignedList.style.display = 'block';
+            } else {
+                unalignedList.style.display = 'none';
+            }
+            drawCanvas();
+        }
+
+        function showUnalignedPanel() {
+            const data = showFinal ? finalAlignData : difflibAlignData;
+            if (!data) return;
+
+            const unalignedTokens = data.unaligned_tokens || [];
+            const pageTokens = unalignedTokens.filter(t => t.page === currentPage - 1);
+
+            console.log('Unaligned tokens on page', currentPage, ':', pageTokens);
+
+            // Update count
+            document.getElementById('unalignedCount').textContent = pageTokens.length;
+
+            // Render list
+            if (pageTokens.length === 0) {
+                document.getElementById('unalignedTokens').innerHTML = '<span class="text-muted">No unaligned tokens on this page</span>';
+                return;
+            }
+
+            const listHtml = pageTokens.map((token, idx) => {
+                const text = token.text || '';
+                const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const bbox = token.bbox || {};
+                return `<span class="unaligned-token" title="Bbox: [${bbox.x0}, ${bbox.y0}, ${bbox.x1}, ${bbox.y1}]">${idx + 1}. ${escapedText}</span>`;
+            }).join('');
+
+            document.getElementById('unalignedTokens').innerHTML = listHtml;
+        }
+
+        function updateElementList() {
+            const data = showFinal ? finalAlignData : (showDifflib ? difflibAlignData : openxmlAlignData);
+            if (!data) return;
+
+            const wordsOnPage = data.aligned_words.filter(w => w.page === currentPage - 1);
+            elementWordBboxes = {};
+            elementContentBboxes = {};
+
+            // Build tree structure
+            const itemsById = {};
+            const rootItems = [];
+            const processedIds = new Set();
+
+            wordsOnPage.forEach(w => {
+                const key = w.element_id;
+                if (!processedIds.has(key)) {
+                    itemsById[key] = w;
+                    processedIds.add(key);
+                    if (!w.parent_element_id) {
+                        rootItems.push(w);
+                    }
+                }
+            });
+
+            // Recursive render
+            const wordIndexMap = {};  // Map uniqueKey to actual wordsOnPage index
+            let globalIdx = 0;
+
+            function renderItem(item, depth = 0) {
+                const uniqueKey = `${item.element_id}_${globalIdx}`;
+
+                // Find actual index in wordsOnPage array
+                const actualWordIdx = wordsOnPage.findIndex(w => {
+                    // Match by element_id, considering table containers
+                    if (item.is_table_container) {
+                        return w.element_id === item.element_id && w.is_table_container;
+                    }
+                    return w.element_id === uniqueKey.split('_')[0] || w.element_id === item.element_id;
+                });
+
+                wordIndexMap[uniqueKey] = actualWordIdx;
+                const indent = depth * 20;
+                let html = '';
+
+                if (item.is_table_container) {
+                    // Table container - only get direct children cells
+                    const children = wordsOnPage.filter(w =>
+                        w.parent_element_id === item.element_id &&
+                        String(w.element_id).startsWith(String(item.element_id) + '_cell_')
+                    );
+                    html += `
+                        <div class="element-item" style="padding-left:${indent}px; background:#f0f8ff; font-weight:bold;" onclick="selectElement('${uniqueKey}', event)">
+                            <div class="element-text">?? Table ${item.element_id}</div>
+                            <div class="element-meta">${children.length} cells</div>
+                        </div>
+                    `;
+                    globalIdx++;
+
+                    children.forEach(child => {
+                        html += renderItem(child, depth + 1);
+                    });
+                } else if (item.parent_element_id) {
+                    // Cell
+                    const cellBboxes = item.before_align_bboxes || [];
+                    const cellContentBboxes = (item.content_bboxes || []).map(cb => {
+                        if (cb && cb.bbox) return cb.bbox;
+                        if (cb && cb.x0 !== undefined) return cb;
+                        return null;
+                    }).filter(b => b !== null);
+
+                    // IMPORTANT: Only store bboxes that belong to THIS cell
+                    elementWordBboxes[uniqueKey] = cellBboxes;
+                    elementContentBboxes[uniqueKey] = cellContentBboxes;
+
+                    const cellText = item.text || '';
+                    const escapedCell = cellText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const truncatedCell = escapedCell.length > 40 ? escapedCell.substring(0, 40) + '...' : escapedCell;
+                    const beforeCount = (item.before_align_bboxes || []).length;
+
+                    // Content items
+                    const contentItems = item.content_items || [];
+                    const contentBboxes = item.content_bboxes || [];
+                    let contentHtml = '';
+                    if (contentItems.length > 0) {
+                        const contentList = contentItems.map((contentItem, i) => {
+                            const bbox = i < contentBboxes.length ? contentBboxes[i] : null;
+                            const hasBbox = bbox && (bbox.bbox || bbox.x0 !== undefined) ? '?' : '?';
+
+                            let displayText = '';
+                            if (contentItem.type === 'text') {
+                                displayText = contentItem.value || '';
+                            } else if (contentItem.type === 'image') {
+                                displayText = `??? [IMAGE ${contentItem.rId}]`;
+                            } else if (contentItem.type === 'shape') {
+                                displayText = `?? ${contentItem.value || 'Shape'}`;
+                            } else {
+                                displayText = JSON.stringify(contentItem);
+                            }
+
+                            const escapedItem = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const truncatedItem = escapedItem.length > 30 ? escapedItem.substring(0, 30) + '...' : escapedItem;
+                            return `<div style="font-size:10px; color:#555; padding:2px 4px 2px 16px; cursor:pointer; border-left:1px solid #ccc; margin-left:8px;" 
+                                onclick="event.stopPropagation(); selectContentItem('${uniqueKey}', ${i}, event);" 
+                                onmouseover="this.style.background='#e3f2fd'" 
+                                onmouseout="this.style.background='transparent'">
+                                <span style="color:#999;">+- ${i + 1}.</span> ${truncatedItem} <span style="color:${hasBbox === '?' ? 'green' : 'red'};">${hasBbox}</span>
+                            </div>`;
+                        }).join('');
+                        contentHtml = contentList;
+                    }
+
+                    html += `
+                        <div class="element-item" style="padding-left:${indent}px; border-left:2px solid #ddd;" onclick="selectElement('${uniqueKey}', event)">
+                            <div class="element-text" title="${escapedCell}">?? ${truncatedCell}</div>
+                            <div class="element-meta">Cell | Tokens: ${beforeCount} | Contents: ${contentItems.length}</div>
+                        </div>
+                    `;
+
+                    // Render content items as nested children
+                    if (contentItems.length > 0) {
+                        contentItems.forEach((contentItem, i) => {
+                            const bbox = i < contentBboxes.length ? contentBboxes[i] : null;
+                            const hasBbox = bbox && (bbox.bbox || bbox.x0 !== undefined) ? '?' : '?';
+
+                            let displayText = '';
+                            let icon = '';
+                            if (contentItem.type === 'text') {
+                                displayText = contentItem.value || '';
+                                icon = '??';
+                            } else if (contentItem.type === 'image') {
+                                displayText = `IMAGE ${contentItem.rId}`;
+                                icon = '???';
+                            } else if (contentItem.type === 'shape') {
+                                displayText = contentItem.value || 'Shape';
+                                icon = '??';
+                            }
+
+                            const escapedItem = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const truncatedItem = escapedItem.length > 35 ? escapedItem.substring(0, 35) + '...' : escapedItem;
+
+                            html += `
+                                <div class="element-item" style="padding-left:${indent + 20}px; font-size:11px; border-left:1px solid #ccc;" 
+                                    onclick="event.stopPropagation(); selectContentItem('${uniqueKey}', ${i}, event);">
+                                    <div class="element-text" title="${escapedItem}">${icon} ${truncatedItem}</div>
+                                    <div class="element-meta">Content ${i + 1} | Bbox: <span style="color:${hasBbox === '?' ? 'green' : 'red'};">${hasBbox}</span></div>
+                                </div>
+                            `;
+
+                            // Render shape content as nested children
+                            if (contentItem.type === 'shape' && contentItem.content && contentItem.content.length > 0) {
+                                contentItem.content.forEach((shapeContentItem, j) => {
+                                    let shapeContentText = '';
+                                    let shapeContentIcon = '';
+                                    if (shapeContentItem.type === 'text') {
+                                        shapeContentText = shapeContentItem.value || '';
+                                        shapeContentIcon = '??';
+                                    } else if (shapeContentItem.type === 'image') {
+                                        shapeContentText = `IMAGE ${shapeContentItem.rId}`;
+                                        shapeContentIcon = '???';
+                                    }
+
+                                    const escapedShapeContent = shapeContentText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                    const truncatedShapeContent = escapedShapeContent.length > 30 ? escapedShapeContent.substring(0, 30) + '...' : escapedShapeContent;
+
+                                    html += `
+                                        <div class="element-item" style="padding-left:${indent + 40}px; font-size:10px; border-left:1px solid #ddd; color:#666;" 
+                                            onclick="event.stopPropagation();">
+                                            <div class="element-text" title="${escapedShapeContent}">+- ${shapeContentIcon} ${truncatedShapeContent}</div>
+                                            <div class="element-meta">Shape Content ${j + 1}</div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                        });
+                    }
+                    globalIdx++;
+                } else {
+                    // Regular element
+                    const elemBboxes = item.before_align_bboxes || [];
+                    const elemContentBboxes = item.content_bboxes || [];
+
+                    // IMPORTANT: Only store bboxes that belong to THIS element
+                    elementWordBboxes[uniqueKey] = elemBboxes;
+                    elementContentBboxes[uniqueKey] = elemContentBboxes;
+
+                    const text = item.text || '';
+                    const isImage = item.is_image || text === '[IMAGE]';
+                    const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const displayText = isImage ? '??? ' + escapedText : escapedText;
+                    const truncated = displayText.length > 50 ? displayText.substring(0, 50) + '...' : displayText;
+                    const beforeCount = (item.before_align_bboxes || []).length;
+
+                    html += `
+                        <div class="element-item" style="padding-left:${indent}px;" onclick="selectElement('${uniqueKey}', event)">
+                            <div class="element-text" title="${escapedText}">${truncated}</div>
+                            <div class="element-meta">ID: ${item.element_id} | Tokens: ${beforeCount}</div>
+                        </div>
+                    `;
+                    globalIdx++;
+                }
+
+                return html;
+            }
+
+            const listHtml = rootItems.map(item => renderItem(item)).join('');
+            document.getElementById('elementList').innerHTML = listHtml || '<div class="p-3 text-muted">No elements on this page</div>';
+
+            // Store wordIndexMap globally
+            window.wordIndexMap = wordIndexMap;
+        }
+
+        function selectElement(uniqueKey, event) {
+            // Get actual word index from map
+            const wordIdx = window.wordIndexMap ? window.wordIndexMap[uniqueKey] : -1;
+
+            selectedElement = uniqueKey;
+            selectedWordIndex = wordIdx;
+            selectedContentIndex = null;
+
+            console.log('Selected:', uniqueKey, 'actualWordIdx:', wordIdx);
+            console.log('Token bboxes:', elementWordBboxes[uniqueKey]);
+            console.log('Content bboxes:', elementContentBboxes[uniqueKey]);
+
+            // Remove selected class from all items
+            document.querySelectorAll('.element-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+
+            // Add selected class to clicked item
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('selected');
+            }
+
+            drawCanvas();
+        }
+
+        function selectContentItem(uniqueKey, contentIdx, event) {
+            event.stopPropagation();
+            selectedElement = uniqueKey;
+            selectedContentIndex = contentIdx;
+
+            const data = showFinal ? finalAlignData : (showDifflib ? difflibAlignData : openxmlAlignData);
+            if (data) {
+                const wordsOnPage = data.aligned_words.filter(w => w.page === currentPage - 1);
+                const idx = wordsOnPage.findIndex((w, i) => `${w.element_id}_${i}` === uniqueKey);
+                if (idx >= 0) {
+                    selectedWordIndex = idx;
+                }
+            }
+
+            drawCanvas();
+        }
+
+        async function analyzeDocling() {
+            const btn = document.getElementById('btnAnalyzeDocling');
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+
+            try {
+                const response = await fetch(`/analyze-docling/${docId}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                alert('Docling analysis completed!');
+                document.getElementById('btnShowDocling').style.display = 'inline-block';
+
+            } catch (error) {
+                alert('Failed to analyze with Docling: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Analyze with Docling';
+            }
+        }
+
+        function toggleBeforeView() {
+            showBefore = !showBefore;
+            const btn = event.target;
+
+            if (showBefore) {
+                btn.classList.remove('btn-outline-primary');
+                btn.classList.add('btn-primary');
+            } else {
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-outline-primary');
+            }
+            drawCanvas();
+        }
+
+        async function toggleDifflibView() {
+            showDifflib = !showDifflib;
+            showFinal = false;
+            const btnDifflib = document.getElementById('btnShowDifflib');
+            const btnReassign = document.getElementById('btnShowReassign');
+
+            if (showDifflib) {
+                if (!difflibAlignData) {
+                    await loadDifflibAlign();
+                }
+                btnDifflib.classList.remove('btn-outline-success');
+                btnDifflib.classList.add('btn-success');
+                if (btnReassign) {
+                    btnReassign.classList.remove('btn-primary');
+                    btnReassign.classList.add('btn-outline-primary');
+                }
+                updateElementList();
+                document.getElementById('sidebarRight').classList.add('active');
+            } else {
+                btnDifflib.classList.remove('btn-success');
+                btnDifflib.classList.add('btn-outline-success');
+                if (!showDocling && !showFinal) {
+                    document.getElementById('sidebarRight').classList.remove('active');
+                }
+            }
+            drawCanvas();
+        }
+
+        async function toggleDoclingView() {
+            showDocling = !showDocling;
+            const btn = document.getElementById('btnShowDocling');
+            const legend = document.getElementById('doclingLegend');
+
+            if (showDocling) {
+                if (!doclingData) {
+                    await loadDoclingData();
+                }
+                btn.classList.remove('btn-outline-warning');
+                btn.classList.add('btn-warning');
+                legend.classList.add('active');
+            } else {
+                btn.classList.remove('btn-warning');
+                btn.classList.add('btn-outline-warning');
+                legend.classList.remove('active');
+            }
+            drawCanvas();
+        }
+
+        async function toggleDoclingOverlay() {
+            showDocling = document.getElementById('showDocling').checked;
+            if (showDocling && !doclingData) {
+                await loadDoclingData();
+            }
+            drawCanvas();
+        }
+
+        async function loadDoclingData() {
+            try {
+                const response = await fetch(`/docling-bbox/${docId}/${currentPage}`);
+                const data = await response.json();
+                doclingData = data;
+                drawCanvas();
+            } catch (error) {
+                console.error('Failed to load Docling data:', error);
+                doclingData = [];
+            }
+        }
+
+        async function toggleMergedView() {
+            showMerged = !showMerged;
+            showReassign1 = false;
+            showReassign2 = false;
+            const btnMerged = document.getElementById('btnShowMerged');
+            const btn1 = document.getElementById('btnShowReassign1');
+            const btn2 = document.getElementById('btnShowReassign2');
+
+            if (showMerged) {
+                if (!mergedData) {
+                    await loadMergedData();
+                }
+                btnMerged.classList.remove('btn-outline-info');
+                btnMerged.classList.add('btn-info');
+                btn1.classList.remove('btn-primary');
+                btn1.classList.add('btn-outline-primary');
+                btn2.classList.remove('btn-primary');
+                btn2.classList.add('btn-outline-primary');
+            } else {
+                btnMerged.classList.remove('btn-info');
+                btnMerged.classList.add('btn-outline-info');
+            }
+            drawCanvas();
+        }
+
+        async function loadMergedData() {
+            try {
+                const response = await fetch(`/merged-alignment/${docId}/${currentPage}`);
+                const data = await response.json();
+                mergedData = data.merged || [];
+                mergedUnalignedTokens = data.unaligned_tokens || [];
+                console.log('Merged data loaded:', mergedData.length, 'items');
+                console.log('Unaligned tokens:', mergedUnalignedTokens.length);
+                if (mergedData.length > 0) {
+                    console.log('Sample merged:', mergedData[0]);
+                }
+                drawCanvas();
+            } catch (error) {
+                console.error('Failed to load merged data:', error);
+                mergedData = [];
+                mergedUnalignedTokens = [];
+            }
+        }
+
+        async function checkMergedStatus() {
+            try {
+                const response = await fetch(`/merged-alignment/${docId}/1`);
+                if (response.ok) {
+                    document.getElementById('btnShowMerged').style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.log('No merged alignment found');
+            }
+
+            // Check reassign1 status
+            try {
+                const response = await fetch(`/reassign1-alignment/${docId}/1`);
+                if (response.ok) {
+                    document.getElementById('btnShowReassign1').style.display = 'inline-block';
+                    document.getElementById('btnReassign2').style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.log('No reassign1 found');
+            }
+
+            // Check reassign2 status
+            try {
+                const response = await fetch(`/reassign2-alignment/${docId}/1`);
+                if (response.ok) {
+                    document.getElementById('btnShowReassign2').style.display = 'inline-block';
+                    document.getElementById('btnRunMerge').style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.log('No reassign2 found');
+            }
+        }
+
+        async function runMergeAlignment() {
+            if (!confirm('Run merge alignment (difflib + docling)?')) return;
+
+            const btn = document.getElementById('btnRunMerge');
+            btn.disabled = true;
+            btn.textContent = 'Merging...';
+
+            try {
+                const response = await fetch(`/run_merge_alignment_pdf/${docId}`, {
+                    method: 'POST'
+                });
+
+                const text = await response.text();
+                console.log('Full response:', text);
+
+                if (!response.ok) {
+                    try {
+                        const errorData = JSON.parse(text);
+                        alert('Server error: ' + errorData.error + '\n\nCheck console for traceback.');
+                        console.error('Traceback:', errorData.traceback);
+                    } catch (e) {
+                        alert('Server error (500). Response:\n' + text.substring(0, 500));
+                    }
+                    return;
+                }
+
+                const data = JSON.parse(text);
+
+                if (data.success) {
+                    alert('Merge completed! Total: ' + data.total);
+                    document.getElementById('btnShowMerged').style.display = 'inline-block';
+                    // Auto load merged data
+                    await loadMergedData();
+                } else {
+                    alert('Error: ' + data.error);
+                    console.error('Traceback:', data.traceback);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                console.error('Full error:', error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Merge';
+            }
+        }
+
+        canvas = document.getElementById('canvas');
+        ctx = canvas.getContext('2d');
+        document.getElementById('zoomLevel').textContent = zoomLevel;
+
+        // Reset all cached data when page loads (important for document switching)
+        difflibAlignData = null;
+        openxmlAlignData = null;
+        doclingData = null;
+        pageWords = {};
+        pageWordsRaw = {};
+
+        checkAlignmentStatus();
+        checkMergedStatus();
+        loadPage(1);
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' && currentPage > 1) {
+                loadPage(currentPage - 1);
+            } else if (e.key === 'ArrowRight' && currentPage < totalPages) {
+                loadPage(currentPage + 1);
+            }
+        });
+
+        async function reassignTokens() {
+            if (!confirm('Reassign unaligned tokens to nearest elements?')) return;
+
+            const btn = document.getElementById('btnReassign');
+            btn.disabled = true;
+            btn.textContent = 'Reassigning...';
+
+            try {
+                const response = await fetch(`/reassign-tokens/${docId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                alert(`Reassignment completed!\nInitial unaligned: ${result.initial_unaligned}\nReassigned: ${result.reassigned}\nRemaining: ${result.remaining_unaligned}`);
+
+                document.getElementById('btnShowReassign').style.display = 'inline-block';
+
+                // Auto show final
+                showFinal = true;
+                showDifflib = false;
+                const btnFinal = document.getElementById('btnShowReassign');
+                const btnDifflib = document.getElementById('btnShowDifflib');
+                btnFinal.classList.remove('btn-outline-primary');
+                btnFinal.classList.add('btn-primary');
+                btnDifflib.classList.remove('btn-success');
+                btnDifflib.classList.add('btn-outline-success');
+
+                finalAlignData = null;
+                await loadFinalAlign();
+
+            } catch (error) {
+                alert('Failed to reassign tokens: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Reassign Tokens';
+            }
+        }
+
+        async function toggleFinalView() {
+            showFinal = !showFinal;
+            showDifflib = false;
+            const btnReassign = document.getElementById('btnShowReassign');
+            const btnDifflib = document.getElementById('btnShowDifflib');
+
+            if (showFinal) {
+                if (!finalAlignData) {
+                    await loadFinalAlign();
+                }
+                btnReassign.classList.remove('btn-outline-primary');
+                btnReassign.classList.add('btn-primary');
+                btnDifflib.classList.remove('btn-success');
+                btnDifflib.classList.add('btn-outline-success');
+                updateElementListFinal();
+                document.getElementById('sidebarRight').classList.add('active');
+            } else {
+                btnReassign.classList.remove('btn-primary');
+                btnReassign.classList.add('btn-outline-primary');
+                if (!showDifflib && !showDocling) {
+                    document.getElementById('sidebarRight').classList.remove('active');
+                }
+            }
+            drawCanvas();
+        }
+
+        async function loadFinalAlign() {
+            const btn = document.getElementById('btnShowReassign');
+            const origText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                const response = await fetch(`/show-alignment/${docId}/final?t=${Date.now()}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                finalAlignData = result.data;
+                console.log('Final alignment loaded:', finalAlignData.stats);
+                updateElementListFinal();
+                document.getElementById('sidebarRight').classList.add('active');
+                drawCanvas();
+            } catch (error) {
+                alert('Failed to load final alignment: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = origText;
+            }
+        }
+
+        function updateElementListFinal() {
+            const data = finalAlignData;
+            if (!data) return;
+
+            const wordsOnPage = data.aligned_words.filter(w => w.page === currentPage - 1);
+            elementWordBboxes = {};
+            elementContentBboxes = {};
+
+            const itemsById = {};
+            const rootItems = [];
+            const processedIds = new Set();
+
+            wordsOnPage.forEach(w => {
+                const key = w.element_id;
+                if (!processedIds.has(key)) {
+                    itemsById[key] = w;
+                    processedIds.add(key);
+                    if (!w.parent_element_id) {
+                        rootItems.push(w);
+                    }
+                }
+            });
+
+            const wordIndexMap = {};
+            let globalIdx = 0;
+
+            function renderItem(item, depth = 0) {
+                const uniqueKey = `${item.element_id}_${globalIdx}`;
+                const actualWordIdx = wordsOnPage.findIndex(w => {
+                    if (item.is_table_container) {
+                        return w.element_id === item.element_id && w.is_table_container;
+                    }
+                    return w.element_id === uniqueKey.split('_')[0] || w.element_id === item.element_id;
+                });
+
+                wordIndexMap[uniqueKey] = actualWordIdx;
+                const indent = depth * 20;
+                let html = '';
+
+                if (item.is_table_container) {
+                    const children = wordsOnPage.filter(w =>
+                        w.parent_element_id === item.element_id &&
+                        String(w.element_id).startsWith(String(item.element_id) + '_cell_')
+                    );
+                    html += `
+                        <div class="element-item" style="padding-left:${indent}px; background:#f0f8ff; font-weight:bold;" onclick="selectElementFinal('${uniqueKey}', event)">
+                            <div class="element-text">?? Table ${item.element_id}</div>
+                            <div class="element-meta">${children.length} cells</div>
+                        </div>
+                    `;
+                    globalIdx++;
+                    children.forEach(child => {
+                        html += renderItem(child, depth + 1);
+                    });
+                } else {
+                    const elemBboxes = item.before_align_bboxes || [];
+                    elementWordBboxes[uniqueKey] = elemBboxes;
+
+                    const text = item.text || '';
+                    const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const truncated = escapedText.length > 50 ? escapedText.substring(0, 50) + '...' : escapedText;
+                    const beforeCount = elemBboxes.length;
+
+                    html += `
+                        <div class="element-item" style="padding-left:${indent}px;" onclick="selectElementFinal('${uniqueKey}', event)">
+                            <div class="element-text" title="${escapedText}">${truncated}</div>
+                            <div class="element-meta">ID: ${item.element_id} | Tokens: ${beforeCount}</div>
+                        </div>
+                    `;
+                    globalIdx++;
+                }
+
+                return html;
+            }
+
+            const listHtml = rootItems.map(item => renderItem(item)).join('');
+            document.getElementById('elementList').innerHTML = listHtml || '<div class="p-3 text-muted">No elements on this page</div>';
+            window.wordIndexMap = wordIndexMap;
+        }
+
+        function selectElementFinal(uniqueKey, event) {
+            const wordIdx = window.wordIndexMap ? window.wordIndexMap[uniqueKey] : -1;
+            selectedElement = uniqueKey;
+            selectedWordIndex = wordIdx;
+            selectedContentIndex = null;
+
+            document.querySelectorAll('.element-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('selected');
+            }
+
+            drawCanvas();
+        }
+
+        async function toggleReassign1View() {
+            showReassign1 = !showReassign1;
+            showReassign2 = false;
+            showMerged = false;
+            const btn1 = document.getElementById('btnShowReassign1');
+            const btn2 = document.getElementById('btnShowReassign2');
+            const btnMerged = document.getElementById('btnShowMerged');
+
+            if (showReassign1) {
+                if (!reassign1Data) {
+                    await loadReassign1Data();
+                }
+                btn1.classList.remove('btn-outline-primary');
+                btn1.classList.add('btn-primary');
+                btn2.classList.remove('btn-primary');
+                btn2.classList.add('btn-outline-primary');
+                btnMerged.classList.remove('btn-info');
+                btnMerged.classList.add('btn-outline-info');
+                updateReassign1List();
+                document.getElementById('sidebarRight').classList.add('active');
+            } else {
+                btn1.classList.remove('btn-primary');
+                btn1.classList.add('btn-outline-primary');
+                document.getElementById('sidebarRight').classList.remove('active');
+            }
+            drawCanvas();
+        }
+
+        async function toggleReassign2View() {
+            showReassign2 = !showReassign2;
+            showReassign1 = false;
+            showMerged = false;
+            const btn1 = document.getElementById('btnShowReassign1');
+            const btn2 = document.getElementById('btnShowReassign2');
+            const btnMerged = document.getElementById('btnShowMerged');
+
+            if (showReassign2) {
+                if (!reassign2Data) {
+                    await loadReassign2Data();
+                }
+                btn2.classList.remove('btn-outline-primary');
+                btn2.classList.add('btn-primary');
+                btn1.classList.remove('btn-primary');
+                btn1.classList.add('btn-outline-primary');
+                btnMerged.classList.remove('btn-info');
+                btnMerged.classList.add('btn-outline-info');
+            } else {
+                btn2.classList.remove('btn-primary');
+                btn2.classList.add('btn-outline-primary');
+            }
+            drawCanvas();
+        }
+
+        async function loadReassign1Data() {
+            try {
+                const response = await fetch(`/reassign1-alignment/${docId}/${currentPage}`);
+                const data = await response.json();
+                reassign1Data = data.aligned_words || [];
+                reassign1UnalignedTokens = data.unaligned_tokens || [];
+                console.log('Reassign1 loaded:', reassign1Data.length, 'items');
+                updateReassign1List();
+                drawCanvas();
+            } catch (error) {
+                console.error('Failed to load reassign1:', error);
+                reassign1Data = [];
+                reassign1UnalignedTokens = [];
+            }
+        }
+
+        async function loadReassign2Data() {
+            try {
+                const response = await fetch(`/reassign2-alignment/${docId}/${currentPage}`);
+                const data = await response.json();
+                reassign2Data = data.merged || [];
+                reassign2UnalignedTokens = data.unaligned_tokens || [];
+                console.log('Reassign2 loaded:', reassign2Data.length, 'items');
+                drawCanvas();
+            } catch (error) {
+                console.error('Failed to load reassign2:', error);
+                reassign2Data = [];
+                reassign2UnalignedTokens = [];
+            }
+        }
+
+        async function runReassign1() {
+            if (!confirm('Run Reassign 1 (merge same Y elements)?')) return;
+
+            const btn = document.getElementById('btnReassign1');
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+
+            try {
+                const response = await fetch(`/run_reassign1/${docId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                alert('Reassign 1 completed!');
+                document.getElementById('btnShowReassign1').style.display = 'inline-block';
+                document.getElementById('btnReassign2').style.display = 'inline-block';
+
+                showReassign1 = true;
+                document.getElementById('btnShowReassign1').classList.remove('btn-outline-primary');
+                document.getElementById('btnShowReassign1').classList.add('btn-primary');
+                reassign1Data = null;
+                await loadReassign1Data();
+
+            } catch (error) {
+                alert('Failed: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Reassign 1';
+            }
+        }
+
+        async function runReassign2() {
+            if (!confirm('Run Reassign 2 (reassign via docling overlap)?')) return;
+
+            const btn = document.getElementById('btnReassign2');
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+
+            try {
+                const response = await fetch(`/run_reassign2/${docId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                alert('Reassign 2 completed!');
+                document.getElementById('btnShowReassign2').style.display = 'inline-block';
+                document.getElementById('btnRunMerge').style.display = 'inline-block';
+
+            } catch (error) {
+                alert('Failed: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Reassign 2';
+            }
+        }
+
+        function updateReassign1List() {
+            if (!reassign1Data) return;
+
+            const pageData = reassign1Data.filter(e => e.page === currentPage - 1);
+
+            // Deduplicate by element_id
+            const itemsById = {};
+            const rootItems = [];
+
+            pageData.forEach(w => {
+                if (!itemsById[w.element_id]) {
+                    itemsById[w.element_id] = w;
+                    if (!w.parent_element_id) {
+                        rootItems.push(w);
+                    }
+                }
+            });
+
+            let globalIdx = 0;
+            function renderItem(item, depth = 0) {
+                const uniqueKey = `${item.element_id}_${globalIdx}`;
+                const indent = depth * 20;
+                const hasReassigned = item.reassigned_tokens && item.reassigned_tokens.length > 0;
+                const badge = hasReassigned ? `<span style="color:green;">+${item.reassigned_tokens.length}</span>` : '';
+                const text = item.text || '';
+                const truncated = text.length > 50 ? text.substring(0, 50) + '...' : text;
+
+                let html = `
+                    <div class="element-item" style="padding-left:${indent}px;" onclick="selectReassign1ElementById('${item.element_id}', event)">
+                        <div class="element-text">${truncated}</div>
+                        <div class="element-meta">ID: ${item.element_id} ${badge}</div>
+                    </div>
+                `;
+                globalIdx++;
+
+                const children = Object.values(itemsById).filter(w => w.parent_element_id === item.element_id);
+                children.forEach(child => {
+                    html += renderItem(child, depth + 1);
+                });
+
+                return html;
+            }
+
+            const listHtml = rootItems.map(item => renderItem(item)).join('');
+            document.getElementById('elementList').innerHTML = listHtml || '<div class="p-3 text-muted">No elements</div>';
+            document.getElementById('sidebarRight').classList.add('active');
+
+            if (document.getElementById('showUnaligned').checked) {
+                showUnalignedReassign1();
+            }
+        }
+
+        function showUnalignedReassign1() {
+            if (!reassign1UnalignedTokens) return;
+
+            const pageTokens = reassign1UnalignedTokens.filter(t => t.page === currentPage - 1);
+            document.getElementById('unalignedCount').textContent = pageTokens.length;
+
+            if (pageTokens.length === 0) {
+                document.getElementById('unalignedTokens').innerHTML = '<span class="text-muted">No unaligned tokens</span>';
+                return;
+            }
+
+            const listHtml = pageTokens.map((token, idx) => {
+                const text = token.text || '';
+                const bbox = token.bbox || {};
+                return `<span class="unaligned-token" title="Bbox: [${bbox.x0}, ${bbox.y0}, ${bbox.x1}, ${bbox.y1}]">${idx + 1}. ${text}</span>`;
+            }).join('');
+
+            document.getElementById('unalignedTokens').innerHTML = listHtml;
+            document.getElementById('unalignedList').style.display = 'block';
+        }
+
+        function selectReassign1Element(idx, event) {
+            const pageData = reassign1Data.filter(e => e.page === currentPage - 1);
+            const elem = pageData[idx];
+
+            selectedElement = idx;
+
+            document.querySelectorAll('.element-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('selected');
+            }
+
+            console.log('Selected reassign1 element:', elem);
+            drawCanvas();
+        }
+
+        function selectReassign1ElementById(elemId, event) {
+            const pageData = reassign1Data.filter(e => e.page === currentPage - 1);
+            const idx = pageData.findIndex(e => e.element_id == elemId);
+            selectReassign1Element(idx, event);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

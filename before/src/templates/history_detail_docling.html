@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Docling Results</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background: #f5f7fa; min-height: 100vh; margin: 0; padding: 0; }
+        .card-header-custom { background: #16a085; color: white; padding: 20px; border-bottom: 3px solid #138871; }
+        .content-section { background: white; margin: 20px; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #e1e8ed; display: flex; gap: 15px; }
+        .canvas-wrapper { flex: 1; }
+        .nav-btn { font-size: 24px; cursor: pointer; user-select: none; color: #16a085; transition: all 0.2s; }
+        .nav-btn:hover { color: #138871; }
+        .nav-btn.disabled { opacity: 0.3; cursor: not-allowed; }
+        .image-container { overflow: auto; max-height: 75vh; position: relative; background: #fafbfc; border-radius: 6px; padding: 10px; border: 1px solid #e1e8ed; }
+        #canvas { border: 1px solid #dee2e6; border-radius: 4px; }
+        .btn-custom { border-radius: 4px; padding: 8px 16px; font-weight: 500; transition: all 0.2s; }
+        .btn-custom:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+        .page-nav { background: white; border-radius: 6px; padding: 10px; margin-bottom: 10px; border: 1px solid #e1e8ed; }
+        .legend-container { width: 180px; display: flex; flex-direction: column; gap: 6px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f8f9fa; border-radius: 4px; font-size: 12px; border: 1px solid #e1e8ed; cursor: pointer; transition: all 0.2s; }
+        .legend-item:hover { background: #e3f2fd; }
+        .legend-color { width: 24px; height: 16px; border-radius: 3px; border: 2px solid #fff; box-shadow: 0 0 0 1px #ddd; flex-shrink: 0; }
+        .legend-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #16a085; }
+        .badge-docling { background: #16a085; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div class="card-header-custom d-flex justify-content-between align-items-center">
+        <div>
+            <h3 class="mb-1"><i class="fas fa-cube me-2"></i>Docling Analysis <span class="badge-docling">BLOCK-LEVEL</span></h3>
+            <small>History #{{ history.testing_history_id }} - {{ history.testing_history_description }}</small>
+        </div>
+        <div>
+            <a href="{{ url_for('document_detail', doc_id=history.testing_dokumen_id) }}" class="btn btn-light btn-custom"><i class="fas fa-arrow-left me-2"></i>Back</a>
+        </div>
+    </div>
+
+    <div class="content-section">
+        <div class="legend-container">
+            <div class="legend-title">Block Types</div>
+            <div class="legend-item" onclick="toggleLegend('section_header')" data-label="section_header"><div class="legend-color" style="background: #e74c3c;"></div><span>Section Header</span></div>
+            <div class="legend-item" onclick="toggleLegend('text')" data-label="text"><div class="legend-color" style="background: #3498db;"></div><span>Text</span></div>
+            <div class="legend-item" onclick="toggleLegend('list_item')" data-label="list_item"><div class="legend-color" style="background: #2ecc71;"></div><span>List Item</span></div>
+            <div class="legend-item" onclick="toggleLegend('table')" data-label="table"><div class="legend-color" style="background: #f39c12;"></div><span>Table</span></div>
+            <div class="legend-item" onclick="toggleLegend('picture')" data-label="picture"><div class="legend-color" style="background: #9b59b6;"></div><span>Picture</span></div>
+            <div class="legend-item" onclick="toggleLegend('caption')" data-label="caption"><div class="legend-color" style="background: #1abc9c;"></div><span>Caption</span></div>
+            <div class="legend-item" onclick="toggleLegend('page_header')" data-label="page_header"><div class="legend-color" style="background: #e67e22;"></div><span>Page Header</span></div>
+            <div class="legend-item" onclick="toggleLegend('page_footer')" data-label="page_footer"><div class="legend-color" style="background: #c0392b;"></div><span>Page Footer</span></div>
+            <div class="legend-item" onclick="toggleLegend('footnote')" data-label="footnote"><div class="legend-color" style="background: #8b4513;"></div><span>Footnote</span></div>
+            <div class="legend-item" onclick="toggleLegend('formula')" data-label="formula"><div class="legend-color" style="background: #008080;"></div><span>Formula</span></div>
+            <div class="legend-item" onclick="toggleLegend('code')" data-label="code"><div class="legend-color" style="background: #00CED1;"></div><span>Code</span></div>
+        </div>
+        
+        <div class="canvas-wrapper">
+            <div class="image-container text-center">
+                <canvas id="canvas"></canvas>
+            </div>
+            <div class="page-nav" style="margin-top: 10px;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="nav-btn" id="prevBtn" onclick="changePage(-1)"><i class="fas fa-chevron-left"></i></span>
+                        <span>Page</span>
+                        <input type="number" id="pageInput" class="form-control form-control-sm text-center" style="width: 60px;" min="1" max="{{ document.testing_dokumen_total_pages }}" value="1" onchange="goToPage()">
+                        <span>/ {{ document.testing_dokumen_total_pages }}</span>
+                        <span class="nav-btn" id="nextBtn" onclick="changePage(1)"><i class="fas fa-chevron-right"></i></span>
+                    </div>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="zoomOut()"><i class="fas fa-search-minus"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="resetZoom()">100%</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="zoomIn()"><i class="fas fa-search-plus"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const totalPages = {{ document.testing_dokumen_total_pages }};
+        const historyId = {{ history.testing_history_id }};
+        let zoomLevel = 40;
+        let canvas, ctx, img;
+        let annotations = {};
+        let highlightedLabel = null;
+
+        const colors = {
+            'section_header': '#e74c3c',
+            'text': '#3498db',
+            'list_item': '#2ecc71',
+            'table': '#f39c12',
+            'picture': '#9b59b6',
+            'caption': '#1abc9c',
+            'page_header': '#e67e22',
+            'page_footer': '#c0392b',
+            'paragraph': '#3498db',
+            'title': '#e74c3c',
+            'footnote': '#8b4513',
+            'formula': '#008080',
+            'code': '#00CED1'
+        };
+
+        async function loadAnnotations() {
+            try {
+                const response = await fetch(`/history/${historyId}/annotations`);
+                if (!response.ok) throw new Error('Failed to load annotations');
+                annotations = await response.json();
+                drawCanvas();
+            } catch (error) {
+                console.error('Error loading annotations:', error);
+                annotations = {};
+                drawCanvas();
+            }
+        }
+        
+        let selectedPredictionId = null;
+
+        function drawCanvas() {
+            if (!img || !img.complete) return;
+            
+            const displayScale = zoomLevel / 100;
+            canvas.width = img.width * displayScale;
+            canvas.height = img.height * displayScale;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            const pageAnnotations = annotations[currentPage] || [];
+            
+            pageAnnotations.forEach((ann) => {
+                const x1 = ann.bbox[0] * displayScale;
+                const y1 = ann.bbox[1] * displayScale;
+                const x2 = ann.bbox[2] * displayScale;
+                const y2 = ann.bbox[3] * displayScale;
+                
+                const isHighlighted = highlightedLabel === ann.label;
+                const isSelected = selectedPredictionId === ann.id;
+                
+                ctx.strokeStyle = colors[ann.label] || '#95a5a6';
+                ctx.lineWidth = isSelected ? 5 : (isHighlighted ? 4 : 2);
+                ctx.globalAlpha = isSelected ? 1 : (isHighlighted ? 1 : 0.7);
+                
+                if (isSelected) {
+                    ctx.strokeStyle = '#ffc107';
+                }
+                
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                
+                // Fill semi-transparent
+                ctx.fillStyle = isSelected ? '#ffc107' : (colors[ann.label] || '#95a5a6');
+                ctx.globalAlpha = isSelected ? 0.25 : (isHighlighted ? 0.15 : 0.05);
+                ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                ctx.globalAlpha = 1;
+            });
+        }
+
+        function changePage(direction) {
+            const newPage = currentPage + direction;
+            if (newPage < 1 || newPage > totalPages) return;
+            currentPage = newPage;
+            updateDisplay();
+        }
+
+        function zoomIn() {
+            zoomLevel = Math.min(zoomLevel + 10, 200);
+            drawCanvas();
+        }
+
+        function zoomOut() {
+            zoomLevel = Math.max(zoomLevel - 10, 20);
+            drawCanvas();
+        }
+
+        function resetZoom() {
+            zoomLevel = 50;
+            drawCanvas();
+        }
+
+        function goToPage() {
+            const input = document.getElementById('pageInput');
+            const page = parseInt(input.value);
+            if (page >= 1 && page <= totalPages) {
+                currentPage = page;
+                updateDisplay();
+            } else {
+                input.value = currentPage;
+            }
+        }
+
+        function updateDisplay() {
+            document.getElementById('pageInput').value = currentPage;
+            img = new Image();
+            img.onload = () => { loadAnnotations(); };
+            img.src = `/history/${historyId}/image/${currentPage}`;
+            
+            document.getElementById('prevBtn').classList.toggle('disabled', currentPage === 1);
+            document.getElementById('nextBtn').classList.toggle('disabled', currentPage === totalPages);
+        }
+
+        function toggleLegend(label) {
+            if (highlightedLabel === label) {
+                highlightedLabel = null;
+                document.querySelectorAll('.legend-item').forEach(item => {
+                    item.style.backgroundColor = '#f8f9fa';
+                    item.style.fontWeight = 'normal';
+                });
+            } else {
+                highlightedLabel = label;
+                document.querySelectorAll('.legend-item').forEach(item => {
+                    if (item.dataset.label === label) {
+                        item.style.backgroundColor = '#e3f2fd';
+                        item.style.fontWeight = 'bold';
+                    } else {
+                        item.style.backgroundColor = '#f8f9fa';
+                        item.style.fontWeight = 'normal';
+                    }
+                });
+            }
+            drawCanvas();
+        }
+
+        canvas = document.getElementById('canvas');
+        ctx = canvas.getContext('2d');
+        
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const displayScale = zoomLevel / 100;
+            
+            const pageAnnotations = annotations[currentPage] || [];
+            
+            for (const ann of pageAnnotations) {
+                const x1 = ann.bbox[0] * displayScale;
+                const y1 = ann.bbox[1] * displayScale;
+                const x2 = ann.bbox[2] * displayScale;
+                const y2 = ann.bbox[3] * displayScale;
+                
+                if (x >= x1 && x <= x2 && y >= y1 && y <= y2) {
+                    selectedPredictionId = ann.id;
+                    drawCanvas();
+                    return;
+                }
+            }
+            
+            selectedPredictionId = null;
+            drawCanvas();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') changePage(-1);
+            if (e.key === 'ArrowRight') changePage(1);
+        });
+
+        updateDisplay();
+    </script>
+</body>
+</html>

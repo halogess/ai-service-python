@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Classification - Documents</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            min-height: 100vh;
+        }
+
+        .navbar-custom {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        .main-container {
+            padding: 30px;
+        }
+
+        .page-header {
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .page-header p {
+            opacity: 0.9;
+        }
+
+        .content-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .doc-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .doc-item:hover {
+            background: #fff8e1;
+        }
+
+        .doc-item:last-child {
+            border-bottom: none;
+        }
+
+        .doc-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .doc-info {
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .doc-badge {
+            background: #f39c12;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+        }
+
+        .btn-classify {
+            background: #f39c12;
+            border: none;
+            color: white;
+            padding: 6px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .btn-classify:hover {
+            background: #e67e22;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            color: #ccc;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-brain me-2"></i>LayoutLM Analyzer
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">
+                    <i class="fas fa-home me-1"></i>Home
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <div class="page-header">
+            <h1><i class="fas fa-tags me-3"></i>Classification</h1>
+            <p>Select a document to classify and analyze alignment results</p>
+        </div>
+
+        <div class="content-card">
+            {% if documents %}
+            <div class="doc-list">
+                {% for doc in documents %}
+                <div class="doc-item" onclick="window.location='/classification/{{ doc.testing_dokumen_id }}'">
+                    <div>
+                        <div class="doc-name">
+                            <i class="fas fa-file-pdf me-2" style="color: #e74c3c;"></i>
+                            {{ doc.testing_dokumen_nama }}
+                        </div>
+                        <div class="doc-info">
+                            <span><i class="fas fa-hashtag me-1"></i>ID: {{ doc.testing_dokumen_id }}</span>
+                            <span class="ms-3"><i class="fas fa-copy me-1"></i>{{ doc.testing_dokumen_total_pages }}
+                                pages</span>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="doc-badge me-2">{{ doc.testing_dokumen_total_pages }} pages</span>
+                        <a href="/classification/{{ doc.testing_dokumen_id }}" class="btn btn-classify">
+                            <i class="fas fa-tags me-1"></i>Classify
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-folder-open"></i>
+                <h4>No Documents Available</h4>
+                <p>Upload documents to start classification</p>
+                <a href="/" class="btn btn-outline-secondary mt-3">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Home
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
