@@ -47,10 +47,8 @@ class MergingExtractionService:
             
             logger.info(f"Processing {total_pages} pages for doc {doc_id}")
 
-            # Get page dimensions
-            # We need these for alignment service
-            # (AlignmentService usually fetches sections to get dimensions, 
-            # but we can pass actual PDF dimensions if needed, or let it rely on sections)
+            # Track max_openxml_idx across pages to prevent backward matching
+            max_openxml_idx = 0
             
             for page_num in range(1, total_pages + 1):
                 # Extract PDF data
@@ -72,15 +70,18 @@ class MergingExtractionService:
                 
                 extraction_items = self._transform_extraction_data_to_items(extraction_data)
                 
-                # Perform Alignment
-                # Passes 0 as min_openxml_idx for now (TODO: tracking across pages)
+                # Perform Alignment with cross-page tracking
                 alignment_result = self.alignment_service.align(
                     doc_id, page_num, extraction_items, 
                     page_width, page_height, total_pages, 
-                    min_openxml_idx=0 
+                    min_openxml_idx=max_openxml_idx  # Use previous page's max
                 )
                 
                 if alignment_result['success']:
+                    # Update cross-page tracking from alignment result
+                    max_openxml_idx = alignment_result.get('max_openxml_idx', max_openxml_idx)
+                    logger.debug(f"Page {page_num}: max_openxml_idx updated to {max_openxml_idx}")
+                    
                     self._save_alignment_results(db, alignment_result['final_alignments'], docling_predictions.get(str(page_num), []))
                 
             extractor.close()

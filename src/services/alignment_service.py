@@ -789,6 +789,53 @@ class AlignmentService:
             elif code == 0x00B2: normalized = '2'
             elif code == 0x00B3: normalized = '3'
             elif 0x2074 <= code <= 0x2079: normalized = chr(ord('0') + (code - 0x2070))
+            # Superscript letters
+            elif code == 0x1D43: normalized = 'a'   # ᵃ
+            elif code == 0x1D47: normalized = 'b'   # ᵇ
+            elif code == 0x1D9C: normalized = 'c'   # ᶜ
+            elif code == 0x1D48: normalized = 'd'   # ᵈ
+            elif code == 0x1D49: normalized = 'e'   # ᵉ
+            elif code == 0x1DA0: normalized = 'f'   # ᶠ
+            elif code == 0x1D4D: normalized = 'g'   # ᵍ
+            elif code == 0x02B0: normalized = 'h'   # ʰ
+            elif code == 0x2071: normalized = 'i'   # ⁱ
+            elif code == 0x02B2: normalized = 'j'   # ʲ
+            elif code == 0x1D4F: normalized = 'k'   # ᵏ
+            elif code == 0x02E1: normalized = 'l'   # ˡ
+            elif code == 0x1D50: normalized = 'm'   # ᵐ
+            elif code == 0x207F: normalized = 'n'   # ⁿ
+            elif code == 0x1D52: normalized = 'o'   # ᵒ
+            elif code == 0x1D56: normalized = 'p'   # ᵖ
+            elif code == 0x02B3: normalized = 'r'   # ʳ
+            elif code == 0x02E2: normalized = 's'   # ˢ
+            elif code == 0x1D57: normalized = 't'   # ᵗ
+            elif code == 0x1D58: normalized = 'u'   # ᵘ
+            elif code == 0x1D5B: normalized = 'v'   # ᵛ
+            elif code == 0x02B7: normalized = 'w'   # ʷ
+            elif code == 0x02E3: normalized = 'x'   # ˣ
+            elif code == 0x02B8: normalized = 'y'   # ʸ
+            elif code == 0x1DBB: normalized = 'z'   # ᶻ
+            # Subscript digits
+            elif 0x2080 <= code <= 0x2089: normalized = chr(ord('0') + (code - 0x2080))
+            # Subscript letters
+            elif code == 0x2090: normalized = 'a'   # ₐ
+            elif code == 0x2091: normalized = 'e'   # ₑ
+            elif code == 0x2095: normalized = 'h'   # ₕ
+            elif code == 0x1D62: normalized = 'i'   # ᵢ
+            elif code == 0x2C7C: normalized = 'j'   # ⱼ
+            elif code == 0x2096: normalized = 'k'   # ₖ
+            elif code == 0x2097: normalized = 'l'   # ₗ
+            elif code == 0x2098: normalized = 'm'   # ₘ
+            elif code == 0x2099: normalized = 'n'   # ₙ
+            elif code == 0x2092: normalized = 'o'   # ₒ
+            elif code == 0x209A: normalized = 'p'   # ₚ
+            elif code == 0x1D63: normalized = 'r'   # ᵣ
+            elif code == 0x209B: normalized = 's'   # ₛ
+            elif code == 0x209C: normalized = 't'   # ₜ
+            elif code == 0x1D64: normalized = 'u'   # ᵤ
+            elif code == 0x1D65: normalized = 'v'   # ᵥ
+            elif code == 0x2093: normalized = 'x'   # ₓ
+            # Math operators
             elif char in '−–—‐‑‒―': normalized = '-'
             elif char in '×∙·•⋅': normalized = '*'
             elif char in '÷∕': normalized = '/'
