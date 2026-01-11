@@ -7,6 +7,8 @@ from models import Base, Antrian, Bab, Dokumen, DokumenElemen, DokumenPart, Doku
 from processors.docling_processor import process_pdf_with_docling, draw_bboxes_on_images
 from services.pdf_extraction_service import PDFExtractor
 from services.matching_service import match_db_with_docling
+from services.merging_extraction_service import MergingExtractionService
+from services.alignment_service import AlignmentService
 
 STORAGE_BASE = "/app/storage"
 
@@ -144,6 +146,76 @@ def check_visual_queue():
                 draw_bboxes_on_images(image_paths, docling_result['pages_with_bbox'], full_result_images_dir)
                 
                 logger.info(f"Docling results saved: {docling_json_path}")
+
+                # --- NEW: Run Merging Extraction & Alignment ---
+                if dokumen_id:
+                    logger.info(f"Starting Extraction & Alignment for Document ID: {dokumen_id}")
+                    merging_service = MergingExtractionService()
+                    alignment_service = AlignmentService()
+                    
+                    # We can reuse extractor.page_count if we kept it, or re-open/guess. 
+                    # The image_paths list length gives us page count.
+                    total_pages = len(image_paths)
+                    
+                    extraction_results = []
+                    alignment_results = []
+                    
+                    for i in range(total_pages):
+                        page_num = i + 1
+                        try:
+                            # 1. Extraction
+                            logger.info(f"Extracting page {page_num}/{total_pages}...")
+                            merged_data = merging_service.extract_and_process(dokumen_id, page_num)
+                            
+                            # Save extraction items
+                            extraction_results.append({
+                                'page': page_num,
+                                'width': merged_data['width'],
+                                'height': merged_data['height'],
+                                'items': merged_data['items'],
+                                'stats': merged_data['stats']
+                            })
+                            
+                            # 2. Alignment
+                            # Check if we have items to align
+                            if merged_data.get('items'):
+                                logger.info(f"Aligning page {page_num}...")
+                                # Pass empty list for items if None to be safe, though extract_and_process returns dict with items key
+                                items = merged_data.get('items', [])
+                                
+                                align_res = alignment_service.align(
+                                    dokumen_id,
+                                    page_num,
+                                    items,
+                                    merged_data['width'],
+                                    merged_data['height'],
+                                    total_pages
+                                )
+                                alignment_results.append({
+                                    'page': page_num,
+                                    'alignments': align_res.get('alignments', []),
+                                    'unaligned': align_res.get('unaligned_pdf_units', []),
+                                    'debug': align_res.get('page_debug', {})
+                                })
+                            else:
+                                logger.info(f"No items to align for page {page_num}")
+
+                        except Exception as e_page:
+                            logger.error(f"Error processing page {page_num}: {str(e_page)}")
+                            # Continue to next page rather than failing entire task? 
+                            # For now, let's just log.
+                    
+                    # Save Results to JSON
+                    extraction_json_path = os.path.join(full_images_dir, "extraction_results.json")
+                    with open(extraction_json_path, 'w', encoding='utf-8') as f:
+                        json.dump(extraction_results, f, indent=2, ensure_ascii=False)
+                        
+                    alignment_json_path = os.path.join(full_images_dir, "alignment_results.json")
+                    with open(alignment_json_path, 'w', encoding='utf-8') as f:
+                        json.dump(alignment_results, f, indent=2, ensure_ascii=False)
+                        
+                    logger.info(f"Saved extraction and alignment results to {full_images_dir}")
+                # -----------------------------------------------
                 
                 # Update status ke completed
                 task.antrian_visual_status = 'completed'

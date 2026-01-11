@@ -3,6 +3,7 @@ import fitz
 import base64
 from typing import List, Dict, Any, Tuple, Optional
 from models import Dokumen
+from database import SessionLocal
 from utils.char_grouping import (
     collect_all_chars, find_overlapping_groups, 
     get_groups_in_y_range, check_boundary_crossing
@@ -32,119 +33,123 @@ class MergingExtractionService:
         Extracts raw PDF data: char groups, tables, images, shapes.
         Logic ported from `extract_merging` in `pymupdf_routes.py`.
         """
-        document = Dokumen.query.get(doc_id)
-        if not document:
-             raise ValueError(f"Document {doc_id} not found")
-
-        with fitz.open(document.dokumen_pdf_path) as pdf:
-            if page_num < 1 or page_num > pdf.page_count:
-                raise ValueError(f"Page {page_num} out of range")
-            
-            page = pdf[page_num - 1]
-            width = page.rect.width
-            height = page.rect.height
-
-            # Get rawdict for character grouping
-            rawdict_data = page.get_text("rawdict")
-            rawdict_data = self._sanitize(rawdict_data)
-            
-            # Step 1: Character grouping
-            all_chars = collect_all_chars(rawdict_data)
-            char_groups = find_overlapping_groups(all_chars)
-
-            # Step 1.5: Detect page images and shapes
-            page_images = page.get_image_info()
-            shapes_list = []
-            page_images_list = []
-
-            for img in page_images:
-                img_bbox = list(img['bbox'])
-                img_width = img.get('width', 0)
-                img_height = img.get('height', 0)
-
-                # Find overlapping groups ( >= 50% Y overlap)
-                overlapping_groups = []
-                for group in char_groups:
-                    if self._group_overlaps_image(group.get('merged_bbox'), img_bbox):
-                        overlapping_groups.append(group)
+        db = SessionLocal()
+        try:
+            document = db.query(Dokumen).get(doc_id)
+            if not document:
+                 raise ValueError(f"Document {doc_id} not found")
+    
+            with fitz.open(document.dokumen_pdf_path) as pdf:
+                if page_num < 1 or page_num > pdf.page_count:
+                    raise ValueError(f"Page {page_num} out of range")
                 
-                if overlapping_groups:
-                    # SHAPE (Image + Text)
-                    # Sort groups by reading order
-                    overlapping_groups.sort(key=lambda g: (g['merged_bbox'][1], g['merged_bbox'][0]))
+                page = pdf[page_num - 1]
+                width = page.rect.width
+                height = page.rect.height
+    
+                # Get rawdict for character grouping
+                rawdict_data = page.get_text("rawdict")
+                rawdict_data = self._sanitize(rawdict_data)
+                
+                # Step 1: Character grouping
+                all_chars = collect_all_chars(rawdict_data)
+                char_groups = find_overlapping_groups(all_chars)
+    
+                # Step 1.5: Detect page images and shapes
+                page_images = page.get_image_info()
+                shapes_list = []
+                page_images_list = []
+    
+                for img in page_images:
+                    img_bbox = list(img['bbox'])
+                    img_width = img.get('width', 0)
+                    img_height = img.get('height', 0)
+    
+                    # Find overlapping groups ( >= 50% Y overlap)
+                    overlapping_groups = []
+                    for group in char_groups:
+                        if self._group_overlaps_image(group.get('merged_bbox'), img_bbox):
+                            overlapping_groups.append(group)
                     
-                    # Merge bboxes
-                    all_bboxes = [img_bbox] + [g['merged_bbox'] for g in overlapping_groups]
-                    merged_bbox = self._merge_bboxes(all_bboxes)
+                    if overlapping_groups:
+                        # SHAPE (Image + Text)
+                        # Sort groups by reading order
+                        overlapping_groups.sort(key=lambda g: (g['merged_bbox'][1], g['merged_bbox'][0]))
+                        
+                        # Merge bboxes
+                        all_bboxes = [img_bbox] + [g['merged_bbox'] for g in overlapping_groups]
+                        merged_bbox = self._merge_bboxes(all_bboxes)
+                        
+                        merged_text = ' '.join([g.get('text', '') for g in overlapping_groups]).strip()
+                        
+                        shapes_list.append({
+                            'type': 'shape',
+                            'bbox': merged_bbox,
+                            'text': merged_text,
+                            'image_bbox': img_bbox,
+                            'image_xref': img.get('xref'),
+                            'groups_count': len(overlapping_groups),
+                            'claimed_groups_texts': [g.get('text', '')[:30] for g in overlapping_groups]
+                        })
+                        
+                        # Mark groups as claimed
+                        for g in overlapping_groups:
+                            g['claimed_by_shape'] = True
+                    else:
+                        # Pure Image
+                        if img_width >= 50 and img_height >= 50:
+                            page_images_list.append({
+                                'bbox': img_bbox,
+                                'xref': img.get('xref'),
+                                'width': img_width,
+                                'height': img_height,
+                                'name': img.get('name', '')
+                            })
+    
+                # Step 2: Find Tables (Basic for now, can implement the complex logic later if needed)
+                basic_tables_finder = page.find_tables()
+                basic_tables = basic_tables_finder.tables if hasattr(basic_tables_finder, 'tables') else list(basic_tables_finder)
+                
+                basic_table_list = []
+                for t_idx, table in enumerate(basic_tables):
+                    table_bbox = list(table.bbox)
                     
-                    merged_text = ' '.join([g.get('text', '') for g in overlapping_groups]).strip()
+                    # Check overlap with shapes
+                    overlaps_shape = False
+                    for shape in shapes_list:
+                        if self._simple_bbox_overlap(table_bbox, shape['bbox']):
+                            overlaps_shape = True
+                            break
                     
-                    shapes_list.append({
-                        'type': 'shape',
-                        'bbox': merged_bbox,
-                        'text': merged_text,
-                        'image_bbox': img_bbox,
-                        'image_xref': img.get('xref'),
-                        'groups_count': len(overlapping_groups),
-                        'claimed_groups_texts': [g.get('text', '')[:30] for g in overlapping_groups]
+                    if overlaps_shape:
+                        continue
+    
+                    basic_table_list.append({
+                        'table_index': t_idx,
+                        'bbox': table_bbox,
+                        'row_count': table.row_count,
+                        'col_count': table.col_count,
+                        'cells': [list(c) for c in table.cells] if table.cells else []
                     })
                     
-                    # Mark groups as claimed
-                    for g in overlapping_groups:
-                        g['claimed_by_shape'] = True
-                else:
-                    # Pure Image
-                    if img_width >= 50 and img_height >= 50:
-                        page_images_list.append({
-                            'bbox': img_bbox,
-                            'xref': img.get('xref'),
-                            'width': img_width,
-                            'height': img_height,
-                            'name': img.get('name', '')
-                        })
-
-            # Step 2: Find Tables (Basic for now, can implement the complex logic later if needed)
-            basic_tables_finder = page.find_tables()
-            basic_tables = basic_tables_finder.tables if hasattr(basic_tables_finder, 'tables') else list(basic_tables_finder)
-            
-            basic_table_list = []
-            for t_idx, table in enumerate(basic_tables):
-                table_bbox = list(table.bbox)
-                
-                # Check overlap with shapes
-                overlaps_shape = False
-                for shape in shapes_list:
-                    if self._simple_bbox_overlap(table_bbox, shape['bbox']):
-                        overlaps_shape = True
-                        break
-                
-                if overlaps_shape:
-                    continue
-
-                basic_table_list.append({
-                    'table_index': t_idx,
-                    'bbox': table_bbox,
-                    'row_count': table.row_count,
-                    'col_count': table.col_count,
-                    'cells': [list(c) for c in table.cells] if table.cells else []
-                })
-                
-                # Mark groups as claimed by table
-                for group in char_groups:
-                    if not group.get('claimed_by_shape') and self._bbox_overlaps(group['merged_bbox'], table_bbox):
-                        group['claimed_by_table'] = True
-
-            # Filter unclaimed groups
-            unclaimed_groups = [g for g in char_groups if not g.get('claimed_by_shape') and not g.get('claimed_by_table')]
-
-            return {
-                'width': width,
-                'height': height,
-                'char_groups': unclaimed_groups,
-                'tables': basic_table_list,
-                'shapes': shapes_list,
-                'page_images': page_images_list
-            }
+                    # Mark groups as claimed by table
+                    for group in char_groups:
+                        if not group.get('claimed_by_shape') and self._bbox_overlaps(group['merged_bbox'], table_bbox):
+                            group['claimed_by_table'] = True
+    
+                # Filter unclaimed groups
+                unclaimed_groups = [g for g in char_groups if not g.get('claimed_by_shape') and not g.get('claimed_by_table')]
+    
+                return {
+                    'width': width,
+                    'height': height,
+                    'char_groups': unclaimed_groups,
+                    'tables': basic_table_list,
+                    'shapes': shapes_list,
+                    'page_images': page_images_list
+                }
+        finally:
+            db.close()
 
     def _process_merging_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

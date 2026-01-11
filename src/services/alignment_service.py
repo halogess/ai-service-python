@@ -2,7 +2,8 @@
 import difflib
 import re
 from typing import List, Dict, Any, Tuple, Optional, Set
-from models import db, DokumenElemen, DokumenSection, DokumenPart
+from models import DokumenElemen, DokumenSection, DokumenPart
+from database import SessionLocal
 
 class AlignmentService:
     def __init__(self):
@@ -14,52 +15,56 @@ class AlignmentService:
         """
         Main entry point for alignment.
         """
-        # 1. Get OpenXML elements for this document (all body parts)
-        # We fetch all because we don't know exactly which ones are on this page yet
-        # But for optimization, we start matching from min_openxml_idx
-        elements = self._get_openxml_elements(doc_id)
-        
-        # 2. Get Section Data for margin logic
-        sections = self._get_doc_sections(doc_id)
-        current_section = self._get_section_for_page(sections, page_num)
-        
-        # 3. Filter Header/Footer Items (Frontend display logic moved here)
-        # In the original, the frontend filtered them for display but the alignment 
-        # ran on "flattened items". Here we align everything but mark them.
-        
-        # 4. Flatten Extraction Items (PDF Units)
-        pdf_units = self._flatten_extraction_items(extraction_items)
-        
-        # 5. Filter Header/Footer units from alignment candidates
-        # We align ONLY body content first. Header/Footer are handled separately or ignored.
-        body_units, header_footer_units = self._filter_header_footer_items(pdf_units, current_section, page_height)
-        
-        # 6. Perform Core Alignment
-        alignment_result = self._perform_alignment(
-            body_units, 
-            elements, 
-            min_openxml_idx
-        )
-        
-        return {
-            'success': True,
-            'alignments': alignment_result['alignments'],
-            'unaligned_pdf_units': alignment_result['unaligned_pdf_units'],
-            'header_footer_units': header_footer_units,
-            'max_openxml_idx': alignment_result['max_openxml_idx'],
-            'page_debug': alignment_result['debug_info']
-        }
+        db = SessionLocal()
+        try:
+            # 1. Get OpenXML elements for this document (all body parts)
+            # We fetch all because we don't know exactly which ones are on this page yet
+            # But for optimization, we start matching from min_openxml_idx
+            elements = self._get_openxml_elements(db, doc_id)
+            
+            # 2. Get Section Data for margin logic
+            sections = self._get_doc_sections(db, doc_id)
+            current_section = self._get_section_for_page(sections, page_num)
+            
+            # 3. Filter Header/Footer Items (Frontend display logic moved here)
+            # In the original, the frontend filtered them for display but the alignment 
+            # ran on "flattened items". Here we align everything but mark them.
+            
+            # 4. Flatten Extraction Items (PDF Units)
+            pdf_units = self._flatten_extraction_items(extraction_items)
+            
+            # 5. Filter Header/Footer units from alignment candidates
+            # We align ONLY body content first. Header/Footer are handled separately or ignored.
+            body_units, header_footer_units = self._filter_header_footer_items(pdf_units, current_section, page_height)
+            
+            # 6. Perform Core Alignment
+            alignment_result = self._perform_alignment(
+                body_units, 
+                elements, 
+                min_openxml_idx
+            )
+            
+            return {
+                'success': True,
+                'alignments': alignment_result['alignments'],
+                'unaligned_pdf_units': alignment_result['unaligned_pdf_units'],
+                'header_footer_units': header_footer_units,
+                'max_openxml_idx': alignment_result['max_openxml_idx'],
+                'page_debug': alignment_result['debug_info']
+            }
+        finally:
+            db.close()
 
-    def _get_openxml_elements(self, doc_id: int):
-        return db.session.query(DokumenElemen).join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id).filter(
+    def _get_openxml_elements(self, db_session, doc_id: int):
+        return db_session.query(DokumenElemen).join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id).filter(
             DokumenPart.dsec_id.in_(
-                db.session.query(DokumenSection.dsec_id).filter(DokumenSection.dokumen_id == doc_id)
+                db_session.query(DokumenSection.dsec_id).filter(DokumenSection.dokumen_id == doc_id)
             ),
             DokumenPart.dpart_type == 'body'
         ).order_by(DokumenElemen.delemen_sequence).all()
 
-    def _get_doc_sections(self, doc_id: int):
-        return DokumenSection.query.filter_by(dokumen_id=doc_id).order_by(DokumenSection.dsec_index).all()
+    def _get_doc_sections(self, db_session, doc_id: int):
+        return DokumenSection.query(DokumenSection).filter_by(dokumen_id=doc_id).order_by(DokumenSection.dsec_index).all() if hasattr(DokumenSection, 'query') else db_session.query(DokumenSection).filter_by(dokumen_id=doc_id).order_by(DokumenSection.dsec_index).all()
 
     def _get_section_for_page(self, sections, page_num):
         # Simplistic logic: assuming 1 section per document or linear flow
@@ -195,8 +200,94 @@ class AlignmentService:
         return ' '.join(texts)
 
     def _normalize_text(self, text):
-        if not text: return ''
-        return ''.join(text.lower().split())
+        """Normalize text for matching: 
+        - Convert Unicode mathematical characters to ASCII
+        - Normalize Greek letters
+        - Handle subscripts/superscripts
+        - Lowercase
+        - Remove whitespace
+        """
+        if not text:
+            return ''
+        
+        result = []
+        for char in text:
+            code = ord(char)
+            normalized = None
+            
+            # LATIN LETTERS (A-Z, a-z) - Mathematical variants
+            if 0x1D400 <= code <= 0x1D419: normalized = chr(ord('A') + (code - 0x1D400)) # Bold A-Z
+            elif 0x1D41A <= code <= 0x1D433: normalized = chr(ord('a') + (code - 0x1D41A)) # Bold a-z
+            elif 0x1D434 <= code <= 0x1D467: # Italic
+                if code == 0x1D455: normalized = 'h'
+                elif code < 0x1D455: normalized = chr(ord('a') + (code - 0x1D44E))
+                else: normalized = chr(ord('a') + (code - 0x1D44E)) # Logic adjusted to match original
+            elif 0x1D468 <= code <= 0x1D49B: normalized = chr(ord('A') + (code - 0x1D468)) if code <= 0x1D481 else chr(ord('a') + (code - 0x1D482)) # Bold Italic
+            elif 0x1D49C <= code <= 0x1D4CF: normalized = chr(ord('A') + (code - 0x1D49C)) if code <= 0x1D4B5 else chr(ord('a') + (code - 0x1D4B6)) # Script
+            elif 0x1D4D0 <= code <= 0x1D503: normalized = chr(ord('A') + (code - 0x1D4D0)) if code <= 0x1D4E9 else chr(ord('a') + (code - 0x1D4EA)) # Bold Script
+            elif 0x1D504 <= code <= 0x1D537: normalized = chr(ord('A') + (code - 0x1D504)) if code <= 0x1D51C else chr(ord('a') + (code - 0x1D51E)) # Fraktur
+            elif 0x1D538 <= code <= 0x1D56B: normalized = chr(ord('A') + (code - 0x1D538)) if code <= 0x1D550 else chr(ord('a') + (code - 0x1D552)) # Double-Struck
+            elif 0x1D56C <= code <= 0x1D59F: normalized = chr(ord('A') + (code - 0x1D56C)) if code <= 0x1D585 else chr(ord('a') + (code - 0x1D586)) # Bold Fraktur
+            elif 0x1D5A0 <= code <= 0x1D5D3: normalized = chr(ord('A') + (code - 0x1D5A0)) if code <= 0x1D5B9 else chr(ord('a') + (code - 0x1D5BA)) # Sans
+            elif 0x1D5D4 <= code <= 0x1D607: normalized = chr(ord('A') + (code - 0x1D5D4)) if code <= 0x1D5ED else chr(ord('a') + (code - 0x1D5EE)) # Sans Bold
+            elif 0x1D608 <= code <= 0x1D63B: normalized = chr(ord('A') + (code - 0x1D608)) if code <= 0x1D621 else chr(ord('a') + (code - 0x1D622)) # Sans Italic
+            elif 0x1D63C <= code <= 0x1D66F: normalized = chr(ord('A') + (code - 0x1D63C)) if code <= 0x1D655 else chr(ord('a') + (code - 0x1D656)) # Sans Bold Italic
+            elif 0x1D670 <= code <= 0x1D6A3: normalized = chr(ord('A') + (code - 0x1D670)) if code <= 0x1D689 else chr(ord('a') + (code - 0x1D68A)) # Monospace
+
+            # GREEK LETTERS
+            elif 0x1D6A8 <= code <= 0x1D6E1: normalized = chr(0x0391 + (code - 0x1D6A8)) if code <= 0x1D6C0 else chr(0x03B1 + (code - 0x1D6C2)) # Bold
+            elif 0x1D6E2 <= code <= 0x1D71B: normalized = chr(0x0391 + (code - 0x1D6E2)) if code <= 0x1D6FA else chr(0x03B1 + (code - 0x1D6FC)) # Italic
+            elif 0x1D71C <= code <= 0x1D755: normalized = chr(0x0391 + (code - 0x1D71C)) if code <= 0x1D734 else chr(0x03B1 + (code - 0x1D736)) # Bold Italic
+            elif 0x1D756 <= code <= 0x1D78F: normalized = chr(0x0391 + (code - 0x1D756)) if code <= 0x1D76E else chr(0x03B1 + (code - 0x1D770)) # Sans Bold
+            elif 0x1D790 <= code <= 0x1D7C9: normalized = chr(0x0391 + (code - 0x1D790)) if code <= 0x1D7A8 else chr(0x03B1 + (code - 0x1D7AA)) # Sans Bold Italic
+
+            # Common Math Symbols
+            elif code in [0x1D715, 0x1D6DB, 0x1D74F, 0x1D789, 0x1D7C3, 0x2202]: normalized = '∂'
+            elif char in '−–—‐‑‒―': normalized = '-'
+            elif char in '×∙·•⋅': normalized = '*'
+            elif char in '÷∕': normalized = '/'
+            elif char == '±': normalized = '+-'
+            elif char == '∓': normalized = '-+'
+            elif char in '＝⁼₌': normalized = '='
+            elif char in '＜‹〈⟨': normalized = '<'
+            elif char in '＞›〉⟩': normalized = '>'
+            elif char in '≤≦⩽': normalized = '<='
+            elif char in '≥≧⩾': normalized = '>='
+            elif char in '→←↑↓↔↕⇒⇐⇑⇓⇔': normalized = ''
+            elif char in '′': normalized = "'"
+            elif char in '″': normalized = "''"
+            elif char == '½': normalized = '1/2'
+            elif char == '⅓': normalized = '1/3'
+            elif char == '¼': normalized = '1/4'
+            elif char == '⅔': normalized = '2/3'
+            elif char == '¾': normalized = '3/4'
+            
+            # DIGITS (Bold, Double-Struck, Sans, Monospace, etc)
+            elif 0x1D7CE <= code <= 0x1D7FF:
+                base = 0x1D7CE
+                if code >= 0x1D7F6: base = 0x1D7F6 # Monospace
+                elif code >= 0x1D7EC: base = 0x1D7EC # Sans Bold
+                elif code >= 0x1D7E2: base = 0x1D7E2 # Sans
+                elif code >= 0x1D7D8: base = 0x1D7D8 # Double Struck
+                normalized = chr(ord('0') + (code - base))
+
+            # SUPERSCRIPTS / SUBSCRIPTS
+            elif code == 0x2070: normalized = '0'
+            elif code == 0x00B9: normalized = '1'
+            elif code == 0x00B2: normalized = '2'
+            elif code == 0x00B3: normalized = '3'
+            elif 0x2074 <= code <= 0x2079: normalized = chr(ord('0') + (code - 0x2070))
+            elif 0x2080 <= code <= 0x2089: normalized = chr(ord('0') + (code - 0x2080)) # Subscript digits
+            
+            # Fullwidth ASCII
+            elif 0xFF01 <= code <= 0xFF5E: normalized = chr(code - 0xFF00 + 0x20)
+
+            if normalized is None:
+                normalized = char
+            
+            result.append(normalized)
+        
+        return ''.join(''.join(result).lower().split())
 
     def _filter_header_footer_items(self, pdf_units, section, page_height):
         # Placeholder: assume no header/footer for now or implement bounding box check
@@ -283,18 +374,59 @@ class AlignmentService:
             'debug_info': {}
         }
 
-    def _extract_text_from_json_tree(self, tree):
-        if not tree: return ""
-        if isinstance(tree, dict):
-            if 'text' in tree: return tree['text']
-            # Recursive check
-            texts = []
-            for k, v in tree.items():
-                texts.append(self._extract_text_from_json_tree(v))
-            return " ".join(texts)
-        if isinstance(tree, list):
-            texts = []
-            for item in tree:
-                texts.append(self._extract_text_from_json_tree(item))
-            return " ".join(texts)
-        return str(tree)
+    def _extract_text_from_json_tree(self, json_tree):
+        """Recursively extract text from dokumen_elemen_json_tree.
+        
+        Images are converted to context-based placeholders [IMG:1] based on order.
+        """
+        if json_tree is None:
+            return ""
+        
+        # First pass: collect all items in order (text and images)
+        items = []
+        
+        def collect_items(node):
+            if isinstance(node, dict):
+                # Check if this is an image type element
+                if node.get('type') == 'image':
+                    items.append({'type': 'image'})
+                    return
+                
+                # Check for text content
+                if node.get('type') == 'text' and 'value' in node:
+                    items.append({'type': 'text', 'value': str(node['value'])})
+                    return
+                if 'value' in node and node.get('type') != 'image':
+                    items.append({'type': 'text', 'value': str(node['value'])})
+                if 'text' in node:
+                    items.append({'type': 'text', 'value': str(node['text'])})
+                if 't' in node:
+                    items.append({'type': 'text', 'value': str(node['t'])})
+                if 'content' in node:
+                    if isinstance(node['content'], str):
+                        items.append({'type': 'text', 'value': node['content']})
+                    else:
+                        collect_items(node['content'])
+                # Recurse through all values
+                for key, value in node.items():
+                    if key not in ['text', 't', 'content', 'value', 'type', 'rId']:
+                        collect_items(value)
+            elif isinstance(node, list):
+                for item in node:
+                    collect_items(item)
+        
+        collect_items(json_tree)
+        
+        # Second pass: generate count-based placeholders for images
+        # Use simple numbering: [IMG:1], [IMG:2], etc. based on order in element
+        result_parts = []
+        image_counter = 0
+        
+        for i, item in enumerate(items):
+            if item['type'] == 'text':
+                result_parts.append(item['value'])
+            elif item['type'] == 'image':
+                image_counter += 1
+                result_parts.append(f'[IMG:{image_counter}]')
+        
+        return ' '.join(result_parts).strip()
