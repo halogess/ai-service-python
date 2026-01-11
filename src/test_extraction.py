@@ -21,19 +21,12 @@ def main():
     print(f"--- Initializing Test with {TEST_PDF_PATH} ---")
     
     # Mocking Database Session for Extraction
-    # We need MergingExtractionService to retrieve a Dokumen object with our PDF path
-    
     mock_doc = MagicMock(spec=Dokumen)
     mock_doc.dokumen_id = DOC_ID
     mock_doc.dokumen_pdf_path = TEST_PDF_PATH
     
-    # Mock Session class
     mock_session = MagicMock()
     mock_session.query.return_value.get.return_value = mock_doc
-    
-    # Patch SessionLocal in services modules
-    # We need to verify where SessionLocal is imported. 
-    # In merging_extraction_service.py: from database import SessionLocal
     
     with unittest.mock.patch('services.merging_extraction_service.SessionLocal', return_value=mock_session):
         print("--- Starting Extraction (Mocked DB) ---")
@@ -62,18 +55,21 @@ def main():
             traceback.print_exc()
             return
 
-    # For Alignment, we need OpenXML elements. 
-    # Since we don't have DB, we can't really test alignment logic against real data.
-    # We will just verify the service instantiates and finishes (even if no matches).
-    
     print("\n--- Starting Alignment (Mocked DB - No OpenXML) ---")
     
     mock_session_align = MagicMock()
-    # Mock return empty list for OpenXML elements and Sections to avoid crash
+    # Mock OpenXML elements as empty list
     mock_session_align.query.return_value.join.return_value.filter.return_value.order_by.return_value.all.return_value = []
-    mock_session_align.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = []
     
-    with unittest.mock.patch('services.alignment_service.SessionLocal', return_value=mock_session):
+    # Mock Sections with real integers for margin logic
+    mock_section = MagicMock()
+    mock_section.dsec_margin_top_twips = 1440  # 1 inch
+    mock_section.dsec_margin_bottom_twips = 1440
+    mock_section.dsec_page_height_twips = 15840 # 11 inches
+    
+    # Patch _get_doc_sections directly to avoid SQLAlchemy mock chain hell
+    with unittest.mock.patch('services.alignment_service.SessionLocal', return_value=mock_session_align), \
+         unittest.mock.patch.object(AlignmentService, '_get_doc_sections', return_value=[mock_section]):
          try:
             aligner = AlignmentService()
             # We use the items extracted above

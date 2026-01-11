@@ -43,15 +43,23 @@ class AntrianService:
         if task:
             logger.info(f"Found visual task in queue: ID {task.antrian_id}")
         return task
+
+    def get_next_struktur_task(self) -> Optional[Antrian]:
+        """
+        Get the next structure/alignment task in queue.
+        """
+        task = self.db.query(Antrian).filter(
+            Antrian.antrian_struktur_status == 'in_queue'
+        ).order_by(Antrian.antrian_created_at).first()
+        
+        if task:
+            logger.info(f"Found struktur task in queue: ID {task.antrian_id}")
+        return task
+
     
     def update_status(self, task: Antrian, status: str, error_message: str = None):
         """
-        Update task status.
-        
-        Args:
-            task: Antrian object
-            status: New status ('processing', 'completed', 'failed')
-            error_message: Optional error message for failed status
+        Update task status (Visual).
         """
         task.antrian_visual_status = status
         if error_message:
@@ -59,7 +67,20 @@ class AntrianService:
         elif status == 'completed':
             task.antrian_error_message = None
         self.db.commit()
-        logger.info(f"Task {task.antrian_id} status updated to: {status}")
+        logger.info(f"Task {task.antrian_id} visual status updated to: {status}")
+
+    def update_struktur_status(self, task: Antrian, status: str, error_message: str = None):
+        """
+        Update task status (Struktur).
+        """
+        task.antrian_struktur_status = status
+        if error_message:
+            task.antrian_error_message = error_message[:255]
+        elif status == 'completed':
+            task.antrian_error_message = None
+        self.db.commit()
+        logger.info(f"Task {task.antrian_id} struktur status updated to: {status}")
+
         
     def get_pdf_path(self, task: Antrian) -> str:
         """
