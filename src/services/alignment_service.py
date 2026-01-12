@@ -10,6 +10,52 @@ class AlignmentService:
     def __init__(self):
         pass
 
+    def align_document(self, extraction_results: List[Dict], doc_id: int) -> List[Dict]:
+        """
+        Align all pages of a document.
+        
+        Args:
+            extraction_results: List of extraction results per page
+            doc_id: Document ID
+            
+        Returns:
+            List of alignment results per page
+        """
+        results = []
+        min_openxml_idx = 0
+        
+        for page_data in extraction_results:
+            page_num = page_data.get('page', 1)
+            items = page_data.get('items', [])
+            page_width = page_data.get('page_width', 595)
+            page_height = page_data.get('page_height', 842)
+            total_pages = len(extraction_results)
+            
+            result = self.align(
+                doc_id, page_num, items,
+                page_width, page_height, total_pages,
+                min_openxml_idx
+            )
+            
+            # Update min_openxml_idx for next page
+            if result.get('success'):
+                min_openxml_idx = result.get('max_openxml_idx', min_openxml_idx)
+            
+            results.append({
+                'success': result.get('success', False),
+                'page': page_num,
+                'alignments': result.get('alignments', []),
+                'unaligned_pdf_units': result.get('unaligned_pdf_units', []),
+                'header_footer_units': result.get('header_footer_units', []),
+                'max_openxml_idx': result.get('max_openxml_idx', 0),
+                'stats': {
+                    'aligned_count': len(result.get('alignments', [])),
+                    'unaligned_count': len(result.get('unaligned_pdf_units', []))
+                }
+            })
+        
+        return results
+
     def align(self, doc_id: int, page_num: int, extraction_items: List[Dict], 
               page_width: float, page_height: float, total_pages: int,
               min_openxml_idx: int = 0) -> Dict[str, Any]:
@@ -25,6 +71,34 @@ class AlignmentService:
             current_section = self._get_section_for_page(sections, page_width, page_height)
             if not current_section and sections:
                 current_section = sections[0]
+
+            # Build section data (matches legacy /dokumen-elemen-api/sections payload)
+            section_data = None
+            if current_section:
+                twips_per_point = 20
+                section_data = {
+                    'dsec_id': current_section.dsec_id,
+                    'dsec_index': current_section.dsec_index,
+                    'page_width_twips': current_section.dsec_page_width_twips,
+                    'page_height_twips': current_section.dsec_page_height_twips,
+                    'page_width_pt': current_section.dsec_page_width_twips / twips_per_point if current_section.dsec_page_width_twips else None,
+                    'page_height_pt': current_section.dsec_page_height_twips / twips_per_point if current_section.dsec_page_height_twips else None,
+                    'orientation': current_section.dsec_orientation,
+                    'margin_top_twips': current_section.dsec_margin_top_twips,
+                    'margin_bottom_twips': current_section.dsec_margin_bottom_twips,
+                    'margin_left_twips': current_section.dsec_margin_left_twips,
+                    'margin_right_twips': current_section.dsec_margin_right_twips,
+                    'margin_top_pt': current_section.dsec_margin_top_twips / twips_per_point if current_section.dsec_margin_top_twips else None,
+                    'margin_bottom_pt': current_section.dsec_margin_bottom_twips / twips_per_point if current_section.dsec_margin_bottom_twips else None,
+                    'margin_left_pt': current_section.dsec_margin_left_twips / twips_per_point if current_section.dsec_margin_left_twips else None,
+                    'margin_right_pt': current_section.dsec_margin_right_twips / twips_per_point if current_section.dsec_margin_right_twips else None,
+                    'header_margin_twips': current_section.dsec_header_margin_twips,
+                    'footer_margin_twips': current_section.dsec_footer_margin_twips,
+                    'header_margin_pt': current_section.dsec_header_margin_twips / twips_per_point if current_section.dsec_header_margin_twips else None,
+                    'footer_margin_pt': current_section.dsec_footer_margin_twips / twips_per_point if current_section.dsec_footer_margin_twips else None,
+                    'gutter_twips': current_section.dsec_gutter_twips,
+                    'gutter_position': current_section.dsec_gutter_position
+                }
 
             # 2. Flatten Extraction Items (PDF Units)
             all_pdf_units = self._flatten_extraction_items(extraction_items)
@@ -45,6 +119,7 @@ class AlignmentService:
             
             # Add table debug info to page debug
             alignment_result['debug_info']['table_processing'] = table_debug
+            alignment_result['debug_info']['section_data'] = section_data
 
             return {
                 'success': True,
@@ -52,7 +127,7 @@ class AlignmentService:
                 'alignments': alignment_result['final_alignments'], # Backward compat alias
                 'final_alignments': alignment_result['final_alignments'],
                 'shape_alignments': alignment_result['shape_alignments'],
-                'unaligned_pdf_units': alignment_result['unaligned_final'],
+                'unaligned_pdf_units': [pdf_units[i] for i in alignment_result['unaligned_final'] if i < len(pdf_units)],
                 'unaligned_pdf_units_phase1': alignment_result['unaligned_after_phase1'],
                 'unaligned_openxml_units': self._format_unaligned_openxml(openxml_units, alignment_result['unaligned_openxml']),
                 'header_footer_units': header_footer_units,
@@ -134,7 +209,11 @@ class AlignmentService:
                          collected.append({'item_idx': item_idx, 'item_type': itype, 'text': ' '.join(all_text), 'bbox': ibbox, 'is_cell': False, 'is_hline_table_unit': True})
             elif itype == 'shape':
                 text = idata.get('text', '')
-                if text.strip():
+                image_bbox = idata.get('image_bbox')
+                if text.strip() or image_bbox:
+                     # If it's an image-shape with no text, use [IMG] placeholder
+                     if not text.strip() and image_bbox:
+                         text = '[IMG]'
                      collected.append({'item_idx': item_idx, 'item_type': itype, 'text': text, 'bbox': ibbox, 'is_cell': False})
             elif itype == 'image':
                 collected.append({'item_idx': item_idx, 'item_type': itype, 'text': None, 'bbox': ibbox, 'is_cell': False, 'is_image': True})
@@ -277,6 +356,66 @@ class AlignmentService:
             return ' '.join(texts)
         return ""
 
+    def _extract_text_from_json_tree(self, json_tree):
+        """Recursively extract text from dokumen_elemen_json_tree.
+        
+        Images are converted to context-based placeholders [IMG:abc123] where the hash
+        is derived from surrounding text. This enables matching even when image counts
+        differ between PDF and Word (e.g., charts in Word but not in PDF).
+        Ported from legacy dokumen_elemen_routes.py.
+        """
+        if json_tree is None:
+            return ""
+        
+        # First pass: collect all items in order (text and images)
+        items = []
+        
+        def collect_items(node):
+            if isinstance(node, dict):
+                # Check if this is an image type element
+                if node.get('type') == 'image':
+                    items.append({'type': 'image'})
+                    return
+                
+                # Check for text content
+                if node.get('type') == 'text' and 'value' in node:
+                    items.append({'type': 'text', 'value': str(node['value'])})
+                    return
+                if 'value' in node and node.get('type') != 'image':
+                    items.append({'type': 'text', 'value': str(node['value'])})
+                if 'text' in node:
+                    items.append({'type': 'text', 'value': str(node['text'])})
+                if 't' in node:
+                    items.append({'type': 'text', 'value': str(node['t'])})
+                if 'content' in node:
+                    if isinstance(node['content'], str):
+                        items.append({'type': 'text', 'value': node['content']})
+                    else:
+                        collect_items(node['content'])
+                # Recurse through all values
+                for key, value in node.items():
+                    if key not in ['text', 't', 'content', 'value', 'type', 'rId']:
+                        collect_items(value)
+            elif isinstance(node, list):
+                for item in node:
+                    collect_items(item)
+        
+        collect_items(json_tree)
+        
+        # Second pass: generate count-based placeholders for images
+        # Use simple numbering: [IMG:1], [IMG:2], etc. based on order in element
+        result_parts = []
+        image_counter = 0
+        
+        for i, item in enumerate(items):
+            if item['type'] == 'text':
+                result_parts.append(item['value'])
+            elif item['type'] == 'image':
+                image_counter += 1
+                result_parts.append(f'[IMG:{image_counter}]')
+        
+        return ' '.join(result_parts).strip()
+
     def _extract_text_and_images_separately(self, json_tree):
         if json_tree is None:
             return {'text_only': '', 'images': [], 'has_images': False, 'combined': '', 'ordered_items': []}
@@ -340,10 +479,21 @@ class AlignmentService:
         global_image_counter = 0
         
         for elem in elements:
-            elem_has_shape = self._has_shape_content(elem.delemen_json_tree)
+            # CRITICAL: Parse JSON tree from string (stored as TEXT in database)
+            json_tree = elem.delemen_json_tree
+            if isinstance(json_tree, str):
+                try:
+                    import json
+                    json_tree = json.loads(json_tree)
+                except:
+                    json_tree = {}
+            elif json_tree is None:
+                json_tree = {}
+            
+            elem_has_shape = self._has_shape_content(json_tree)
             
             if self._is_table_element(elem.delemen_type):
-                cells = self._extract_table_cells(elem.delemen_json_tree)
+                cells = self._extract_table_cells(json_tree)
                 table_info = {
                     'elem_id': elem.delemen_id, 'cells_count': len(cells), 'has_shape': elem_has_shape,
                     'units_created': 0, 'action': ''
@@ -371,7 +521,7 @@ class AlignmentService:
                     })
                 table_debug.append(table_info)
             else:
-                content = self._extract_text_and_images_separately(elem.delemen_json_tree)
+                content = self._extract_text_and_images_separately(json_tree)
                 if content['has_images']:
                     text_unit_created = False
                     for item in content['ordered_items']:
@@ -394,7 +544,7 @@ class AlignmentService:
                                 })
                                 text_unit_created = True
                 else:
-                    text = content['combined'] if content['combined'] else self._extract_text_from_json_tree(elem.delemen_json_tree)
+                    text = content['combined'] if content['combined'] else self._extract_text_from_json_tree(json_tree)
                     units.append({
                         'unit_id': str(elem.delemen_id), 'elem_id': elem.delemen_id, 'elem_seq': elem.delemen_sequence,
                         'elem_type': elem.delemen_type, 'text': text, 'text_normalized': self._normalize_text(text).rstrip('.:'),
@@ -417,11 +567,33 @@ class AlignmentService:
         )
 
         final_align = self._cleanup_punctuation_alignments(final_align)
-        final_align, _ = self._resolve_shape_alignment_conflicts(final_align, pdf_units)
-        final_align, final_un_pdf, _ = self._attach_shape_clusters_to_next_alignment(final_align, final_un_pdf, pdf_units)
+        final_align, shape_conflict_debug = self._resolve_shape_alignment_conflicts(final_align, pdf_units)
+        final_align, final_un_pdf, shape_attach_debug = self._attach_shape_clusters_to_next_alignment(final_align, final_un_pdf, pdf_units)
+
+        # Legacy debug fields
+        p1_debug['pass2_shape_debug'] = []
+        p1_debug['pass2_shape_matched'] = 0
+        p1_debug['pass2_consumed_pdf'] = []
+        p1_debug['shape_openxml_count'] = 0
+        p1_debug['non_shape_openxml_count'] = len(openxml_units)
+        p1_debug['shape_conflict_debug'] = shape_conflict_debug
+        p1_debug['shape_conflict_count'] = len(shape_conflict_debug)
+        p1_debug['shape_attach_debug'] = shape_attach_debug
+        p1_debug['shape_attach_count'] = len(shape_attach_debug)
 
         max_idx = min_openxml_idx
         if p1_debug.get('max_openxml_idx'): max_idx = p1_debug['max_openxml_idx']
+
+        # Filter unaligned OpenXML to only those within this page's sequence range
+        page_unaligned_openxml = p1_un_ox
+        if p1_align and p1_un_ox:
+            aligned_sequences = [a.get('element_sequence') or 0 for a in p1_align]
+            min_seq = min(aligned_sequences)
+            max_seq = max(aligned_sequences)
+            page_unaligned_openxml = [
+                idx for idx in p1_un_ox
+                if min_seq <= (openxml_units[idx].get('elem_seq') or 0) <= max_seq
+            ]
 
         return {
             'phase1_alignments': p1_align,
@@ -429,107 +601,414 @@ class AlignmentService:
             'shape_alignments': [],
             'unaligned_after_phase1': p1_un_pdf,
             'unaligned_final': final_un_pdf,
-            'unaligned_openxml': p1_un_ox,
+            'unaligned_openxml': page_unaligned_openxml,
             'debug_info': p1_debug,
             'max_openxml_idx': max_idx
         }
 
     def _perform_char_alignment(self, pdf_units, openxml_units, min_openxml_idx=0):
         if not pdf_units or not openxml_units:
-            return [], list(range(len(pdf_units))), list(range(len(openxml_units))), {'max_openxml_idx': min_openxml_idx}
+            return [], list(range(len(pdf_units))), list(range(len(openxml_units))), {
+                'max_openxml_idx': min_openxml_idx,
+                'unaligned_openxml_indices': list(range(len(openxml_units)))
+            }
 
         pdf_concat = ''
-        pdf_map = []
+        pdf_char_map = []
+        pdf_unit_ranges = []
+        page_number_indices = set()
+
         for i, u in enumerate(pdf_units):
-            t = u['text_normalized']
-            for _ in t: pdf_map.append(i)
-            pdf_concat += t
-        
-        ox_concat = ''
-        ox_map = []
-        for i, u in enumerate(openxml_units):
-            t = u['text_normalized']
-            for _ in t: ox_map.append(i)
-            ox_concat += t
-
-        sm = difflib.SequenceMatcher(None, pdf_concat, ox_concat, autojunk=False)
-        blocks = sm.get_matching_blocks()
-        blocks = sorted(blocks, key=lambda x: x.b)
-
-        consumed_ox_chars = set() # Optional if blocks are disjoint, but safe to keep checking if needed. 
-        # Actually diffib blocks ARE disjoint. 
-        # But let's stick to cleaning up the unit-level block.
-        pdf_assign = {}
-        ox_to_pdf = {}
-        suspicious = set()
-
-        for b in blocks:
-            for off in range(b.size):
-                pi = b.a + off
-                oi = b.b + off
-                if pi < len(pdf_map) and oi < len(ox_map):
-                    uidx = pdf_map[pi]
-                    oidx = ox_map[oi]
-                    # if oidx in consumed_ox: continue  <-- REMOVE THIS
-                    if uidx in pdf_assign:
-                        if pdf_assign[uidx] != oidx: continue 
-                    else:
-                        if oidx < min_openxml_idx: continue
-                        violation = False
-                        for p, o in pdf_assign.items():
-                            if uidx > p and oidx < o: violation = True; break
-                            if uidx < p and oidx > o: violation = True; break
-                        if violation: continue
-                        pdf_assign[uidx] = oidx
-                    
-                    # consumed_ox.add(oidx) <-- REMOVE THIS
-                    if oidx not in ox_to_pdf: ox_to_pdf[oidx] = {}
-                    if uidx not in ox_to_pdf[oidx]: ox_to_pdf[oidx][uidx] = 0
-                    ox_to_pdf[oidx][uidx] += 1
-        
-        suspicious = self._detect_suspicious_page_numbers(pdf_units, pdf_assign, ox_to_pdf)
-        
-        alignments = []
-        for oidx, pdata in ox_to_pdf.items():
-            valid_pdata = {k:v for k,v in pdata.items() if k not in suspicious}
-            if not valid_pdata: continue
-            
-            ou = openxml_units[oidx]
-            matched = []
-            mbbox = None
-            for pidx, cnt in valid_pdata.items():
-                pu = pdf_units[pidx]
-                sc = cnt / len(pu['text_normalized']) if pu['text_normalized'] else 0
-                matched.append({
-                    'pdf_unit_id': pu['unit_id'], 'item_idx': pu['item_idx'], 'item_type': pu['item_type'],
-                    'text': pu['text'], 'bbox': pu['bbox'], 'matched_count': cnt, 'score': round(sc, 3),
-                    'is_cell': pu['is_cell']
+            if u.get('is_page_number', False):
+                page_number_indices.add(i)
+            text = u['text_normalized']
+            start = len(pdf_concat)
+            for _ in text:
+                pdf_char_map.append(i)
+            pdf_concat += text
+            if text:
+                pdf_unit_ranges.append({
+                    'unit_idx': i,
+                    'unit_id': u['unit_id'],
+                    'start': start,
+                    'end': len(pdf_concat),
+                    'text': u['text'][:50],
+                    'text_normalized': text[:50],
+                    'item_type': u['item_type']
                 })
-                if pu.get('bbox'):
-                    b = pu['bbox']
-                    if mbbox is None: mbbox = list(b)
+
+        openxml_concat = ''
+        openxml_char_map = []
+        openxml_unit_ranges = []
+
+        for i, u in enumerate(openxml_units):
+            text = u['text_normalized']
+            start = len(openxml_concat)
+            for _ in text:
+                openxml_char_map.append(i)
+            openxml_concat += text
+            if text:
+                openxml_unit_ranges.append({
+                    'unit_idx': i,
+                    'unit_id': u['unit_id'],
+                    'start': start,
+                    'end': len(openxml_concat),
+                    'text': u['text'][:50],
+                    'text_normalized': text[:50],
+                    'elem_type': u['elem_type']
+                })
+
+        sm = difflib.SequenceMatcher(None, pdf_concat, openxml_concat, autojunk=False)
+        matching_blocks = sm.get_matching_blocks()
+        sorted_blocks = sorted(matching_blocks, key=lambda x: x.b)
+
+        # Log gap analysis to file (legacy behavior)
+        with open('gap_analysis.log', 'w', encoding='utf-8') as gap_log:
+            gap_log.write("=" * 80 + "\n")
+            gap_log.write("GAP ANALYSIS - What OpenXML content is NOT being matched\n")
+            gap_log.write("=" * 80 + "\n\n")
+
+            prev_end_ox = 0
+            for i, block in enumerate(sorted_blocks):
+                if block.size == 0:
+                    continue
+                gap = block.b - prev_end_ox
+                if gap > 50:
+                    gap_log.write(f"\n[GAP {i}] OX positions {prev_end_ox} to {block.b} (size: {gap} chars)\n")
+                    gap_content = openxml_concat[prev_end_ox:block.b]
+                    gap_log.write(f"  Content: \"{gap_content[:200]}...\"\n")
+                    gap_units = []
+                    for unit_range in openxml_unit_ranges:
+                        if unit_range['start'] < block.b and unit_range['end'] > prev_end_ox:
+                            gap_units.append(unit_range)
+                    gap_log.write(f"  Units in gap: {len(gap_units)}\n")
+                    for u in gap_units[:5]:
+                        gap_log.write(f"    U{u['unit_idx']}: {u['elem_type']} \"{u['text'][:40]}...\"\n")
+                gap_log.write(f"\nBlock {i}: OX[{block.b}], PDF[{block.a}], size={block.size}\n")
+                gap_log.write(f"  Matched text: \"{pdf_concat[block.a:block.a + min(block.size, 50)]}...\"\n")
+                prev_end_ox = block.b + block.size
+
+        consumed_openxml_positions = set()
+        pdf_unit_assignment = {}
+        openxml_to_pdf = {}
+        match_debug = {}
+        matching_log = []
+        traversal_log = []
+
+        for block_idx, block in enumerate(sorted_blocks):
+            if block.size == 0:
+                continue
+
+            block_log = {
+                'block_num': block_idx,
+                'pdf_start': block.a,
+                'openxml_start': block.b,
+                'size': block.size,
+                'matched_text': pdf_concat[block.a:block.a + min(block.size, 30)],
+                'matches': []
+            }
+
+            for offset in range(block.size):
+                pdf_char_idx = block.a + offset
+                openxml_char_idx = block.b + offset
+
+                char = pdf_concat[pdf_char_idx] if pdf_char_idx < len(pdf_concat) else '?'
+                pdf_idx = pdf_char_map[pdf_char_idx] if pdf_char_idx < len(pdf_char_map) else -1
+                openxml_idx = openxml_char_map[openxml_char_idx] if openxml_char_idx < len(openxml_char_map) else -1
+
+                log_entry = {
+                    'step': len(traversal_log),
+                    'block': block_idx,
+                    'offset': offset,
+                    'char': char,
+                    'pdf_char_idx': pdf_char_idx,
+                    'openxml_char_idx': openxml_char_idx,
+                    'pdf_unit': pdf_idx,
+                    'openxml_unit': openxml_idx,
+                    'pdf_unit_id': pdf_units[pdf_idx]['unit_id'] if 0 <= pdf_idx < len(pdf_units) else None,
+                    'openxml_unit_id': openxml_units[openxml_idx]['unit_id'] if 0 <= openxml_idx < len(openxml_units) else None,
+                    'action': None,
+                    'reason': None
+                }
+
+                if openxml_char_idx in consumed_openxml_positions:
+                    log_entry['action'] = 'SKIP'
+                    log_entry['reason'] = 'openxml_pos_consumed'
+                    traversal_log.append(log_entry)
+                    continue
+
+                if pdf_char_idx < len(pdf_char_map) and openxml_char_idx < len(openxml_char_map):
+                    is_shape_pdf = False
+                    if 0 <= pdf_idx < len(pdf_units):
+                        is_shape_pdf = pdf_units[pdf_idx].get('item_type') == 'shape'
+
+                    if pdf_idx in pdf_unit_assignment and not is_shape_pdf:
+                        if pdf_unit_assignment[pdf_idx] != openxml_idx:
+                            log_entry['action'] = 'SKIP'
+                            log_entry['reason'] = f'pdf_assigned_to_different: {pdf_unit_assignment[pdf_idx]}'
+                            traversal_log.append(log_entry)
+                            continue
+                        log_entry['reason'] = 'continue_existing_assignment'
                     else:
-                        mbbox[0] = min(mbbox[0], b[0])
-                        mbbox[1] = min(mbbox[1], b[1])
-                        mbbox[2] = max(mbbox[2], b[2])
-                        mbbox[3] = max(mbbox[3], b[3])
-            
-            matched.sort(key=lambda x: x['item_idx'])
-            alignments.append({
-                'element_id': ou['elem_id'], 'element_sequence': ou.get('elem_seq'), 'element_type': ou['elem_type'],
-                'is_table': ou['is_cell'],
-                'element_text': ou['text'],
-                'matched_pdf_units': matched, 'merged_bbox': mbbox,
-                'cells': None
+                        if openxml_idx < min_openxml_idx:
+                            log_entry['action'] = 'SKIP'
+                            log_entry['reason'] = f'cross_page_backward: openxml_idx={openxml_idx} < min_from_prev_page={min_openxml_idx}'
+                            traversal_log.append(log_entry)
+                            continue
+
+                        if not is_shape_pdf:
+                            backward_violation = False
+                            violation_reason = None
+
+                            for other_pdf_idx, other_openxml_idx in pdf_unit_assignment.items():
+                                if pdf_idx > other_pdf_idx and openxml_idx < other_openxml_idx:
+                                    backward_violation = True
+                                    violation_reason = f'pdf[{pdf_idx}] > pdf[{other_pdf_idx}] but openxml[{openxml_idx}] < openxml[{other_openxml_idx}]'
+                                    break
+                                if pdf_idx < other_pdf_idx and openxml_idx > other_openxml_idx:
+                                    backward_violation = True
+                                    violation_reason = f'pdf[{pdf_idx}] < pdf[{other_pdf_idx}] but openxml[{openxml_idx}] > openxml[{other_openxml_idx}]'
+                                    break
+
+                            if backward_violation:
+                                log_entry['action'] = 'SKIP'
+                                log_entry['reason'] = f'backward_match_prevented: {violation_reason}'
+                                traversal_log.append(log_entry)
+                                continue
+
+                            pdf_unit_assignment[pdf_idx] = openxml_idx
+                            log_entry['reason'] = 'new_assignment'
+                        else:
+                            log_entry['reason'] = 'shape_multi_match'
+
+                    consumed_openxml_positions.add(openxml_char_idx)
+
+                    if openxml_idx not in openxml_to_pdf:
+                        openxml_to_pdf[openxml_idx] = {}
+                    if pdf_idx not in openxml_to_pdf[openxml_idx]:
+                        openxml_to_pdf[openxml_idx][pdf_idx] = 0
+                    openxml_to_pdf[openxml_idx][pdf_idx] += 1
+
+                    log_entry['action'] = 'MATCH'
+                    log_entry['matched_count'] = openxml_to_pdf[openxml_idx][pdf_idx]
+                    traversal_log.append(log_entry)
+
+                    debug_key = (openxml_idx, pdf_idx)
+                    if debug_key not in match_debug:
+                        match_debug[debug_key] = {'matched_chars': []}
+                    match_debug[debug_key]['matched_chars'].append(pdf_concat[pdf_char_idx])
+
+                    if len(block_log['matches']) < 5:
+                        block_log['matches'].append({
+                            'char': pdf_concat[pdf_char_idx],
+                            'pdf_unit': pdf_idx,
+                            'openxml_unit': openxml_idx
+                        })
+
+            if block_log['matches']:
+                matching_log.append(block_log)
+
+        unit_matching_summary = []
+        for i, u in enumerate(pdf_units):
+            matched_to = []
+            for openxml_idx, pdf_counts in openxml_to_pdf.items():
+                if i in pdf_counts:
+                    matched_to.append({
+                        'openxml_unit_idx': openxml_idx,
+                        'openxml_unit_id': openxml_units[openxml_idx]['unit_id'],
+                        'matched_chars': pdf_counts[i]
+                    })
+
+            unit_matching_summary.append({
+                'pdf_unit_idx': i,
+                'unit_id': u['unit_id'],
+                'item_type': u['item_type'],
+                'text': u['text'][:30],
+                'consumed': i in pdf_unit_assignment,
+                'is_page_number': u.get('is_page_number', False),
+                'matched_to': matched_to
             })
-            
-        alignments.sort(key=lambda x: x.get('element_sequence') or 0)
-        
-        unaligned_pdf = [i for i in range(len(pdf_units)) if i not in pdf_assign and i not in suspicious]
-        unaligned_ox = [i for i in range(len(openxml_units)) if i not in ox_to_pdf]
-        max_oidx = max(pdf_assign.values()) if pdf_assign else min_openxml_idx
-        
-        return alignments, unaligned_pdf, unaligned_ox, {'max_openxml_idx': max_oidx, 'unaligned_openxml_indices': unaligned_ox}
+
+        suspicious_page_numbers = self._detect_suspicious_page_numbers(pdf_units, pdf_unit_assignment, openxml_to_pdf)
+
+        for entry in unit_matching_summary:
+            entry['is_suspicious_page_number'] = entry['pdf_unit_idx'] in suspicious_page_numbers
+
+        filtered_openxml_to_pdf = {}
+        for openxml_idx, pdf_counts in openxml_to_pdf.items():
+            filtered_counts = {
+                pdf_idx: count for pdf_idx, count in pdf_counts.items()
+                if pdf_idx not in suspicious_page_numbers
+            }
+            if filtered_counts:
+                filtered_openxml_to_pdf[openxml_idx] = filtered_counts
+
+        alignments = self._build_alignments_from_matching(
+            filtered_openxml_to_pdf, pdf_units, openxml_units, match_debug
+        )
+
+        unaligned_pdf_indices = [
+            i for i in range(len(pdf_units))
+            if i not in pdf_unit_assignment and i not in suspicious_page_numbers
+        ]
+
+        unaligned_openxml_indices = [
+            i for i in range(len(openxml_units))
+            if i not in filtered_openxml_to_pdf
+        ]
+
+        page_number_list = list(page_number_indices | suspicious_page_numbers)
+
+        debug_info = {
+            'pdf_concat_len': len(pdf_concat),
+            'openxml_concat_len': len(openxml_concat),
+            'pdf_concat_sample': pdf_concat[:200],
+            'openxml_concat_sample': openxml_concat[:200],
+            'pdf_unit_ranges': pdf_unit_ranges,
+            'openxml_unit_ranges': openxml_unit_ranges,
+            'matching_blocks_count': len(matching_blocks),
+            'matching_blocks': [
+                {
+                    'block_num': i, 'pdf_pos': b.a, 'openxml_pos': b.b, 'size': b.size,
+                    'text': pdf_concat[b.a:b.a + min(b.size, 50)]
+                }
+                for i, b in enumerate(matching_blocks) if b.size > 0
+            ][:30],
+            'matching_log': matching_log[:20],
+            'traversal_log': traversal_log,
+            'traversal_log_count': len(traversal_log),
+            'unit_matching_summary': unit_matching_summary,
+            'consumed_pdf_count': len(pdf_unit_assignment),
+            'page_number_indices': page_number_list,
+            'suspicious_page_numbers': list(suspicious_page_numbers),
+            'unaligned_pdf_count': len(unaligned_pdf_indices),
+            'unaligned_openxml_count': len(unaligned_openxml_indices),
+            'unaligned_openxml_indices': unaligned_openxml_indices,
+            'max_openxml_idx': max(pdf_unit_assignment.values()) if pdf_unit_assignment else min_openxml_idx
+        }
+
+        return alignments, unaligned_pdf_indices, unaligned_openxml_indices, debug_info
+
+    def _build_alignments_from_matching(self, openxml_to_pdf, pdf_units, openxml_units, match_debug):
+        """
+        Build alignment structure organized by OpenXML element.
+        Groups table cells under parent element and keeps text/image parts separate.
+        """
+        elem_alignments = {}
+        non_table_units = {}
+
+        for openxml_idx, pdf_counts in openxml_to_pdf.items():
+            if not pdf_counts:
+                continue
+
+            openxml_unit = openxml_units[openxml_idx]
+            elem_id = openxml_unit['elem_id']
+            unit_id = openxml_unit['unit_id']
+
+            matched_pdf = []
+            for pdf_idx, matched_count in pdf_counts.items():
+                pdf_unit = pdf_units[pdf_idx]
+                score = matched_count / len(pdf_unit['text_normalized']) if pdf_unit['text_normalized'] else 0
+
+                debug_key = (openxml_idx, pdf_idx)
+                debug_info = match_debug.get(debug_key, {})
+
+                matched_pdf.append({
+                    'pdf_unit_id': pdf_unit['unit_id'],
+                    'item_idx': pdf_unit['item_idx'],
+                    'item_type': pdf_unit['item_type'],
+                    'text': pdf_unit['text'],
+                    'bbox': pdf_unit['bbox'],
+                    'matched_count': matched_count,
+                    'score': round(score, 3),
+                    'is_cell': pdf_unit['is_cell'],
+                    'is_hline_table_unit': pdf_unit.get('is_hline_table_unit', False),
+                    'row': pdf_unit.get('row'),
+                    'col': pdf_unit.get('col'),
+                    'debug': {
+                        'matched_str': ''.join(debug_info.get('matched_chars', []))
+                    } if debug_info else {}
+                })
+
+            matched_pdf.sort(key=lambda x: x['item_idx'])
+
+            is_image_part = openxml_unit.get('is_image_part', False)
+
+            if is_image_part:
+                for mp_idx, mp in enumerate(matched_pdf):
+                    bbox = mp.get('bbox')
+                    individual_unit_id = f"{unit_id}_m{mp_idx}"
+                    non_table_units[individual_unit_id] = {
+                        'element_id': elem_id,
+                        'element_sequence': openxml_unit['elem_seq'],
+                        'element_type': openxml_unit['elem_type'],
+                        'is_table': False,
+                        'element_text': openxml_unit['text'],
+                        'matched_pdf_units': [mp],
+                        'merged_bbox': list(bbox) if bbox and len(bbox) >= 4 else None,
+                        'cells': None,
+                        'is_text_part': False,
+                        'is_image_part': True,
+                        'unit_id': individual_unit_id,
+                        'image_index': openxml_unit.get('image_index')
+                    }
+                continue
+
+            merged_bbox = self._merge_bboxes([mp.get('bbox') for mp in matched_pdf])
+
+            if openxml_unit['is_cell']:
+                if elem_id not in elem_alignments:
+                    elem_alignments[elem_id] = {
+                        'element_id': elem_id,
+                        'element_sequence': openxml_unit['elem_seq'],
+                        'element_type': openxml_unit['elem_type'],
+                        'is_table': True,
+                        'element_text': '',
+                        'matched_pdf_units': [],
+                        'merged_bbox': None,
+                        'cells': []
+                    }
+
+                elem_alignments[elem_id]['cells'].append({
+                    'row': openxml_unit['row'],
+                    'col': openxml_unit['col'],
+                    'text': openxml_unit['text'],
+                    'matched_pdf_units': matched_pdf,
+                    'merged_bbox': merged_bbox
+                })
+
+                if merged_bbox:
+                    parent_bbox = elem_alignments[elem_id]['merged_bbox']
+                    if parent_bbox is None:
+                        elem_alignments[elem_id]['merged_bbox'] = list(merged_bbox)
+                    else:
+                        elem_alignments[elem_id]['merged_bbox'] = self._merge_bboxes([parent_bbox, merged_bbox])
+            else:
+                is_text_part = openxml_unit.get('is_text_part', False)
+                is_image_part = openxml_unit.get('is_image_part', False)
+
+                non_table_units[unit_id] = {
+                    'element_id': elem_id,
+                    'element_sequence': openxml_unit['elem_seq'],
+                    'element_type': openxml_unit['elem_type'],
+                    'is_table': False,
+                    'element_text': openxml_unit['text'],
+                    'matched_pdf_units': matched_pdf,
+                    'merged_bbox': merged_bbox,
+                    'cells': None,
+                    'is_text_part': is_text_part,
+                    'is_image_part': is_image_part,
+                    'unit_id': unit_id
+                }
+
+        for alignment in elem_alignments.values():
+            if alignment.get('cells'):
+                alignment['cells'].sort(key=lambda c: (c['row'], c['col']))
+
+        result = list(elem_alignments.values()) + list(non_table_units.values())
+        result.sort(key=lambda x: x['element_sequence'] or 0)
+
+        return result
 
     def _detect_suspicious_page_numbers(self, pdf_units, assignment, ox_to_pdf):
         susp = set()
@@ -543,9 +1022,27 @@ class AlignmentService:
         return susp
  
     def _is_standalone_number(self, text):
-        if not text: return False
-        cl = text.strip().strip('-').strip('.').strip()
-        if cl.isdigit() and len(cl) <= 4: return True
+        if not text:
+            return False
+        
+        cleaned = text.strip()
+        cleaned = cleaned.strip('-').strip()
+        cleaned = cleaned.strip('.').strip()
+        
+        if cleaned.isdigit() and len(cleaned) <= 4:
+            return True
+        
+        import re
+        page_patterns = [
+            r'^-?\s*\d{1,4}\s*-?$',        # "7", "-7-", "- 7 -"
+            r'^page\s*\d{1,4}$',           # "Page 7"
+            r'^hal\.?\s*\d{1,4}$',         # "Hal. 7", "Hal 7"
+            r'^\d{1,4}\s*/\s*\d{1,4}$'     # "7/10"
+        ]
+        for pattern in page_patterns:
+            if re.match(pattern, cleaned.lower()):
+                return True
+        
         return False
     
     def _is_likely_page_number(self, text, bbox):
@@ -615,144 +1112,376 @@ class AlignmentService:
         final_un_ox = [un_ox_idx[i] for i in l_un_ox_local]
         return alignments, final_un_pdf, final_un_ox
 
+    def _get_alignment_min_item_idx(self, alignment):
+        indices = []
+        if alignment.get('is_table') and alignment.get('cells'):
+            for cell in alignment['cells']:
+                for u in cell.get('matched_pdf_units', []):
+                    idx = u.get('item_idx')
+                    if idx is not None:
+                        indices.append(idx)
+        else:
+            for u in alignment.get('matched_pdf_units', []):
+                idx = u.get('item_idx')
+                if idx is not None:
+                    indices.append(idx)
+        return min(indices) if indices else None
+
+    def _get_alignment_sequence(self, alignment):
+        seq = alignment.get('element_sequence')
+        if seq is None:
+            return 0
+        try:
+            return int(seq)
+        except (TypeError, ValueError):
+            return 0
+
+    def _is_bbox_fully_contained(self, inner_bbox, outer_bbox, tolerance=2):
+        if not inner_bbox or not outer_bbox or len(inner_bbox) < 4 or len(outer_bbox) < 4:
+            return False
+        if (abs(inner_bbox[0] - outer_bbox[0]) < tolerance and
+            abs(inner_bbox[1] - outer_bbox[1]) < tolerance and
+            abs(inner_bbox[2] - outer_bbox[2]) < tolerance and
+            abs(inner_bbox[3] - outer_bbox[3]) < tolerance):
+            return False
+        return (inner_bbox[0] >= outer_bbox[0] - tolerance and
+                inner_bbox[1] >= outer_bbox[1] - tolerance and
+                inner_bbox[2] <= outer_bbox[2] + tolerance and
+                inner_bbox[3] <= outer_bbox[3] + tolerance)
+
+    def _is_punctuation_only(self, text):
+        if not text:
+            return False
+        cleaned = text.strip()
+        if not cleaned:
+            return False
+        punctuation_chars = set('.:,;!?-')
+        return all(c in punctuation_chars for c in cleaned)
+
     def _cleanup_punctuation_alignments(self, alignments):
-        # Merge solitary punctuation alignment into container
+        if not alignments or len(alignments) < 2:
+            return alignments
+
+        punct_alignments = []
+        container_candidates = []
+
+        for i, align in enumerate(alignments):
+            merged_bbox = align.get('merged_bbox')
+            if not merged_bbox or len(merged_bbox) < 4:
+                continue
+
+            all_text = ' '.join(u.get('text', '') for u in align.get('matched_pdf_units', []))
+
+            if self._is_punctuation_only(all_text):
+                punct_alignments.append((i, align, merged_bbox))
+            else:
+                area = (merged_bbox[2] - merged_bbox[0]) * (merged_bbox[3] - merged_bbox[1])
+                container_candidates.append((i, align, merged_bbox, area))
+
+        if not punct_alignments or not container_candidates:
+            return alignments
+
         punct_to_remove = set()
-        for i, punct_align in enumerate(alignments):
-            if i in punct_to_remove: continue
-            units = punct_align.get('matched_pdf_units', [])
-            all_punct = all(not any(c.isalnum() for c in u.get('text', '')) for u in units)
-            if not all_punct: continue
-            
-            punct_bbox = punct_align.get('merged_bbox')
-            if not punct_bbox: continue
-            
+
+        for punct_idx, punct_align, punct_bbox in punct_alignments:
             best_container = None
             best_area = float('inf')
-            
-            for j, cont_align in enumerate(alignments):
-                if i == j or j in punct_to_remove: continue
-                cont_bbox = cont_align.get('merged_bbox')
-                if not cont_bbox: continue
-                
-                cont_area = (cont_bbox[2]-cont_bbox[0]) * (cont_bbox[3]-cont_bbox[1])
-                
-                if self._is_bbox_inside(punct_bbox, cont_bbox):
+
+            for cont_idx, cont_align, cont_bbox, cont_area in container_candidates:
+                if cont_idx == punct_idx:
+                    continue
+                if self._is_bbox_fully_contained(punct_bbox, cont_bbox):
                     if cont_area < best_area:
-                        best_container = cont_align
+                        best_container = (cont_idx, cont_align)
                         best_area = cont_area
-            
+
             if best_container:
-                for unit in units:
-                    unit['absorbed'] = True
-                    unit['absorbed_from_punctuation'] = True
-                    best_container['matched_pdf_units'].append(unit)
-                best_container['matched_pdf_units'].sort(key=lambda x: x.get('item_idx', 0))
-                
-                pb = best_container['merged_bbox']
-                pb[0] = min(pb[0], punct_bbox[0])
-                pb[1] = min(pb[1], punct_bbox[1])
-                pb[2] = max(pb[2], punct_bbox[2])
-                pb[3] = max(pb[3], punct_bbox[3])
-                
-                punct_to_remove.add(i)
-        
+                _, cont_align = best_container
+                for pdf_unit in punct_align.get('matched_pdf_units', []):
+                    pdf_unit['absorbed'] = True
+                    pdf_unit['absorbed_from_punctuation'] = True
+                    cont_align['matched_pdf_units'].append(pdf_unit)
+
+                cont_align['matched_pdf_units'].sort(key=lambda x: x.get('item_idx', 0))
+
+                cont_bbox = cont_align['merged_bbox']
+                cont_bbox[0] = min(cont_bbox[0], punct_bbox[0])
+                cont_bbox[1] = min(cont_bbox[1], punct_bbox[1])
+                cont_bbox[2] = max(cont_bbox[2], punct_bbox[2])
+                cont_bbox[3] = max(cont_bbox[3], punct_bbox[3])
+
+                punct_to_remove.add(punct_idx)
+
         return [a for i, a in enumerate(alignments) if i not in punct_to_remove]
 
-    def _resolve_shape_alignment_conflicts(self, alignments, pdf_units):
-        # Resolve shapes assigned to multiple alignments
-        # Simplified: if we have comprehensive shape logic elsewhere, this might be overkill,
-        # but for full parity we should check if shapes are duplicated.
-        # Legacy checked if shape is in mulitple places. Here we just return as is 
-        # because the primary assignment logic (char based) doesn't typically double-assign shapes 
-        # unless we explicitly logic'd it.
-        # Legacy used this because shapes were handled separately. 
-        # Given our flow, shapes are largely unconsumed by char alignment unless text matches.
-        # So we can keep it simple.
-        return alignments, []
+    def _recompute_alignment_bboxes(self, alignment):
+        if alignment.get('is_table') and alignment.get('cells'):
+            cell_bboxes = []
+            for cell in alignment['cells']:
+                cell_units = cell.get('matched_pdf_units', [])
+                cell_bbox = self._merge_bboxes([u.get('bbox') for u in cell_units])
+                cell['merged_bbox'] = cell_bbox
+                if cell_bbox:
+                    cell_bboxes.append(cell_bbox)
+            alignment['merged_bbox'] = self._merge_bboxes(cell_bboxes)
+        else:
+            units = alignment.get('matched_pdf_units', [])
+            alignment['merged_bbox'] = self._merge_bboxes([u.get('bbox') for u in units])
 
-    def _attach_shape_clusters_to_next_alignment(self, alignments, unaligned_pdf_idx, pdf_units):
-        if not alignments or not unaligned_pdf_idx: return alignments, unaligned_pdf_idx, []
-        
-        shape_indices = [i for i in unaligned_pdf_idx if pdf_units[i].get('item_type') == 'shape']
-        if not shape_indices: return alignments, unaligned_pdf_idx, []
-        
+    def _resolve_shape_alignment_conflicts(self, alignments, pdf_units):
+        if not alignments:
+            return alignments, []
+
+        pdf_unit_by_id = {u.get('unit_id'): u for u in pdf_units if u.get('unit_id')}
+        alignment_positions = []
+        alignments_by_sequence = sorted(alignments, key=self._get_alignment_sequence)
+        for alignment in alignments:
+            min_idx = self._get_alignment_min_item_idx(alignment)
+            if min_idx is not None:
+                alignment_positions.append((min_idx, alignment))
+        alignment_positions.sort(key=lambda x: x[0])
+
+        shape_refs = {}
+        for alignment in alignments:
+            if alignment.get('is_table') and alignment.get('cells'):
+                for cell in alignment['cells']:
+                    for unit in cell.get('matched_pdf_units', []):
+                        unit_id = unit.get('pdf_unit_id')
+                        if not unit_id:
+                            continue
+                        pdf_unit = pdf_unit_by_id.get(unit_id)
+                        if not pdf_unit or pdf_unit.get('item_type') != 'shape':
+                            continue
+                        shape_refs.setdefault(unit_id, []).append((alignment, cell, unit))
+            else:
+                for unit in alignment.get('matched_pdf_units', []):
+                    unit_id = unit.get('pdf_unit_id')
+                    if not unit_id:
+                        continue
+                    pdf_unit = pdf_unit_by_id.get(unit_id)
+                    if not pdf_unit or pdf_unit.get('item_type') != 'shape':
+                        continue
+                    shape_refs.setdefault(unit_id, []).append((alignment, None, unit))
+
+        debug = []
+        touched = set()
+
+        for unit_id, refs in shape_refs.items():
+            if len(refs) < 2:
+                continue
+
+            pdf_unit = pdf_unit_by_id.get(unit_id)
+            if not pdf_unit:
+                continue
+
+            shape_item_idx = pdf_unit.get('item_idx')
+            target_seq = None
+            if shape_item_idx is not None:
+                for min_idx, alignment in alignment_positions:
+                    if min_idx > shape_item_idx:
+                        target_seq = self._get_alignment_sequence(alignment)
+                        break
+
+            candidates = {}
+            for alignment, cell, unit in refs:
+                candidates.setdefault(id(alignment), {'alignment': alignment, 'cells': [], 'units': []})
+                if cell:
+                    candidates[id(alignment)]['cells'].append(cell)
+                candidates[id(alignment)]['units'].append(unit)
+
+            candidate_list = list(candidates.values())
+            candidate_alignments = [c['alignment'] for c in candidate_list]
+
+            chosen_alignment = None
+            if target_seq is not None:
+                prior_candidates = [a for a in candidate_alignments if self._get_alignment_sequence(a) < target_seq]
+                if prior_candidates:
+                    chosen_alignment = max(prior_candidates, key=self._get_alignment_sequence)
+                else:
+                    chosen_alignment = min(candidate_alignments, key=lambda a: abs(self._get_alignment_sequence(a) - target_seq))
+            else:
+                chosen_alignment = max(candidate_alignments, key=self._get_alignment_sequence)
+
+            removed_from = []
+            if chosen_alignment:
+                for candidate in candidate_list:
+                    alignment = candidate['alignment']
+                    if alignment is chosen_alignment:
+                        continue
+
+                    if alignment.get('is_table') and alignment.get('cells'):
+                        for cell in alignment['cells']:
+                            cell_units = cell.get('matched_pdf_units', [])
+                            new_units = [u for u in cell_units if u.get('pdf_unit_id') != unit_id]
+                            if len(new_units) != len(cell_units):
+                                cell['matched_pdf_units'] = new_units
+                                touched.add(id(alignment))
+                    else:
+                        units = alignment.get('matched_pdf_units', [])
+                        new_units = [u for u in units if u.get('pdf_unit_id') != unit_id]
+                        if len(new_units) != len(units):
+                            alignment['matched_pdf_units'] = new_units
+                            touched.add(id(alignment))
+
+                    removed_from.append(self._get_alignment_sequence(alignment))
+
+            if removed_from:
+                debug.append({
+                    'pdf_unit_id': unit_id,
+                    'shape_item_idx': shape_item_idx,
+                    'target_sequence': target_seq,
+                    'kept_sequence': chosen_alignment.get('element_sequence') if chosen_alignment else None,
+                    'removed_sequences': removed_from
+                })
+
+        if touched:
+            for alignment in alignments:
+                if id(alignment) in touched:
+                    self._recompute_alignment_bboxes(alignment)
+
+        return alignments, debug
+
+    def _attach_shape_clusters_to_next_alignment(self, alignments, unaligned_pdf_indices, pdf_units):
+        if not alignments or not unaligned_pdf_indices:
+            return alignments, unaligned_pdf_indices, []
+
+        shape_indices = [
+            idx for idx in unaligned_pdf_indices
+            if pdf_units[idx].get('item_type') == 'shape'
+        ]
+        if not shape_indices:
+            return alignments, unaligned_pdf_indices, []
+
+        alignment_positions = []
+        alignments_by_sequence = sorted(alignments, key=self._get_alignment_sequence)
+        for alignment in alignments:
+            min_idx = self._get_alignment_min_item_idx(alignment)
+            if min_idx is not None:
+                alignment_positions.append((min_idx, alignment))
+        alignment_positions.sort(key=lambda x: x[0])
+
+        if not alignment_positions:
+            return alignments, unaligned_pdf_indices, []
+
         shape_indices.sort()
         clusters = []
-        if shape_indices:
-            cluster = [shape_indices[0]]
-            for x in shape_indices[1:]:
-                if x == cluster[-1] + 1: cluster.append(x)
-                else:
-                    clusters.append(cluster)
-                    cluster = [x]
-            clusters.append(cluster)
-            
-        attached_count = 0
-        consumed_shapes = set()
-        
-        # Helper to get alignment sequence
-        def get_seq(a): return a.get('element_sequence') or 0
-        
-        # Sort alignments
-        sorted_aligns = sorted(alignments, key=get_seq)
-        
-        for cluster in clusters:
-            # Find next alignment
-            cluster_max_idx = max(pdf_units[i]['item_idx'] for i in cluster)
-            next_align = None
-            for a in alignments:
-                # Approximate position by getting min item_idx in align
-                min_idx = min((u['item_idx'] for u in a['matched_pdf_units'] if u.get('item_idx') is not None), default=999999)
-                if min_idx > cluster_max_idx:
-                    if next_align is None or min((u['item_idx'] for u in next_align['matched_pdf_units'] if u.get('item_idx') is not None), default=999999) > min_idx:
-                        next_align = a
-            
-            target = None
-            if next_align:
-                # Attach to PREVIOUS of next (i.e. the one before the gap)
-                next_seq = get_seq(next_align)
-                candidates = [a for a in sorted_aligns if get_seq(a) < next_seq]
-                if candidates: target = max(candidates, key=get_seq)
+        cluster = []
+        prev_idx = None
+        for idx in shape_indices:
+            if prev_idx is None or idx == prev_idx + 1:
+                cluster.append(idx)
             else:
-                # Attach to last
-                if sorted_aligns: target = sorted_aligns[-1]
-            
-            if target:
-                cl_units = [pdf_units[i] for i in cluster]
-                cl_bbox = self._merge_bboxes([u['bbox'] for u in cl_units])
-                cl_text = ' '.join(u['text'] for u in cl_units)
-                
-                merged_unit = {
-                    'pdf_unit_id': f"pdf_shape_cluster_{cluster[0]}",
-                    'item_idx': min(u['item_idx'] for u in cl_units),
-                    'item_type': 'shape', 'text': cl_text, 'bbox': cl_bbox,
-                    'score': 0.0, 'is_cell': False, 'attached_shape': True
-                }
-                
-                if target.get('is_table'):
-                    # Append as separate alignment
-                     alignments.append({
-                        'element_id': target['element_id'], 'element_sequence': target['element_sequence'],
-                        'element_type': target['element_type'], 'is_table': False,
-                        'element_text': '', 'matched_pdf_units': [merged_unit],
-                        'merged_bbox': cl_bbox
-                     })
-                else:
-                    target['matched_pdf_units'].append(merged_unit)
-                    target['matched_pdf_units'].sort(key=lambda x: x.get('item_idx', 0))
-                    if cl_bbox:
-                         if target.get('merged_bbox'): target['merged_bbox'] = self._merge_bboxes([target['merged_bbox'], cl_bbox])
-                         else: target['merged_bbox'] = cl_bbox
-                         
-                consumed_shapes.update(cluster)
-                attached_count += 1
+                clusters.append(cluster)
+                cluster = [idx]
+            prev_idx = idx
+        if cluster:
+            clusters.append(cluster)
 
-        rem = [i for i in unaligned_pdf_idx if i not in consumed_shapes]
-        return alignments, rem, []
+        remaining_unaligned = [i for i in unaligned_pdf_indices if i not in shape_indices]
+        debug = []
+        attached_count = 0
+
+        for cluster in clusters:
+            cluster_units = [pdf_units[i] for i in cluster]
+            cluster_bbox = self._merge_bboxes([u.get('bbox') for u in cluster_units])
+            cluster_text = ' '.join(u.get('text', '') for u in cluster_units).strip()
+            cluster_item_idx_min = min(u.get('item_idx', 0) for u in cluster_units)
+            cluster_item_idx_max = max(u.get('item_idx', 0) for u in cluster_units)
+
+            next_alignment = None
+            for min_idx, alignment in alignment_positions:
+                if min_idx > cluster_item_idx_max:
+                    next_alignment = alignment
+                    break
+
+            target_alignment = None
+            if next_alignment:
+                next_seq = self._get_alignment_sequence(next_alignment)
+                prev_candidates = [a for a in alignments_by_sequence if self._get_alignment_sequence(a) < next_seq]
+                if prev_candidates:
+                    target_alignment = max(prev_candidates, key=self._get_alignment_sequence)
+            else:
+                if alignments_by_sequence:
+                    target_alignment = alignments_by_sequence[-1]
+
+            if not target_alignment:
+                remaining_unaligned.extend(cluster)
+                continue
+
+            merged_unit = {
+                'pdf_unit_id': f"pdf_shape_cluster_{cluster[0]}",
+                'item_idx': cluster_item_idx_min,
+                'item_type': 'shape',
+                'text': cluster_text,
+                'bbox': cluster_bbox,
+                'matched_count': 0,
+                'score': 0.0,
+                'is_cell': False,
+                'row': None,
+                'col': None,
+                'debug': {
+                    'shape_cluster_size': len(cluster)
+                }
+            }
+
+            if target_alignment.get('is_table'):
+                shape_alignment = {
+                    'element_id': target_alignment.get('element_id'),
+                    'element_sequence': target_alignment.get('element_sequence'),
+                    'element_type': target_alignment.get('element_type'),
+                    'is_table': False,
+                    'element_text': target_alignment.get('element_text', ''),
+                    'matched_pdf_units': [merged_unit],
+                    'merged_bbox': list(cluster_bbox) if cluster_bbox else None,
+                    'cells': None,
+                    'is_text_part': False,
+                    'is_image_part': False,
+                    'is_shape_part': True,
+                    'unit_id': f"{target_alignment.get('element_id')}_shape_{cluster[0]}"
+                }
+                alignments.append(shape_alignment)
+            else:
+                target_alignment.setdefault('matched_pdf_units', []).append(merged_unit)
+                target_alignment['matched_pdf_units'].sort(key=lambda x: x.get('item_idx', 0))
+
+                if cluster_bbox:
+                    if target_alignment.get('merged_bbox'):
+                        mb = target_alignment['merged_bbox']
+                        mb[0] = min(mb[0], cluster_bbox[0])
+                        mb[1] = min(mb[1], cluster_bbox[1])
+                        mb[2] = max(mb[2], cluster_bbox[2])
+                        mb[3] = max(mb[3], cluster_bbox[3])
+                    else:
+                        target_alignment['merged_bbox'] = list(cluster_bbox)
+
+            attached_count += 1
+            debug.append({
+                'cluster_size': len(cluster),
+                'cluster_item_idx_min': cluster_item_idx_min,
+                'cluster_item_idx_max': cluster_item_idx_max,
+                'target_element_id': target_alignment.get('element_id')
+            })
+
+        if attached_count:
+            alignments.sort(key=lambda x: x.get('element_sequence') or 0)
+
+        return alignments, remaining_unaligned, debug
 
     def _format_unaligned_openxml(self, all_units, indices):
-        return [{'unit_id': all_units[i]['unit_id'], 'text': all_units[i]['text']} for i in indices]
+        return [
+            {
+                'openxml_unit_id': all_units[i]['unit_id'],
+                'elem_id': all_units[i]['elem_id'],
+                'elem_type': all_units[i]['elem_type'],
+                'text': all_units[i]['text'],
+                'text_normalized': all_units[i]['text_normalized'],
+                'is_cell': all_units[i]['is_cell'],
+                'row': all_units[i].get('row'),
+                'col': all_units[i].get('col'),
+                'has_shape': all_units[i].get('has_shape', False)
+            }
+            for i in indices
+        ]
 
     def _normalize_text(self, text):
         if not text: return ''
@@ -860,13 +1589,58 @@ class AlignmentService:
         return ''.join(''.join(result).lower().split())
 
     def _extract_text_from_json_tree(self, json_tree):
+        """Recursively extract text from dokumen_elemen_json_tree.
+        
+        Images are converted to count-based placeholders [IMG:1], [IMG:2], etc.
+        Matches the legacy extract_text_from_json_tree from dokumen_elemen_routes.py
+        """
+        if json_tree is None:
+            return ""
+        
+        # First pass: collect all items in order (text and images)
         items = []
-        def c(node):
+        
+        def collect_items(node):
             if isinstance(node, dict):
-                if 'value' in node: items.append(str(node['value']))
-                elif 'text' in node: items.append(str(node['text']))
-                for v in node.values(): c(v)
+                # Check if this is an image type element
+                if node.get('type') == 'image':
+                    items.append({'type': 'image'})
+                    return
+                
+                # Check for text content
+                if node.get('type') == 'text' and 'value' in node:
+                    items.append({'type': 'text', 'value': str(node['value'])})
+                    return
+                if 'value' in node and node.get('type') != 'image':
+                    items.append({'type': 'text', 'value': str(node['value'])})
+                if 'text' in node:
+                    items.append({'type': 'text', 'value': str(node['text'])})
+                if 't' in node:
+                    items.append({'type': 'text', 'value': str(node['t'])})
+                if 'content' in node:
+                    if isinstance(node['content'], str):
+                        items.append({'type': 'text', 'value': node['content']})
+                    else:
+                        collect_items(node['content'])
+                # Recurse through all values EXCEPT certain keys
+                for key, value in node.items():
+                    if key not in ['text', 't', 'content', 'value', 'type', 'rId']:
+                        collect_items(value)
             elif isinstance(node, list):
-                for i in node: c(i)
-        c(json_tree)
-        return ' '.join(items)
+                for item in node:
+                    collect_items(item)
+        
+        collect_items(json_tree)
+        
+        # Second pass: generate count-based placeholders for images
+        result_parts = []
+        image_counter = 0
+        
+        for item in items:
+            if item['type'] == 'text':
+                result_parts.append(item['value'])
+            elif item['type'] == 'image':
+                image_counter += 1
+                result_parts.append(f'[IMG:{image_counter}]')
+        
+        return ' '.join(result_parts).strip()

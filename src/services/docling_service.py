@@ -6,6 +6,8 @@ from docling.document_converter import DocumentConverter
 from models import Dokumen
 from database import SessionLocal
 
+STORAGE_BASE = os.getenv("VOLUME_BASE_PATH", "/app/storage")
+
 class DoclingService:
     def __init__(self):
         pass
@@ -21,7 +23,7 @@ class DoclingService:
             if not doc:
                 raise ValueError(f"Document with ID {doc_id} not found")
             
-            pdf_path = doc.dokumen_pdf_path
+            pdf_path = os.path.join(STORAGE_BASE, doc.dokumen_pdf_path)
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"PDF file not found at {pdf_path}")
 

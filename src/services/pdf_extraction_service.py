@@ -439,6 +439,25 @@ class PDFExtractor:
             if not bbox1 or not bbox2: return False
             return not (bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2] or
                         bbox1[3] < bbox2[1] or bbox1[1] > bbox2[3])
+        
+        def bbox_overlaps(bbox1, bbox2, y_threshold=0.7):
+            """Check if bbox1 overlaps bbox2 with a minimum Y overlap ratio."""
+            if not bbox1 or not bbox2:
+                return False
+            
+            # Require any X overlap
+            if bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2]:
+                return False
+            
+            y_overlap_start = max(bbox1[1], bbox2[1])
+            y_overlap_end = min(bbox1[3], bbox2[3])
+            y_overlap = max(0, y_overlap_end - y_overlap_start)
+            
+            bbox1_height = bbox1[3] - bbox1[1]
+            if bbox1_height <= 0:
+                return False
+            
+            return (y_overlap / bbox1_height) >= y_threshold
 
         for img in page_images:
             img_bbox = img.get('bbox')
@@ -449,7 +468,18 @@ class PDFExtractor:
             
             if overlapping_groups:
                 # Shape
-                overlapping_groups.sort(key=lambda g: (g['merged_bbox'][1], g['merged_bbox'][0]))
+                # Match legacy reading order: if Y overlaps, sort by X; else by Y
+                from functools import cmp_to_key
+
+                def compare_groups(g1, g2):
+                    b1 = g1.get('merged_bbox', [0, 0, 0, 0])
+                    b2 = g2.get('merged_bbox', [0, 0, 0, 0])
+                    y_overlap = not (b1[3] < b2[1] or b2[3] < b1[1])
+                    if y_overlap:
+                        return -1 if b1[0] < b2[0] else (1 if b1[0] > b2[0] else 0)
+                    return -1 if b1[1] < b2[1] else (1 if b1[1] > b2[1] else 0)
+
+                overlapping_groups.sort(key=cmp_to_key(compare_groups))
                 merged_text = ' '.join([g.get('text', '') for g in overlapping_groups]).strip()
                 group_bboxes = [g['merged_bbox'] for g in overlapping_groups]
                 merged_bbox = merge_bboxes([list(img_bbox)] + group_bboxes)
@@ -500,12 +530,30 @@ class PDFExtractor:
                     cell_content = []
                     if cell:
                         cell_bbox = list(cell)
-                        # Find overlapping char groups
-                        cell_groups = [g for g in char_groups if not g.get('claimed_by_shape') and g.get('merged_bbox') and simple_bbox_overlap(g.get('merged_bbox'), cell_bbox)]
+                        # Find overlapping char groups (>=50% Y overlap)
+                        cell_groups = [
+                            g for g in char_groups
+                            if not g.get('claimed_by_shape')
+                            and g.get('merged_bbox')
+                            and bbox_overlaps(g.get('merged_bbox'), cell_bbox, y_threshold=0.5)
+                        ]
                         if cell_groups:
                              for g in cell_groups: g['claimed_by_table'] = True
                              merged_text = ' '.join([g.get('text', '') for g in cell_groups])
                              cell_content.append({'type': 'text', 'text': merged_text, 'bbox': merge_bboxes([g['merged_bbox'] for g in cell_groups])})
+
+                        # Add images overlapping this cell (>=50% Y overlap)
+                        for img in page_images_list:
+                            img_bbox = img.get('bbox')
+                            if img_bbox and bbox_overlaps(img_bbox, cell_bbox, y_threshold=0.5):
+                                cell_content.append({
+                                    'type': 'image',
+                                    'bbox': img_bbox,
+                                    'xref': img.get('xref'),
+                                    'width': img.get('width'),
+                                    'height': img.get('height'),
+                                    'name': img.get('name', '')
+                                })
 
                         row_cells.append({'row': r_idx, 'col': c_idx, 'bbox': cell_bbox, 'content': cell_content})
                         
@@ -523,11 +571,17 @@ class PDFExtractor:
         
         for clip in hline_clips:
             clip_bbox = [clip.x0, clip.y0, clip.x1, clip.y1]
-            if any(simple_bbox_overlap(clip_bbox, bt['bbox']) for bt in basic_table_list): continue
-            if any(simple_bbox_overlap(clip_bbox, im['bbox']) for im in page_images_list): continue
+            if any(bbox_overlaps(clip_bbox, bt['bbox']) for bt in basic_table_list): continue
+            if any(bbox_overlaps(clip_bbox, im['bbox'], y_threshold=0.0) for im in page_images_list): continue
             
-            # Check for unclaimed groups
-            clip_groups = [g for g in char_groups if not g.get('claimed_by_shape') and not g.get('claimed_by_table') and g.get('merged_bbox') and simple_bbox_overlap(g.get('merged_bbox'), clip_bbox)]
+            # Check for unclaimed groups (>=30% Y overlap)
+            clip_groups = [
+                g for g in char_groups
+                if not g.get('claimed_by_shape')
+                and not g.get('claimed_by_table')
+                and g.get('merged_bbox')
+                and bbox_overlaps(g.get('merged_bbox'), clip_bbox, y_threshold=0.3)
+            ]
             
             if not clip_groups: continue
             
@@ -546,7 +600,10 @@ class PDFExtractor:
                 if r not in rows_dict: rows_dict[r] = {'cells': []}
                 
                 cell_bbox = cell['bbox']
-                cell_content_groups = [g for g in clip_groups if simple_bbox_overlap(g['merged_bbox'], cell_bbox)]
+                cell_content_groups = [
+                    g for g in clip_groups
+                    if bbox_overlaps(g['merged_bbox'], cell_bbox, y_threshold=0.5)
+                ]
                 cell_content = []
                 if cell_content_groups:
                     combined_text = ' '.join([g.get('text', '') for g in cell_content_groups])

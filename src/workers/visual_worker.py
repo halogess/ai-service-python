@@ -13,11 +13,14 @@ import time
 import json
 import logging
 import os
+import glob
+import fitz
 from database import SessionLocal, engine
 from models import Base, Dokumen
 from services.antrian_service import AntrianService
 from services.merging_extraction_service import MergingExtractionService
 from services.alignment_service import AlignmentService
+from utils.alignment_visualizer import AlignmentVisualizer
 
 # Setup logging
 logging.basicConfig(
@@ -59,68 +62,58 @@ def process_visual_task():
             logger.info(f"Output: {output_dir}")
             
             # ==============================
-            # STEP 1: Extract merging data
+            # Delegates to MergingExtractionService
+            # This handles Extraction, Alignment, Docling Fusion, JSON saving, and Visualization
             # ==============================
-            logger.info("Step 1: Extracting PDF content...")
+            logger.info("Delegating to MergingExtractionService...")
             
-            with MergingExtractionService(pdf_path) as extractor:
-                extraction_results = extractor.extract_document()
+            # Need to ensure the task has a document ID
+            if not task.dokumen_id:
+                logger.error("Task has no dokumen_id")
+                antrian_service.update_status(task, 'failed', "No dokumen_id")
+                return False
+
+            # Determine output directory for visualizations
+            # Goal: .../pdf/classification
+            # pdf_path is usually .../pdf/filename.pdf
+            pdf_dir = os.path.dirname(pdf_path)
+            classification_dir = os.path.join(pdf_dir, "classification")
             
-            # Save extraction results
-            extraction_file = os.path.join(output_dir, "extraction_results.json")
-            with open(extraction_file, 'w', encoding='utf-8') as f:
-                json.dump(extraction_results, f, indent=2, ensure_ascii=False)
+            # Ensure directory exists
+            os.makedirs(classification_dir, exist_ok=True)
             
-            total_items = sum(len(r.get('items', [])) for r in extraction_results)
-            logger.info(f"Extracted {len(extraction_results)} pages, {total_items} items")
+            logger.info(f"Visual output directory: {classification_dir}")
+
+            # Initialize service
+            merging_service = MergingExtractionService()
+
+            # Run processing with visualizations enabled
+            # This will:
+            # 1. Extract PDF
+            # 2. Align with DB
+            # 3. Run Docling & Fuse Results
+            # 4. Save to DB (Skipped if save_to_db=False)
+            # 5. Generate Visualizations & JSON in 'classification_dir'
+            success = merging_service.process_document(
+                doc_id=task.dokumen_id,
+                generate_visualizations=True,
+                save_to_db=False,  # User requested NO-DB-SAVE mode for now
+                output_dir=classification_dir
+            )
             
-            # ==============================
-            # STEP 2: Align with DokumenElemen
-            # ==============================
-            alignment_results = []
-            
-            # Only run alignment if we have a dokumen_id
-            if task.dokumen_id:
-                logger.info("Step 2: Aligning with DokumenElemen...")
-                
-                alignment_service = AlignmentService(db)
-                alignment_results = alignment_service.align_document(
-                    extraction_results, 
-                    task.dokumen_id
-                )
-                
-                # Save alignment results
-                alignment_file = os.path.join(output_dir, "alignment_results.json")
-                with open(alignment_file, 'w', encoding='utf-8') as f:
-                    # Convert to serializable format
-                    serializable = []
-                    for r in alignment_results:
-                        serializable.append({
-                            'success': r.get('success', False),
-                            'page': r.get('page', 0),
-                            'alignments': r.get('alignments', []),
-                            'unaligned_pdf_units': r.get('unaligned_pdf_units', []),
-                            'max_openxml_idx': r.get('max_openxml_idx', 0),
-                            'stats': r.get('stats', {})
-                        })
-                    json.dump(serializable, f, indent=2, ensure_ascii=False)
-                
-                total_alignments = sum(len(r.get('alignments', [])) for r in alignment_results)
-                logger.info(f"Created {total_alignments} alignments across {len(alignment_results)} pages")
+            if success:
+                logger.info(f"Visual flow completed for doc {task.dokumen_id}")
+                antrian_service.update_status(task, 'completed')
+                return True
             else:
-                logger.info("Step 2: Skipped alignment (no dokumen_id)")
+                logger.error(f"Visual flow failed for doc {task.dokumen_id}")
+                antrian_service.update_status(task, 'failed', "MergingExtractionService returned failure")
+                return False
             
             # ==============================
-            # STEP 3: Classification (TODO)
+            # STEP 3: Legacy char groups
             # ==============================
-            # Classification will be added in a future iteration
-            # For now, we have extraction and alignment working
-            
-            # ==============================
-            # Legacy: Also process char groups for backward compatibility
-            # ==============================
-            result = antrian_service.process_char_groups(task)
-            logger.info(f"Legacy char groups: {result['page_count']} pages, {result['total_groups']} groups")
+            # Skipped - already extracted in Step 1
             
             # Update status to completed
             antrian_service.update_status(task, 'completed')

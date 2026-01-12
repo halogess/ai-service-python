@@ -148,6 +148,25 @@ class AntrianService:
         os.makedirs(full_output_dir, exist_ok=True)
         return full_output_dir
     
+    def get_alignment_directory(self, task: Antrian) -> str:
+        """
+        Get alignment visualization directory (same level as PDF).
+        
+        Args:
+            task: Antrian object
+            
+        Returns:
+            Alignment directory path
+        """
+        pdf_path = self.get_pdf_path(task)
+        pdf_dir = os.path.dirname(pdf_path)
+        
+        alignment_dir = os.path.join(pdf_dir, 'alignment')
+        full_alignment_dir = os.path.join(STORAGE_BASE, alignment_dir)
+        
+        os.makedirs(full_alignment_dir, exist_ok=True)
+        return full_alignment_dir
+    
     def process_char_groups(self, task: Antrian) -> dict:
         """
         Process PDF and extract character groups.
