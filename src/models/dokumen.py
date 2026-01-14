@@ -15,5 +15,6 @@ class Dokumen(Base):
     dokumen_jumlah_kesalahan = Column(Integer, nullable=True)
     dokumen_docx_path = Column(String(255), nullable=True)
     dokumen_pdf_path = Column(String(255), nullable=True)
+    dokumen_images_path = Column(String(255), nullable=True)
     dokumen_created_at = Column(DateTime, server_default=func.current_timestamp())
     dokumen_updated_at = Column(DateTime, server_default=func.current_timestamp())

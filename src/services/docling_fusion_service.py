@@ -235,13 +235,17 @@ class DoclingFusionService:
                             'element_id': alignment.get('element_id'),
                             'element_type': alignment.get('element_type'),
                             'has_pdf_image': has_image,
-                            'has_shape_units': has_shape
+                            'has_shape_units': has_shape,
+                            'is_picture_area': has_image or has_shape
                         })
             elif alignment.get('merged_bbox'):
                 # Non-table elements
                 matched_units = alignment.get('matched_pdf_units', [])
                 has_shape = any(u.get('item_type') == 'shape' for u in matched_units)
                 has_image = any(u.get('item_type') == 'image' for u in matched_units)
+                is_picture_area = bool(
+                    alignment.get('is_image_part') or has_shape or has_image
+                )
                 
                 all_aligned_items.append({
                     'bbox': alignment['merged_bbox'],
@@ -254,7 +258,8 @@ class DoclingFusionService:
                     'is_image_part': alignment.get('is_image_part', False),
                     'has_shape_units': has_shape,
                     'has_pdf_image': has_image,
-                    'unit_id': alignment.get('unit_id')
+                    'unit_id': alignment.get('unit_id'),
+                    'is_picture_area': is_picture_area
                 })
         
         # Add header/footer units
@@ -266,7 +271,8 @@ class DoclingFusionService:
                     'source': 'header_footer',
                     'zone': unit.get('zone'),
                     'has_pdf_image': False,
-                    'has_shape_units': False
+                    'has_shape_units': False,
+                    'is_picture_area': False
                 })
         
         # Track which aligned items have been used
@@ -289,9 +295,8 @@ class DoclingFusionService:
                     
                     overlap = self.calculate_overlap(item['bbox'], doc_bbox)
                     if overlap >= self.OVERLAP_THRESHOLD:
-                        # For picture label, only match items with image/shape content
-                        if is_picture_label and not self.is_picture_area(item):
-                            continue
+                        # For picture label, allow matching even if item is text-only
+                        # (text inside picture should stay labeled as picture)
                         matching_items.append({'item': item, 'idx': idx, 'overlap': overlap})
                 
                 if matching_items:
@@ -342,10 +347,7 @@ class DoclingFusionService:
                         avg_overlap /= len(matching_items)
                         
                         # Determine label
-                        has_picture_area = any(self.is_picture_area(m['item']) for m in matching_items)
                         merged_label = doc_item.get('label')
-                        if merged_label == 'picture' and not has_picture_area:
-                            merged_label = self.fallback_label(matching_items[0]['item'])
                         
                         # Correct header/footer labels
                         merged_label = self.correct_header_footer_label(merged_label, merged_bbox)
@@ -374,7 +376,8 @@ class DoclingFusionService:
                             'element_sequence': ref_elem_seq,
                             'element_type': ref_elem_type,
                             'is_picture_merge': should_merge_picture,
-                            'docling_label': doc_item.get('label')
+                            'docling_label': doc_item.get('label'),
+                            'is_picture_area': any(m['item'].get('is_picture_area') for m in matching_items)
                         })
                     else:
                         # Don't merge - add each item separately
@@ -382,8 +385,6 @@ class DoclingFusionService:
                             item = m['item']
                             
                             final_label = doc_item.get('label')
-                            if final_label == 'picture' and not self.is_picture_area(item):
-                                final_label = self.fallback_label(item)
                             
                             final_label = self.correct_header_footer_label(final_label, item['bbox'])
                             
@@ -401,7 +402,8 @@ class DoclingFusionService:
                                 'is_text_part': item.get('is_text_part'),
                                 'is_image_part': item.get('is_image_part'),
                                 'unit_id': item.get('unit_id'),
-                                'merged_count': 1
+                                'merged_count': 1,
+                                'is_picture_area': item.get('is_picture_area', False)
                             })
         
         # Add remaining unmatched aligned items (no Docling match)
@@ -432,8 +434,26 @@ class DoclingFusionService:
                 'zone': item.get('zone'),
                 'docling_label': None,
                 'is_image_part': item.get('is_image_part'),
-                'merged_count': 1
+                'merged_count': 1,
+                'is_picture_area': item.get('is_picture_area', False)
             })
+        
+        # Post-pass: force picture label for image/shape areas that overlap any picture prediction
+        if has_docling:
+            picture_preds = [
+                d for d in docling_predictions
+                if d.get('label') == 'picture' and d.get('bbox')
+            ]
+            if picture_preds:
+                for result in fused_results:
+                    if result.get('label') == 'picture' or not result.get('is_picture_area'):
+                        continue
+                    bbox = result.get('bbox')
+                    if not bbox:
+                        continue
+                    if any(self.calculate_overlap(bbox, d['bbox']) > 0 for d in picture_preds):
+                        result['label'] = 'picture'
+                        result['docling_label'] = 'picture'
         
         # Sort by reading order (line-aware)
         def sort_key(item):

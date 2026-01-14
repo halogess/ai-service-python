@@ -350,33 +350,12 @@ class VisualizationService:
         # Render base PDF page
         base_image = self.render_pdf_page(pdf_path, page_num)
         
-        # Save base image
-        base_path = os.path.join(output_path, f"page_{page_num + 1}_base.png")
-        base_image.save(base_path)
-        saved_paths['base'] = base_path
-        
-        # Draw alignments
-        if alignments:
-            align_image = self.draw_alignments(base_image.copy(), alignments)
-            align_path = os.path.join(output_path, f"page_{page_num + 1}_alignments.png")
-            align_image.save(align_path)
-            saved_paths['alignments'] = align_path
-        
-        # Draw fusion results
+        # Draw fusion results (if available) - This is the ONLY one we want to save now
         if fused_results:
             fusion_image = self.draw_fusion_results(base_image.copy(), fused_results)
-            fusion_path = os.path.join(output_path, f"page_{page_num + 1}_fusion.png")
+            fusion_path = os.path.join(output_path, f"page_{page_num + 1}_fused.png")
             fusion_image.save(fusion_path)
-            saved_paths['fusion'] = fusion_path
-        
-        # Combined image (if both available)
-        if alignments and fused_results:
-            combined = base_image.copy()
-            combined = self.draw_alignments(combined, alignments)
-            combined = self.draw_fusion_results(combined, fused_results, use_docling_colors=True)
-            combined_path = os.path.join(output_path, f"page_{page_num + 1}_combined.png")
-            combined.save(combined_path)
-            saved_paths['combined'] = combined_path
+            saved_paths['fused'] = fusion_path
         
         return saved_paths
     

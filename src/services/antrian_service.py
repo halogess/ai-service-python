@@ -29,57 +29,69 @@ class AntrianService:
         """
         self.db = db
         
-    def get_next_visual_task(self) -> Optional[Antrian]:
+    def get_next_extraction_task(self) -> Optional[Antrian]:
         """
-        Get the next task in queue with status 'in_queue'.
+        Get the next task in queue with status 'in_queue' for extraction.
         
         Returns:
             Antrian object or None if queue is empty
         """
         task = self.db.query(Antrian).filter(
-            Antrian.antrian_visual_status == 'in_queue'
+            Antrian.antrian_extraction_status == 'in_queue'
         ).order_by(Antrian.antrian_created_at).first()
         
         if task:
-            logger.info(f"Found visual task in queue: ID {task.antrian_id}")
+            logger.info(f"Found extraction task in queue: ID {task.antrian_id}")
         return task
 
-    def get_next_struktur_task(self) -> Optional[Antrian]:
+    def get_next_labeling_task(self) -> Optional[Antrian]:
         """
-        Get the next structure/alignment task in queue.
+        Get the next labeling task in queue.
         """
         task = self.db.query(Antrian).filter(
-            Antrian.antrian_struktur_status == 'in_queue'
+            Antrian.antrian_labeling_status == 'in_queue'
         ).order_by(Antrian.antrian_created_at).first()
         
         if task:
-            logger.info(f"Found struktur task in queue: ID {task.antrian_id}")
+            logger.info(f"Found labeling task in queue: ID {task.antrian_id}")
         return task
 
     
-    def update_status(self, task: Antrian, status: str, error_message: str = None):
+    def update_extraction_status(self, task: Antrian, status: str, error_message: str = None):
         """
-        Update task status (Visual).
+        Update task status (Extraction).
         """
-        task.antrian_visual_status = status
+        task.antrian_extraction_status = status
         if error_message:
             task.antrian_error_message = error_message[:255]
         elif status == 'completed':
             task.antrian_error_message = None
         self.db.commit()
-        logger.info(f"Task {task.antrian_id} visual status updated to: {status}")
+        logger.info(f"Task {task.antrian_id} extraction status updated to: {status}")
 
-    def update_struktur_status(self, task: Antrian, status: str, error_message: str = None):
+    def update_labeling_status(self, task: Antrian, status: str, error_message: str = None):
         """
-        Update task status (Struktur).
+        Update task status (Labeling).
         """
-        task.antrian_struktur_status = status
+        task.antrian_labeling_status = status
         if error_message:
             task.antrian_error_message = error_message[:255]
         elif status == 'completed':
             task.antrian_error_message = None
         self.db.commit()
-        logger.info(f"Task {task.antrian_id} struktur status updated to: {status}")
+        logger.info(f"Task {task.antrian_id} labeling status updated to: {status}")
+
+    def update_validation_status(self, task: Antrian, status: str, error_message: str = None):
+        """
+        Update task status (Validation).
+        """
+        task.antrian_validation_status = status
+        if error_message:
+            task.antrian_error_message = error_message[:255]
+        elif status == 'completed':
+            task.antrian_error_message = None
+        self.db.commit()
+        logger.info(f"Task {task.antrian_id} validation status updated to: {status}")
 
         
     def get_pdf_path(self, task: Antrian) -> str:

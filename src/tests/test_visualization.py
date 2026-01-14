@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Set environment variables before imports
-os.environ['DB_HOST'] = 'host.docker.internal'
+os.environ['DB_HOST'] = 'localhost'
 os.environ['DB_PORT'] = '3307'
 os.environ['DB_NAME'] = 'db_korektor_buku'
 os.environ['DB_USER'] = 'jessica'

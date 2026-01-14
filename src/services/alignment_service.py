@@ -1049,30 +1049,104 @@ class AlignmentService:
         return self._is_standalone_number(text)
 
     def _absorb_unaligned_into_alignments(self, alignments, unaligned_indices, pdf_units):
+        if not alignments or not unaligned_indices:
+            return alignments, unaligned_indices
+
         absorbed = set()
-        for al in alignments:
-            mbbox = al.get('merged_bbox')
-            if not mbbox: continue
-            
-            to_absorb = []
-            for idx in unaligned_indices:
-                if idx in absorbed: continue
-                u = pdf_units[idx]
-                if self._is_bbox_inside(u.get('bbox'), mbbox):
-                    to_absorb.append(u)
-                    absorbed.add(idx)
-            
-            if to_absorb:
-                if 'matched_pdf_units' not in al: al['matched_pdf_units'] = []
-                for u in to_absorb:
-                    al['matched_pdf_units'].append({
-                        'pdf_unit_id': u['unit_id'], 'item_idx': u['item_idx'], 'item_type': u['item_type'],
-                        'text': u['text'], 'bbox': u['bbox'], 'score': 0, 'absorbed': True
-                    })
-                al['matched_pdf_units'].sort(key=lambda x: x['item_idx'])
-        
-        rem = [i for i in unaligned_indices if i not in absorbed]
-        return alignments, rem
+
+        for alignment in alignments:
+            merged_bbox = alignment.get('merged_bbox')
+            if not merged_bbox:
+                continue
+
+            if alignment.get('is_table') and alignment.get('cells'):
+                for cell in alignment['cells']:
+                    cell_bbox = cell.get('merged_bbox')
+                    if not cell_bbox:
+                        continue
+
+                    units_to_absorb = []
+                    for idx in unaligned_indices:
+                        if idx in absorbed:
+                            continue
+                        pdf_unit = pdf_units[idx]
+                        if self._is_bbox_inside(pdf_unit.get('bbox'), cell_bbox):
+                            units_to_absorb.append((idx, pdf_unit))
+                            absorbed.add(idx)
+
+                    if units_to_absorb:
+                        if 'matched_pdf_units' not in cell:
+                            cell['matched_pdf_units'] = []
+                        for _, pdf_unit in units_to_absorb:
+                            cell['matched_pdf_units'].append({
+                                'pdf_unit_id': pdf_unit['unit_id'],
+                                'item_idx': pdf_unit['item_idx'],
+                                'item_type': pdf_unit['item_type'],
+                                'text': pdf_unit['text'],
+                                'bbox': pdf_unit['bbox'],
+                                'matched_count': 0,
+                                'score': 0,
+                                'is_cell': pdf_unit['is_cell'],
+                                'is_hline_table_unit': pdf_unit.get('is_hline_table_unit', False),
+                                'row': pdf_unit.get('row'),
+                                'col': pdf_unit.get('col'),
+                                'absorbed': True,
+                                'debug': {}
+                            })
+
+                        cell['matched_pdf_units'].sort(key=lambda x: x['item_idx'])
+
+                        for _, pdf_unit in units_to_absorb:
+                            unit_bbox = pdf_unit.get('bbox')
+                            if unit_bbox and len(unit_bbox) >= 4:
+                                cell_bbox[0] = min(cell_bbox[0], unit_bbox[0])
+                                cell_bbox[1] = min(cell_bbox[1], unit_bbox[1])
+                                cell_bbox[2] = max(cell_bbox[2], unit_bbox[2])
+                                cell_bbox[3] = max(cell_bbox[3], unit_bbox[3])
+            else:
+                units_to_absorb = []
+                for idx in unaligned_indices:
+                    if idx in absorbed:
+                        continue
+                    pdf_unit = pdf_units[idx]
+                    if self._is_bbox_inside(pdf_unit.get('bbox'), merged_bbox):
+                        units_to_absorb.append((idx, pdf_unit))
+                        absorbed.add(idx)
+
+                if units_to_absorb:
+                    if 'matched_pdf_units' not in alignment:
+                        alignment['matched_pdf_units'] = []
+                    for _, pdf_unit in units_to_absorb:
+                        alignment['matched_pdf_units'].append({
+                            'pdf_unit_id': pdf_unit['unit_id'],
+                            'item_idx': pdf_unit['item_idx'],
+                            'item_type': pdf_unit['item_type'],
+                            'text': pdf_unit['text'],
+                            'bbox': pdf_unit['bbox'],
+                            'matched_count': 0,
+                            'score': 0,
+                            'is_cell': pdf_unit['is_cell'],
+                            'is_hline_table_unit': pdf_unit.get('is_hline_table_unit', False),
+                            'row': pdf_unit.get('row'),
+                            'col': pdf_unit.get('col'),
+                            'absorbed': True,
+                            'debug': {}
+                        })
+
+                    alignment['matched_pdf_units'].sort(key=lambda x: x['item_idx'])
+
+                    for _, pdf_unit in units_to_absorb:
+                        unit_bbox = pdf_unit.get('bbox')
+                        if unit_bbox and len(unit_bbox) >= 4:
+                            merged_bbox[0] = min(merged_bbox[0], unit_bbox[0])
+                            merged_bbox[1] = min(merged_bbox[1], unit_bbox[1])
+                            merged_bbox[2] = max(merged_bbox[2], unit_bbox[2])
+                            merged_bbox[3] = max(merged_bbox[3], unit_bbox[3])
+
+        remaining = [i for i in unaligned_indices if i not in absorbed]
+        print(f"[Absorb] Absorbed {len(absorbed)} unaligned PDF units into alignments, "
+              f"{len(remaining)} remaining unaligned")
+        return alignments, remaining
 
     def _is_bbox_inside(self, inner, outer, tol=5):
         if not inner or not outer: return False

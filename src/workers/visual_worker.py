@@ -19,6 +19,7 @@ from database import SessionLocal, engine
 from models import Base, Dokumen
 from services.antrian_service import AntrianService
 from services.merging_extraction_service import MergingExtractionService
+from services.pdf_image_service import convert_pdf_to_images
 from services.alignment_service import AlignmentService
 from utils.alignment_visualizer import AlignmentVisualizer
 
@@ -44,15 +45,15 @@ def process_visual_task():
         antrian_service = AntrianService(db)
         
         # Get next task
-        task = antrian_service.get_next_visual_task()
+        task = antrian_service.get_next_labeling_task()
         if not task:
             return False
         
         try:
             # Update status to processing
-            antrian_service.update_status(task, 'processing')
+            antrian_service.update_labeling_status(task, 'processing')
             
-            logger.info(f"Processing visual task ID: {task.antrian_id}, Type: {task.antrian_tipe}")
+            logger.info(f"Processing labeling task ID: {task.antrian_id}, Type: {task.antrian_tipe}")
             
             # Get PDF path
             pdf_path = antrian_service.get_full_pdf_path(task)
@@ -60,6 +61,20 @@ def process_visual_task():
             
             logger.info(f"PDF: {pdf_path}")
             logger.info(f"Output: {output_dir}")
+
+            # Convert PDF pages to images under the document directory
+            convert_pdf_to_images(pdf_path)
+
+            # Update dokumen_images_path to relative images folder
+            doc = db.query(Dokumen).get(task.dokumen_id)
+            if doc:
+                images_relative = f"/dokumen/{doc.mhs_nrp}/{doc.dokumen_id}/images"
+                if doc.dokumen_images_path != images_relative:
+                    doc.dokumen_images_path = images_relative
+                    db.commit()
+                    logger.info(f"Updated dokumen_images_path: {images_relative}")
+            else:
+                logger.warning(f"Dokumen {task.dokumen_id} not found for images path update")
             
             # ==============================
             # Delegates to MergingExtractionService
@@ -97,17 +112,19 @@ def process_visual_task():
             success = merging_service.process_document(
                 doc_id=task.dokumen_id,
                 generate_visualizations=True,
-                save_to_db=False,  # User requested NO-DB-SAVE mode for now
+                save_to_db=True,  # Save DokumenElemenVisual to database
                 output_dir=classification_dir
             )
             
             if success:
-                logger.info(f"Visual flow completed for doc {task.dokumen_id}")
-                antrian_service.update_status(task, 'completed')
+                logger.info(f"Labeling flow completed for doc {task.dokumen_id}")
+                antrian_service.update_labeling_status(task, 'completed')
+                # Set validation status to in_queue so it can be picked up by validation worker
+                antrian_service.update_validation_status(task, 'in_queue')
                 return True
             else:
-                logger.error(f"Visual flow failed for doc {task.dokumen_id}")
-                antrian_service.update_status(task, 'failed', "MergingExtractionService returned failure")
+                logger.error(f"Labeling flow failed for doc {task.dokumen_id}")
+                antrian_service.update_labeling_status(task, 'failed', "MergingExtractionService returned failure")
                 return False
             
             # ==============================
@@ -125,7 +142,7 @@ def process_visual_task():
             logger.error(f"Visual task {task.antrian_id} failed: {str(e)}", exc_info=True)
             try:
                 db.rollback()
-                antrian_service.update_status(task, 'failed', str(e))
+                antrian_service.update_labeling_status(task, 'failed', str(e))
             except Exception as commit_error:
                 logger.error(f"Failed to update error status: {commit_error}")
             return False
@@ -144,8 +161,8 @@ def run_visual_worker(check_interval: int = 5):
     Args:
         check_interval: Seconds between queue checks
     """
-    logger.info(f"Starting visual worker (check every {check_interval} seconds)")
-    logger.info("Flow: Extraction -> Alignment -> Classification")
+    logger.info(f"Starting labeling worker (check every {check_interval} seconds)")
+    logger.info("Flow: Labeling (Extraction+Alignment+Docling) -> Validation")
     
     # Ensure logs directory exists
     os.makedirs('logs', exist_ok=True)

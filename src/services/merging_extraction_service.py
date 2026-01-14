@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from sqlalchemy.orm import Session
-from models import Dokumen, DokumenElemen, DokumenSection, DokumenPart
+from models import Dokumen, DokumenElemen, DokumenSection, DokumenPart, DokumenElemenVisual
 from services.pdf_extraction_service import PDFExtractor
 from services.alignment_service import AlignmentService
 from services.docling_service import DoclingService
@@ -108,7 +108,9 @@ class MergingExtractionService:
                         alignments, 
                         page_docling_preds,
                         header_footer_units=header_footer_units,
-                        section_data=section_data
+                        section_data=section_data,
+                        doc_id=doc_id,
+                        page_num=page_num
                     )
                     
                     # Generate visualizations if enabled
@@ -238,7 +240,7 @@ class MergingExtractionService:
         items.sort(key=cmp_to_key(compare_items))
         return items
 
-    def _save_alignment_results(self, db, alignments, docling_predictions, header_footer_units=None, section_data=None):
+    def _save_alignment_results(self, db, alignments, docling_predictions, header_footer_units=None, section_data=None, doc_id=None, page_num=None):
         """
         Update DokumenElemen with alignment metadata and fused Docling predictions.
         
@@ -268,6 +270,35 @@ class MergingExtractionService:
                 if elem_id not in fused_by_element:
                     fused_by_element[elem_id] = []
                 fused_by_element[elem_id].append(result)
+
+            # --- NEW: Save to DokumenElemenVisual ---
+            if doc_id and page_num is not None:
+                # Text content handling
+                text_content = result.get('text', '')
+                if isinstance(text_content, list):
+                    text_content = " ".join(text_content)
+                elif text_content is None:
+                    text_content = ""
+                
+                # Bbox handling
+                bbox = result.get('bbox')
+                x0, y0, x1, y1 = 0, 0, 0, 0
+                if bbox and len(bbox) == 4:
+                    x0, y0, x1, y1 = bbox
+                
+                dev = DokumenElemenVisual(
+                    dokumen_id=doc_id,
+                    dev_page=page_num,
+                    dokumen_elemen_id=elem_id, # Can be None
+                    dev_bbox_x0=float(x0),
+                    dev_bbox_y0=float(y0),
+                    dev_bbox_x1=float(x1),
+                    dev_bbox_y1=float(y1),
+                    dev_label=result.get('label') or result.get('docling_label'),
+                    dev_text=text_content
+                )
+                db.add(dev)
+            # ----------------------------------------
         
         # Update each alignment's DokumenElemen
         for align in alignments:
