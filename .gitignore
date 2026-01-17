@@ -17,6 +17,8 @@ build/
 
 # Models (root level only, not src/models)
 /models/
+*.safetensors
+before/src/models/layoutlmv3/
 
 # IDE
 .vscode/
