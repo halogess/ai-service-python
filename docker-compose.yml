@@ -1,6 +1,9 @@
 services:
   visual-worker:
-    build: .
+    build:
+      context: .
+      args:
+        UV_HTTP_TIMEOUT: 10000
     container_name: visual-worker
     restart: always
     environment:

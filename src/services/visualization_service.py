@@ -54,7 +54,8 @@ ALIGNMENT_COLORS = {
     'cell': '#c0392b',     # Darker red
     'image': '#27ae60',    # Bright green
     'text_part': '#3498db', # Blue
-    'unaligned': '#e74c3c' # Red
+    'unaligned': '#e74c3c', # Red
+    'duplicate_mapping': '#00ff00' # Green for duplicate OpenXML mapping
 }
 
 
@@ -204,6 +205,73 @@ class VisualizationService:
             
             # Draw label text
             draw.text((x0 + 2, label_y), label, fill=color, font=font)
+
+    def _get_pdf_unit_key(self, unit: Dict) -> Optional[Tuple[str, Any]]:
+        if unit.get('pdf_unit_id') is not None:
+            return ('pdf_unit_id', unit['pdf_unit_id'])
+        if unit.get('unit_id') is not None:
+            return ('unit_id', unit['unit_id'])
+        if unit.get('item_idx') is not None:
+            return ('item_idx', unit['item_idx'])
+        bbox = unit.get('bbox')
+        if bbox and len(bbox) >= 4:
+            return ('bbox', tuple(bbox))
+        return None
+
+    def _dedupe_pdf_units(self, units: Optional[List[Dict]]) -> List[Dict]:
+        deduped = []
+        seen = set()
+        for unit in units or []:
+            if not unit or not unit.get('bbox'):
+                continue
+            key = self._get_pdf_unit_key(unit)
+            if key is None or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(unit)
+        return deduped
+
+    def _collect_unaligned_pdf_units(
+        self,
+        unaligned_pdf_units: Optional[List[Dict]]
+    ) -> List[Dict]:
+        return self._dedupe_pdf_units(unaligned_pdf_units or [])
+
+    def draw_unaligned_pdf_units(
+        self,
+        image: Image.Image,
+        unaligned_pdf_units: Optional[List[Dict]] = None
+    ) -> Image.Image:
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+
+        draw = ImageDraw.Draw(image)
+        unaligned_units = self._collect_unaligned_pdf_units(unaligned_pdf_units)
+
+        for unit in unaligned_units:
+            bbox = unit.get('bbox')
+            if bbox:
+                self.draw_bbox(draw, bbox, ALIGNMENT_COLORS['unaligned'], None, fill_alpha=0, line_width=3)
+
+        return image
+
+    def draw_duplicate_mapping_units(
+        self,
+        image: Image.Image,
+        duplicate_units: Optional[List[Dict]] = None
+    ) -> Image.Image:
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+
+        draw = ImageDraw.Draw(image)
+        dup_units = self._dedupe_pdf_units(duplicate_units or [])
+
+        for unit in dup_units:
+            bbox = unit.get('bbox')
+            if bbox:
+                self.draw_bbox(draw, bbox, ALIGNMENT_COLORS['duplicate_mapping'], None, fill_alpha=0, line_width=2)
+
+        return image
     
     def draw_alignments(
         self,
@@ -299,12 +367,29 @@ class VisualizationService:
             
             # Create label text
             elem_seq = result.get('element_sequence')
+            openxml_idx = result.get('openxml_idx')
             overlap = result.get('overlap', 0)
+            display_seq = elem_seq
+            if display_seq is None and openxml_idx is not None:
+                if isinstance(openxml_idx, (list, tuple)):
+                    display_seq = ','.join(str(idx) for idx in openxml_idx)
+                else:
+                    display_seq = openxml_idx
             
-            if elem_seq:
-                label_text = f"[{label}] #{elem_seq}"
+            if display_seq is not None:
+                label_text = f"[{label}] #{display_seq}"
             else:
                 label_text = f"[{label}]"
+
+            if openxml_idx is not None and elem_seq is not None and label != 'table':
+                if isinstance(openxml_idx, (list, tuple)):
+                    show_ox = elem_seq not in openxml_idx
+                    ox_text = ','.join(str(idx) for idx in openxml_idx)
+                else:
+                    show_ox = openxml_idx != elem_seq
+                    ox_text = str(openxml_idx)
+                if show_ox:
+                    label_text += f" ox{ox_text}"
             
             if overlap > 0:
                 label_text += f" {overlap:.0%}"
@@ -319,6 +404,9 @@ class VisualizationService:
         page_num: int,
         alignments: List[Dict] = None,
         fused_results: List[Dict] = None,
+        header_footer_units: List[Dict] = None,
+        unaligned_pdf_units: List[Dict] = None,
+        duplicate_mapping_units: List[Dict] = None,
         save_separate: bool = True,
         doc_id: int = None,
         output_dir_override: str = None
@@ -329,8 +417,11 @@ class VisualizationService:
         Args:
             pdf_path: Path to PDF file
             page_num: 0-based page number
-            alignments: Alignment results
+            alignments: Alignment results (not drawn as PDF units)
             fused_results: Docling fusion results
+            header_footer_units: Header/footer PDF units (not drawn as PDF units)
+            unaligned_pdf_units: PDF units that remain unaligned after final pass
+            duplicate_mapping_units: PDF units aligned to OpenXML elements that also appear on other pages
             save_separate: Save alignment and fusion as separate images
             doc_id: Document ID for output folder naming
             output_dir_override: If provided, save directly to this directory (ignoring self.output_dir and doc_id nesting)
@@ -353,6 +444,16 @@ class VisualizationService:
         # Draw fusion results (if available) - This is the ONLY one we want to save now
         if fused_results:
             fusion_image = self.draw_fusion_results(base_image.copy(), fused_results)
+            if duplicate_mapping_units:
+                fusion_image = self.draw_duplicate_mapping_units(
+                    fusion_image,
+                    duplicate_units=duplicate_mapping_units
+                )
+            if unaligned_pdf_units:
+                fusion_image = self.draw_unaligned_pdf_units(
+                    fusion_image,
+                    unaligned_pdf_units=unaligned_pdf_units
+                )
             fusion_path = os.path.join(output_path, f"page_{page_num + 1}_fused.png")
             fusion_image.save(fusion_path)
             saved_paths['fused'] = fusion_path
@@ -406,6 +507,9 @@ def visualize_alignment_results(
     pdf_path: str,
     alignments: List[Dict],
     fused_results: List[Dict] = None,
+    header_footer_units: List[Dict] = None,
+    unaligned_pdf_units: List[Dict] = None,
+    duplicate_mapping_units: List[Dict] = None,
     output_dir: str = 'visualization_output',
     doc_id: int = None,
     page_num: int = 0
@@ -417,6 +521,9 @@ def visualize_alignment_results(
         pdf_path: Path to PDF
         alignments: Alignment results
         fused_results: Optional fusion results
+        header_footer_units: Optional header/footer PDF units (not drawn)
+        unaligned_pdf_units: Optional PDF units that remain unaligned
+        duplicate_mapping_units: Optional PDF units aligned to duplicate OpenXML elements across pages
         output_dir: Output directory
         doc_id: Document ID
         page_num: 0-based page number
@@ -425,4 +532,13 @@ def visualize_alignment_results(
         Dict with paths to saved images
     """
     service = VisualizationService(output_dir)
-    return service.visualize_page(pdf_path, page_num, alignments, fused_results, doc_id=doc_id)
+    return service.visualize_page(
+        pdf_path,
+        page_num,
+        alignments,
+        fused_results,
+        header_footer_units,
+        unaligned_pdf_units,
+        duplicate_mapping_units,
+        doc_id=doc_id
+    )

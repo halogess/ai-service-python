@@ -1,0 +1,19 @@
+================================================================================
+GAP ANALYSIS - What OpenXML content is NOT being matched
+================================================================================
+
+
+Block 0: OX[0], PDF[0], size=1
+  Matched text: "2..."
+
+[GAP 1] OX positions 1 to 7071 (size: 7070 chars)
+  Content: ".12whiteboxmodel2.12whiteboxmodelwhiteboxmodeladalahkebalikandariblackboxmodel.dalamwhiteboxmodel,seluruhprosespengambilankeputusanolehmodelbersifattransparandandapatdijelaskansecararinci.artinya,baik..."
+  Units in gap: 23
+    U0: list-item-11-0 "2.12  White Box Model   2.12 White Box M..."
+    U1: paragraph "White box model adalah kebalikan dari bl..."
+    U3: paragraph "[IMG]..."
+    U4: paragraph "[IMG]..."
+    U5: paragraph "Gambar 2.5 Gambar 2.5..."
+
+Block 1: OX[7071], PDF[2], size=799
+  Matched text: "olehkarenaitu,banyakeksperimengnnmenggunakangrafsk..."

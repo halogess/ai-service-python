@@ -27,8 +27,8 @@ before/src/models/layoutlmv3/
 *.swo
 
 # Logs
-*.log
-logs/
+#*.log
+# logs/
 
 # OS
 .DS_Store

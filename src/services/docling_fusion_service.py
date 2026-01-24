@@ -4,6 +4,7 @@ Handles fusion of Docling predictions with alignment bboxes.
 Ports logic from classification.html's fuseAlignmentWithDocling() function.
 """
 
+import re
 from typing import Dict, Any, List, Optional, Tuple
 
 
@@ -19,6 +20,13 @@ class DoclingFusionService:
     """
     
     OVERLAP_THRESHOLD = 0.3  # 30% overlap required for matching
+    CAPTION_LINE_MAX_HEIGHT = 24
+    CAPTION_VERTICAL_GAP_MAX = 60
+    CAPTION_X_OVERLAP_MIN = 0.3
+    CAPTION_TEXT_REGEX = re.compile(
+        r'^\s*(?:gambar|figure|fig\.?|tabel|table)\s*\d',
+        re.IGNORECASE
+    )
     
     def __init__(self, section_data: Optional[Dict] = None):
         """
@@ -175,6 +183,25 @@ class DoclingFusionService:
             item.get('has_pdf_image') or 
             item.get('has_shape_units')
         )
+
+    def _is_text_only_item(self, item: Dict) -> bool:
+        if not item:
+            return False
+        if item.get('source') != 'alignment':
+            return False
+        element_type = str(item.get('element_type', '')).lower()
+        if 'table' in element_type or item.get('has_table_units'):
+            return False
+        return not (
+            item.get('is_image_part') or
+            item.get('has_pdf_image') or
+            item.get('has_shape_units')
+        )
+
+    def _is_caption_candidate(self, text: Optional[str]) -> bool:
+        if not text:
+            return False
+        return bool(self.CAPTION_TEXT_REGEX.match(text.strip()))
     
     @staticmethod
     def merge_bboxes(bbox1: Optional[List[float]], bbox2: Optional[List[float]]) -> Optional[List[float]]:
@@ -189,6 +216,56 @@ class DoclingFusionService:
             max(bbox1[2], bbox2[2]),  # x1
             max(bbox1[3], bbox2[3])   # y1
         ]
+
+    def _x_overlap_ratio(self, bbox1: Optional[List[float]], bbox2: Optional[List[float]]) -> float:
+        if not bbox1 or not bbox2 or len(bbox1) < 4 or len(bbox2) < 4:
+            return 0.0
+        x0 = max(bbox1[0], bbox2[0])
+        x1 = min(bbox1[2], bbox2[2])
+        if x0 >= x1:
+            return 0.0
+        w1 = bbox1[2] - bbox1[0]
+        w2 = bbox2[2] - bbox2[0]
+        min_w = min(w1, w2)
+        return (x1 - x0) / min_w if min_w > 0 else 0.0
+
+    def _has_item_above(
+        self,
+        bbox: List[float],
+        items: List[Dict],
+        require_x_overlap: bool = True
+    ) -> bool:
+        for item in items:
+            ibox = item.get('bbox')
+            if not ibox or len(ibox) < 4:
+                continue
+            if ibox[3] <= bbox[1]:
+                gap = bbox[1] - ibox[3]
+                if gap <= self.CAPTION_VERTICAL_GAP_MAX and (
+                    not require_x_overlap or
+                    self._x_overlap_ratio(bbox, ibox) >= self.CAPTION_X_OVERLAP_MIN
+                ):
+                    return True
+        return False
+
+    def _has_item_below(
+        self,
+        bbox: List[float],
+        items: List[Dict],
+        require_x_overlap: bool = True
+    ) -> bool:
+        for item in items:
+            ibox = item.get('bbox')
+            if not ibox or len(ibox) < 4:
+                continue
+            if ibox[1] >= bbox[3]:
+                gap = ibox[1] - bbox[3]
+                if gap <= self.CAPTION_VERTICAL_GAP_MAX and (
+                    not require_x_overlap or
+                    self._x_overlap_ratio(bbox, ibox) >= self.CAPTION_X_OVERLAP_MIN
+                ):
+                    return True
+        return False
     
     def fuse_alignments_with_docling(
         self,
@@ -221,21 +298,31 @@ class DoclingFusionService:
         
         # Add body alignments
         for alignment in (alignments or []):
-            if alignment.get('is_table') and alignment.get('cells'):
+            is_table_alignment = alignment.get('is_table') and alignment.get('cells')
+            parent_openxml_indices = alignment.get('openxml_indices') or []
+            if is_table_alignment:
+                parent_openxml_idx = alignment.get('element_sequence')
+            else:
+                parent_openxml_idx = min(parent_openxml_indices) if parent_openxml_indices else alignment.get('openxml_idx')
+            if is_table_alignment:
                 # Table cells
                 for cell in alignment['cells']:
                     if cell.get('merged_bbox'):
                         matched_units = cell.get('matched_pdf_units', [])
                         has_image = any(u.get('item_type') == 'image' for u in matched_units)
                         has_shape = any(u.get('item_type') == 'shape' for u in matched_units)
+                        has_table_units = any(u.get('item_type') in ('table', 'hline_table') for u in matched_units)
                         all_aligned_items.append({
                             'bbox': cell['merged_bbox'],
                             'text': cell.get('text', ''),
                             'source': 'cell',
                             'element_id': alignment.get('element_id'),
+                            'element_sequence': alignment.get('element_sequence'),
                             'element_type': alignment.get('element_type'),
+                            'openxml_idx': parent_openxml_idx,
                             'has_pdf_image': has_image,
                             'has_shape_units': has_shape,
+                            'has_table_units': True,
                             'is_picture_area': has_image or has_shape
                         })
             elif alignment.get('merged_bbox'):
@@ -243,6 +330,7 @@ class DoclingFusionService:
                 matched_units = alignment.get('matched_pdf_units', [])
                 has_shape = any(u.get('item_type') == 'shape' for u in matched_units)
                 has_image = any(u.get('item_type') == 'image' for u in matched_units)
+                has_table_units = any(u.get('item_type') in ('table', 'hline_table') for u in matched_units)
                 is_picture_area = bool(
                     alignment.get('is_image_part') or has_shape or has_image
                 )
@@ -254,10 +342,12 @@ class DoclingFusionService:
                     'element_id': alignment.get('element_id'),
                     'element_type': alignment.get('element_type'),
                     'element_sequence': alignment.get('element_sequence'),
+                    'openxml_idx': parent_openxml_idx,
                     'is_text_part': alignment.get('is_text_part', False),
                     'is_image_part': alignment.get('is_image_part', False),
                     'has_shape_units': has_shape,
                     'has_pdf_image': has_image,
+                    'has_table_units': has_table_units,
                     'unit_id': alignment.get('unit_id'),
                     'is_picture_area': is_picture_area
                 })
@@ -272,6 +362,7 @@ class DoclingFusionService:
                     'zone': unit.get('zone'),
                     'has_pdf_image': False,
                     'has_shape_units': False,
+                    'has_table_units': False,
                     'is_picture_area': False
                 })
         
@@ -295,8 +386,7 @@ class DoclingFusionService:
                     
                     overlap = self.calculate_overlap(item['bbox'], doc_bbox)
                     if overlap >= self.OVERLAP_THRESHOLD:
-                        # For picture label, allow matching even if item is text-only
-                        # (text inside picture should stay labeled as picture)
+                        # Allow matching text-only items, but label picture only when PDF image exists.
                         matching_items.append({'item': item, 'idx': idx, 'overlap': overlap})
                 
                 if matching_items:
@@ -315,6 +405,9 @@ class DoclingFusionService:
                     
                     # Check for shape units
                     has_shape_units = any(m['item'].get('has_shape_units') for m in matching_items)
+                    has_pdf_image = any(m['item'].get('has_pdf_image') for m in matching_items)
+                    has_table_units = any(m['item'].get('has_table_units') for m in matching_items)
+                    all_text_only = all(self._is_text_only_item(m['item']) for m in matching_items)
                     
                     # Special case: Docling 'picture' with multiple shapes
                     should_merge_picture = is_picture_label and len(matching_items) > 1 and has_shape_units
@@ -322,6 +415,9 @@ class DoclingFusionService:
                     # Merge if: multiple items AND same element AND not mixed parts
                     # OR: picture label with shapes
                     should_merge = (len(matching_items) > 1 and all_same_element and not has_mixed_parts and not has_image_part) or should_merge_picture
+                    if is_picture_label and (has_table_units or has_image_part or has_pdf_image):
+                        # Keep picture parts split by cell/image to avoid oversized bboxes.
+                        should_merge = False
                     
                     if should_merge:
                         # Merge all matching bboxes
@@ -331,6 +427,7 @@ class DoclingFusionService:
                         sequences = []
                         elem_ids = []
                         elem_types = []
+                        openxml_indices = []
                         
                         for m in matching_items:
                             merged_bbox = self.merge_bboxes(merged_bbox, m['item']['bbox'])
@@ -343,11 +440,23 @@ class DoclingFusionService:
                                 elem_ids.append(m['item']['element_id'])
                             if m['item'].get('element_type'):
                                 elem_types.append(m['item']['element_type'])
+                            if m['item'].get('openxml_idx') is not None:
+                                openxml_indices.append(m['item']['openxml_idx'])
                         
                         avg_overlap /= len(matching_items)
                         
                         # Determine label
                         merged_label = doc_item.get('label')
+                        if merged_label == 'picture':
+                            if not has_pdf_image:
+                                merged_label = 'text'
+                            elif not any(
+                                m['item'].get('is_picture_area') for m in matching_items
+                            ) and not any(
+                                m['item'].get('has_shape_units') for m in matching_items
+                            ):
+                                if all_text_only:
+                                    merged_label = 'caption'
                         
                         # Correct header/footer labels
                         merged_label = self.correct_header_footer_label(merged_label, merged_bbox)
@@ -356,6 +465,7 @@ class DoclingFusionService:
                         ref_elem_id = None
                         ref_elem_seq = None
                         ref_elem_type = None
+                        ref_openxml_idx = min(openxml_indices) if openxml_indices else None
                         
                         if should_merge_picture and sequences:
                             max_seq = max(sequences)
@@ -375,9 +485,14 @@ class DoclingFusionService:
                             'element_id': ref_elem_id,
                             'element_sequence': ref_elem_seq,
                             'element_type': ref_elem_type,
+                            'openxml_idx': ref_openxml_idx,
                             'is_picture_merge': should_merge_picture,
                             'docling_label': doc_item.get('label'),
-                            'is_picture_area': any(m['item'].get('is_picture_area') for m in matching_items)
+                            'is_picture_area': any(m['item'].get('is_picture_area') for m in matching_items),
+                            'has_shape_units': has_shape_units,
+                            'has_pdf_image': has_pdf_image,
+                            'has_table_units': has_table_units,
+                            'is_text_only_item': all_text_only
                         })
                     else:
                         # Don't merge - add each item separately
@@ -385,6 +500,12 @@ class DoclingFusionService:
                             item = m['item']
                             
                             final_label = doc_item.get('label')
+                            if final_label == 'picture':
+                                if not item.get('has_pdf_image'):
+                                    final_label = 'text'
+                                elif not item.get('is_picture_area') and not item.get('has_shape_units'):
+                                    if self._is_text_only_item(item):
+                                        final_label = 'caption'
                             
                             final_label = self.correct_header_footer_label(final_label, item['bbox'])
                             
@@ -397,13 +518,18 @@ class DoclingFusionService:
                                 'element_id': item.get('element_id'),
                                 'element_type': item.get('element_type'),
                                 'element_sequence': item.get('element_sequence'),
+                                'openxml_idx': item.get('openxml_idx'),
                                 'zone': item.get('zone'),
                                 'docling_label': doc_item.get('label'),
                                 'is_text_part': item.get('is_text_part'),
                                 'is_image_part': item.get('is_image_part'),
                                 'unit_id': item.get('unit_id'),
                                 'merged_count': 1,
-                                'is_picture_area': item.get('is_picture_area', False)
+                                'is_picture_area': item.get('is_picture_area', False),
+                                'has_shape_units': item.get('has_shape_units'),
+                                'has_pdf_image': item.get('has_pdf_image'),
+                                'has_table_units': item.get('has_table_units'),
+                                'is_text_only_item': self._is_text_only_item(item)
                             })
         
         # Add remaining unmatched aligned items (no Docling match)
@@ -431,11 +557,16 @@ class DoclingFusionService:
                 'element_id': item.get('element_id'),
                 'element_type': item.get('element_type'),
                 'element_sequence': item.get('element_sequence'),
+                'openxml_idx': item.get('openxml_idx'),
                 'zone': item.get('zone'),
                 'docling_label': None,
                 'is_image_part': item.get('is_image_part'),
                 'merged_count': 1,
-                'is_picture_area': item.get('is_picture_area', False)
+                'is_picture_area': item.get('is_picture_area', False),
+                'has_shape_units': item.get('has_shape_units'),
+                'has_pdf_image': item.get('has_pdf_image'),
+                'has_table_units': item.get('has_table_units'),
+                'is_text_only_item': self._is_text_only_item(item)
             })
         
         # Post-pass: force picture label for image/shape areas that overlap any picture prediction
@@ -446,7 +577,7 @@ class DoclingFusionService:
             ]
             if picture_preds:
                 for result in fused_results:
-                    if result.get('label') == 'picture' or not result.get('is_picture_area'):
+                    if result.get('label') == 'picture' or not result.get('has_pdf_image'):
                         continue
                     bbox = result.get('bbox')
                     if not bbox:
@@ -454,6 +585,50 @@ class DoclingFusionService:
                     if any(self.calculate_overlap(bbox, d['bbox']) > 0 for d in picture_preds):
                         result['label'] = 'picture'
                         result['docling_label'] = 'picture'
+
+        picture_results = [r for r in fused_results if r.get('label') == 'picture' and r.get('bbox')]
+
+        # Promote explicit caption text (e.g., "Gambar 2.2") when close to a picture.
+        if picture_results:
+            for result in fused_results:
+                if result.get('label') not in ('text', 'paragraph', 'unknown'):
+                    continue
+                text = (result.get('text') or '').strip()
+                if not self._is_caption_candidate(text):
+                    continue
+                bbox = result.get('bbox')
+                if not bbox or len(bbox) < 4:
+                    continue
+                if (bbox[3] - bbox[1]) > self.CAPTION_LINE_MAX_HEIGHT:
+                    continue
+                if self._has_item_above(bbox, picture_results) or self._has_item_below(bbox, picture_results):
+                    result['label'] = 'caption'
+
+        caption_results = [r for r in fused_results if r.get('label') == 'caption' and r.get('bbox')]
+        if picture_results and caption_results:
+            for result in fused_results:
+                if result.get('label') not in ('text', 'paragraph', 'unknown'):
+                    continue
+                bbox = result.get('bbox')
+                if not bbox or len(bbox) < 4:
+                    continue
+                if (bbox[3] - bbox[1]) > self.CAPTION_LINE_MAX_HEIGHT:
+                    continue
+                above_picture = self._has_item_above(bbox, picture_results)
+                below_picture = self._has_item_below(bbox, picture_results)
+                # Allow caption proximity without x-overlap to catch (a)/(b) markers.
+                above_caption = self._has_item_above(
+                    bbox,
+                    caption_results,
+                    require_x_overlap=False
+                )
+                below_caption = self._has_item_below(
+                    bbox,
+                    caption_results,
+                    require_x_overlap=False
+                )
+                if (above_picture and below_caption) or (above_caption and below_picture):
+                    result['label'] = 'caption'
         
         # Sort by reading order (line-aware)
         def sort_key(item):

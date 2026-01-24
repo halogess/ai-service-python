@@ -1,0 +1,28 @@
+
+
+========== DIFFLIB ALIGN CALLED FOR DOC 255 ==========
+Document found: BAB_III.pdf
+Total elements: 37
+
+=== ALIGNMENT TRACE LOG ===
+Total DOCX tokens: 699
+Total PDF tokens: 748
+Fallback Align Cell 49469_0: +1 tokens (score 1.00, was 0%)\nPyMuPDF Y-only: 49469_6 -> Y [318,371], 13 candidates\nPyMuPDF X+Y: 49469_10 -> bbox [303,361,434,418], 10 candidates\nPyMuPDF Y-only: 49469_16 -> Y [361,418], 17 candidates\nFallback Align Cell 49469_16: +16 tokens (score 1.00, was 0%)\nPyMuPDF X+Y: 49469_18 -> bbox [183,408,313,466], 7 candidates\nPyMuPDF Y-only: 49473_6 -> Y [126,170], 2 candidates\nPyMuPDF X+Y: 49473_10 -> bbox [300,160,408,210], 1 candidates\n
+Found 0 standalone images
+Found 0 table cell images
+Column X-ranges: {0: (200.75, 408.5)}
+Row Y-ranges: {0: (125.699951171875, 175.4599609375), 6: (257.15997314453125, 284.90997314453125), 10: (284.90997314453125, 322.9599609375), 18: (175.4599609375, 242.2099609375)}
+Column X-ranges: {0: (182.56999588012695, 433.8199920654297)}
+Row Y-ranges: {0: (595.75, 650.2999877929688), 6: (499.75, 595.75), 10: (441.2499694824219, 480.2499694824219), 16: (357.79998779296875, 421.54998779296875), 18: (318.25, 357.79998779296875)}
+Aligned 0 table cell images
+Aligned 0 standalone images
+
+Checking for unaligned elements...
+Refining Container 49473 on page 1: H 86.5 -> 197.3
+Refining Container 49469 on page 0: H 53.1 -> 332.0
+
+Aligned elements: 45
+=== END TRACE LOG ===
+
+
+=== ALIGNMENT COMPLETE ===

@@ -13,17 +13,13 @@ WORKDIR /app
 # Copy requirements
 COPY requirements.txt .
 
-# Upgrade pip first
-RUN pip install --upgrade pip
+ARG UV_HTTP_TIMEOUT=10000
+ENV UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}
 
-# Install Python dependencies one by one
-RUN pip install --no-cache-dir --timeout=1000 sqlalchemy==2.0.44
-RUN pip install --no-cache-dir --timeout=1000 pymysql==1.1.2
-RUN pip install --no-cache-dir --timeout=1000 python-dotenv
-RUN pip install --no-cache-dir --timeout=1000 pillow
-RUN pip install --no-cache-dir --timeout=1000 pymupdf
-RUN pip install --no-cache-dir --timeout=1000 rapidfuzz
-RUN pip install --no-cache-dir --timeout=10000 docling
+# Upgrade pip first, then install uv for dependency resolution
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir uv \
+    && uv pip install --system -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/

@@ -7,6 +7,7 @@ from .dokumen_elemen import DokumenElemen
 from .dokumen_part import DokumenPart
 from .dokumen_section import DokumenSection
 from .dokumen_elemen_visual import DokumenElemenVisual
+from .dokumen_note import DokumenNote
 
 
-__all__ = ["Base", "Antrian", "Buku", "Bab", "Dokumen", "DokumenElemen", "DokumenPart", "DokumenSection", "DokumenElemenVisual"]
+__all__ = ["Base", "Antrian", "Buku", "Bab", "Dokumen", "DokumenElemen", "DokumenPart", "DokumenSection", "DokumenElemenVisual", "DokumenNote"]

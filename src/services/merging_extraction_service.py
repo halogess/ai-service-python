@@ -2,8 +2,11 @@
 import os
 import json
 import logging
+import difflib
+import re
+from datetime import datetime
 from sqlalchemy.orm import Session
-from models import Dokumen, DokumenElemen, DokumenSection, DokumenPart, DokumenElemenVisual
+from models import Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote
 from services.pdf_extraction_service import PDFExtractor
 from services.alignment_service import AlignmentService
 from services.docling_service import DoclingService
@@ -17,6 +20,20 @@ STORAGE_BASE = os.getenv("VOLUME_BASE_PATH", "/app/storage")
 VISUALIZATION_OUTPUT = os.getenv("VISUALIZATION_OUTPUT", "visualization_output")
 
 class MergingExtractionService:
+    FOOTNOTE_LABELS = {"footnote"}
+    FOOTNOTE_MATCH_MIN_RATIO = 0.55
+    FOOTNOTE_OVERLAP_THRESHOLD = 0.3
+    FOOTNOTE_LOG_PATH = os.path.join("logs", "footnote_matches.txt")
+    DUPLICATE_SEQUENCE_GAP_THRESHOLD = 2
+    BAB_TITLE_REGEX = re.compile(r'^\s*bab\b', re.IGNORECASE)
+    SUBCHAPTER_TITLE_REGEX = re.compile(r'^\s*\d+(?:\.\d+)+\.?', re.IGNORECASE)
+    LIST_NUMERIC_REGEX = re.compile(r'^\s*\d+(?!\.\d)(?:[.)])', re.IGNORECASE)
+    LIST_ALPHA_REGEX = re.compile(r'^\s*[a-z](?:[.)])', re.IGNORECASE)
+    LIST_BULLET_REGEX = re.compile(
+        r'^\s*(?:[\u2022\u2023\u25e6\u2043\u2219\u00b7\u2024\u25aa\u25cf\*\-\u2013\u2014\.])'
+    )
+    CENTER_JC_XML_REGEX = re.compile(r'<w:jc\b[^>]*\b(?:w:)?val=[\"\']center[\"\']', re.IGNORECASE)
+
     def __init__(self):
         self.alignment_service = AlignmentService()
         self.docling_service = DoclingService()
@@ -29,7 +46,7 @@ class MergingExtractionService:
         1. Extract PDF content page by page
         2. Validate/Align with OpenXML elements
         3. Run Docling classification
-        4. Save results to database (DokumenElemen) [Optional]
+        4. Save results to database (DokumenElemenVisual) [Optional]
         5. Optionally generate visualization images
         
         Args:
@@ -64,6 +81,7 @@ class MergingExtractionService:
 
             # Track max_openxml_idx across pages to prevent backward matching
             max_openxml_idx = 0
+            page_vis_payload = {}
             
             for page_num in range(1, total_pages + 1):
                 # Extract PDF data
@@ -84,6 +102,16 @@ class MergingExtractionService:
                 # I need to replicate `processMergingResponse` from frontend JS here.
                 
                 extraction_items = self._transform_extraction_data_to_items(extraction_data)
+
+                page_docling_preds = docling_predictions.get(str(page_num), [])
+                footnote_groups, footnote_item_idxs = self._build_footnote_groups(
+                    extraction_items, page_docling_preds, doc_id, page_num
+                )
+                if footnote_item_idxs:
+                    extraction_items = [
+                        item for idx, item in enumerate(extraction_items)
+                        if idx not in footnote_item_idxs
+                    ]
                 
                 # Perform Alignment with cross-page tracking
                 alignment_result = self.alignment_service.align(
@@ -100,52 +128,110 @@ class MergingExtractionService:
                     alignments = alignment_result['final_alignments']
                     header_footer_units = alignment_result.get('header_footer_units', [])
                     section_data = alignment_result.get('page_debug', {}).get('section_data')
-                    page_docling_preds = docling_predictions.get(str(page_num), [])
+                    page_docling_preds, footnote_entries = self._assign_docling_footnotes(
+                        db, doc_id, page_num, page_docling_preds, footnote_groups
+                    )
                     
                     # Save alignment results with header_footer_units for proper Docling fusion
                     fused_results = self._save_alignment_results(
                         db, 
                         alignments, 
                         page_docling_preds,
+                        footnote_entries=footnote_entries,
                         header_footer_units=header_footer_units,
                         section_data=section_data,
                         doc_id=doc_id,
                         page_num=page_num
                     )
+
+                    if save_to_db and not generate_visualizations:
+                        self._replace_visual_records(
+                            db,
+                            doc_id,
+                            page_num,
+                            fused_results
+                        )
                     
                     # Generate visualizations if enabled
                     if generate_visualizations:
-                        try:
-                            vis_paths = self.visualization_service.visualize_page(
-                                pdf_path=pdf_path,
-                                page_num=page_num - 1,  # 0-based for visualization
-                                alignments=alignments,
-                                fused_results=fused_results,
-                                doc_id=doc_id,
-                                output_dir_override=output_dir
-                            )
-                            logger.info(f"Page {page_num}: Generated visualizations - {list(vis_paths.keys())}")
-                            
-                            # Also save the fused results to JSON for debugging
-                            if vis_paths:
-                                # Get output dir from one of the paths
-                                json_output_dir = os.path.dirname(list(vis_paths.values())[0])
-                                
-                                # Save fused results
-                                json_path = os.path.join(json_output_dir, f"page_{page_num}_fusion_data.json")
-                                with open(json_path, 'w', encoding='utf-8') as f:
-                                    json.dump({
-                                        'page': page_num,
-                                        'doc_id': doc_id,
-                                        'fused_results': fused_results,
-                                        'raw_docling': page_docling_preds,
-                                        'alignments': alignments
-                                    }, f, indent=2, ensure_ascii=False)
-                                    
-                        except Exception as vis_err:
-                            logger.warning(f"Page {page_num}: Visualization/JSON save failed - {vis_err}")
+                        all_pdf_units = self.alignment_service._flatten_extraction_items(extraction_items)
+                        unaligned_units = alignment_result.get('unaligned_pdf_units', [])
+                        unfused_units = self._collect_unfused_pdf_units(
+                            all_pdf_units,
+                            fused_results,
+                            unaligned_units
+                        )
+                        unaligned_for_vis = unaligned_units + unfused_units
+
+                        page_vis_payload[page_num] = {
+                            'alignments': alignments,
+                            'fused_results': fused_results,
+                            'header_footer_units': header_footer_units,
+                            'unaligned_pdf_units': unaligned_for_vis,
+                            'raw_docling': page_docling_preds
+                        }
                 
             extractor.close()
+
+            if generate_visualizations and page_vis_payload:
+                try:
+                    duplicate_element_ids = self._collect_duplicate_openxml_element_ids(page_vis_payload)
+                    for page_num, payload in page_vis_payload.items():
+                        alignments = payload.get('alignments')
+                        removed_duplicate_element_ids = set()
+                        if alignments and duplicate_element_ids:
+                            alignments, removed_duplicate_element_ids = self._merge_duplicate_units_with_neighbors(
+                                alignments,
+                                duplicate_element_ids
+                            )
+                            payload['alignments'] = alignments
+                            self._sync_fused_bboxes_with_alignments(
+                                payload.get('fused_results'),
+                                alignments,
+                                removed_duplicate_element_ids
+                            )
+
+                        if save_to_db:
+                            self._replace_visual_records(
+                                db,
+                                doc_id,
+                                page_num,
+                                payload.get('fused_results')
+                            )
+
+                        duplicate_units = self._collect_duplicate_units_for_page(
+                            alignments,
+                            duplicate_element_ids
+                        )
+
+                        vis_paths = self.visualization_service.visualize_page(
+                            pdf_path=pdf_path,
+                            page_num=page_num - 1,  # 0-based for visualization
+                            alignments=payload.get('alignments'),
+                            fused_results=payload.get('fused_results'),
+                            header_footer_units=payload.get('header_footer_units'),
+                            unaligned_pdf_units=payload.get('unaligned_pdf_units'),
+                            duplicate_mapping_units=duplicate_units,
+                            doc_id=doc_id,
+                            output_dir_override=output_dir
+                        )
+                        logger.info(f"Page {page_num}: Generated visualizations - {list(vis_paths.keys())}")
+
+                        json_output_dir = output_dir
+                        if not json_output_dir and vis_paths:
+                            json_output_dir = os.path.dirname(list(vis_paths.values())[0])
+                        if json_output_dir:
+                            json_path = os.path.join(json_output_dir, f"page_{page_num}_fusion_data.json")
+                            with open(json_path, 'w', encoding='utf-8') as f:
+                                json.dump({
+                                    'page': page_num,
+                                    'doc_id': doc_id,
+                                    'fused_results': payload.get('fused_results'),
+                                    'raw_docling': payload.get('raw_docling'),
+                                    'alignments': payload.get('alignments')
+                                }, f, indent=2, ensure_ascii=False)
+                except Exception as vis_err:
+                    logger.warning(f"Visualization/JSON save failed - {vis_err}")
             
             if save_to_db:
                 db.commit()
@@ -240,9 +326,928 @@ class MergingExtractionService:
         items.sort(key=cmp_to_key(compare_items))
         return items
 
-    def _save_alignment_results(self, db, alignments, docling_predictions, header_footer_units=None, section_data=None, doc_id=None, page_num=None):
+    def _pdf_unit_key(self, unit):
+        unit_id = unit.get('unit_id')
+        if unit_id is not None:
+            return ('unit_id', unit_id)
+        item_idx = unit.get('item_idx')
+        if item_idx is not None:
+            return ('item_idx', item_idx)
+        bbox = unit.get('bbox')
+        if bbox and len(bbox) >= 4:
+            return ('bbox', tuple(bbox))
+        return None
+
+    def _unit_overlaps_fused(self, unit_bbox, fused_results):
+        if not unit_bbox or len(unit_bbox) < 4:
+            return False
+        for result in fused_results or []:
+            bbox = result.get('bbox')
+            if not bbox or len(bbox) < 4:
+                continue
+            if self.fusion_service.calculate_overlap(unit_bbox, bbox) > 0:
+                return True
+        return False
+
+    def _collect_unfused_pdf_units(self, all_pdf_units, fused_results, unaligned_pdf_units):
+        unaligned_keys = set()
+        for unit in unaligned_pdf_units or []:
+            key = self._pdf_unit_key(unit)
+            if key is not None:
+                unaligned_keys.add(key)
+
+        unfused = []
+        seen = set(unaligned_keys)
+        for unit in all_pdf_units or []:
+            if not unit or not unit.get('bbox'):
+                continue
+            key = self._pdf_unit_key(unit)
+            if key is None or key in seen:
+                continue
+            if self._unit_overlaps_fused(unit.get('bbox'), fused_results):
+                seen.add(key)
+                continue
+            unfused.append(unit)
+            seen.add(key)
+        return unfused
+
+    def _collect_duplicate_openxml_element_ids(self, page_vis_payload):
+        element_pages = {}
+        for page_num, payload in (page_vis_payload or {}).items():
+            for alignment in payload.get('alignments') or []:
+                elem_id = alignment.get('element_id')
+                if elem_id is None:
+                    continue
+                element_pages.setdefault(elem_id, set()).add(page_num)
+        return {elem_id for elem_id, pages in element_pages.items() if len(pages) > 1}
+
+    def _get_alignment_sequence_value(self, alignment):
+        seq = alignment.get('element_sequence') if alignment else None
+        if seq is None:
+            return None
+        try:
+            return int(seq)
+        except (TypeError, ValueError):
+            return None
+
+    def _get_alignment_center_y(self, alignment):
+        bbox = (alignment or {}).get('merged_bbox') or (alignment or {}).get('bbox')
+        if not bbox or len(bbox) < 4:
+            return None
+        return (bbox[1] + bbox[3]) / 2
+
+    def _normalize_text_value(self, value):
+        if value is None:
+            return ''
+        if isinstance(value, list):
+            value = ' '.join(str(v) for v in value)
+        return self.alignment_service._normalize_text(str(value))
+
+    def _get_bbox_center_y(self, bbox):
+        if not bbox or len(bbox) < 4:
+            return None
+        return (bbox[1] + bbox[3]) / 2
+
+    def _coerce_text(self, value):
+        if value is None:
+            return ''
+        if isinstance(value, list):
+            return ' '.join(str(v) for v in value)
+        return str(value)
+
+    def _text_starts_with_bab(self, text):
+        if not text:
+            return False
+        return bool(self.BAB_TITLE_REGEX.match(text))
+
+    def _is_subchapter_title(self, text):
+        if not text:
+            return False
+        return bool(self.SUBCHAPTER_TITLE_REGEX.match(text))
+
+    def _get_text_list_marker(self, text):
+        if not text:
+            return None
+        if self.LIST_NUMERIC_REGEX.match(text):
+            return 'numeric'
+        if self.LIST_ALPHA_REGEX.match(text):
+            return 'alpha'
+        if self.LIST_BULLET_REGEX.match(text):
+            return 'bullet'
+        return None
+
+    def _load_json_tree(self, raw_tree):
+        if raw_tree is None:
+            return None
+        if isinstance(raw_tree, str):
+            try:
+                return json.loads(raw_tree)
+            except Exception:
+                return None
+        return raw_tree
+
+    def _get_element_json_tree(self, element, cache):
+        if not element:
+            return None
+        elem_id = element.delemen_id
+        if elem_id in cache:
+            return cache[elem_id]
+        tree = self._load_json_tree(element.delemen_json_tree)
+        cache[elem_id] = tree
+        return tree
+
+    def _normalize_alignment_value(self, value):
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            for key in ('val', 'value', 'align', 'alignment'):
+                if key in value:
+                    return self._normalize_alignment_value(value.get(key))
+            return None
+        if isinstance(value, list):
+            for item in value:
+                normalized = self._normalize_alignment_value(item)
+                if normalized:
+                    return normalized
+            return None
+        normalized = str(value).strip().lower()
+        return normalized if normalized else None
+
+    def _extract_paragraph_alignment(self, json_tree):
+        if not json_tree:
+            return None
+        key_candidates = {
+            'alignment',
+            'align',
+            'textalign',
+            'text_align',
+            'paragraphalignment',
+            'paragraph_align',
+            'justification',
+            'jc'
+        }
+        def walk(node):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if str(key).lower() in key_candidates:
+                        normalized = self._normalize_alignment_value(value)
+                        if normalized:
+                            return normalized
+                    found = walk(value)
+                    if found:
+                        return found
+            elif isinstance(node, list):
+                for item in node:
+                    found = walk(item)
+                    if found:
+                        return found
+            return None
+
+        return walk(json_tree)
+
+    def _is_paragraph_center_aligned(self, element, json_cache, align_cache):
+        if not element:
+            return False
+        elem_id = element.delemen_id
+        if elem_id in align_cache:
+            return align_cache[elem_id]
+        tree = self._get_element_json_tree(element, json_cache)
+        alignment = self._extract_paragraph_alignment(tree)
+        if not alignment and element.delemen_xml:
+            if self.CENTER_JC_XML_REGEX.search(element.delemen_xml):
+                alignment = 'center'
+        is_center = alignment in ('center', 'centre')
+        align_cache[elem_id] = is_center
+        return is_center
+
+    def _apply_structural_labels(self, db, fused_results):
+        if not fused_results:
+            return
+        element_ids = {
+            result.get('element_id')
+            for result in fused_results
+            if result.get('element_id') is not None
+        }
+        element_map = {}
+        if db and element_ids:
+            elements = db.query(DokumenElemen).filter(
+                DokumenElemen.delemen_id.in_(element_ids)
+            ).all()
+            element_map = {elem.delemen_id: elem for elem in elements}
+
+        json_cache = {}
+        align_cache = {}
+        in_bab_block = False
+        list_marker_levels = {}
+        current_list_level = None
+        list_context_active = False
+        non_list_streak = 0
+
+        for result in fused_results:
+            visual_label = str(
+                result.get('label') or result.get('docling_label') or ''
+            ).lower()
+            text = self._coerce_text(result.get('text')).strip()
+            elem_id = result.get('element_id')
+            element = element_map.get(elem_id)
+
+            elem_type = result.get('element_type')
+            if not elem_type and element is not None:
+                elem_type = element.delemen_type
+            elem_type_norm = str(elem_type).lower() if elem_type else None
+
+            is_section_header = visual_label == 'section_header'
+            is_subchapter_text = self._is_subchapter_title(text)
+            center_aligned = False
+            if is_section_header and element is not None:
+                center_aligned = self._is_paragraph_center_aligned(
+                    element,
+                    json_cache,
+                    align_cache
+                )
+
+            structural_label = None
+            if is_section_header and center_aligned:
+                if in_bab_block or self._text_starts_with_bab(text):
+                    structural_label = 'judul_bab'
+                    in_bab_block = True
+                else:
+                    in_bab_block = False
+            else:
+                in_bab_block = False
+
+            if not structural_label and is_section_header and is_subchapter_text:
+                structural_label = 'judul_subbab'
+
+            if not structural_label:
+                is_list_candidate = False
+                if elem_type_norm and elem_type_norm.startswith('list-item-'):
+                    is_list_candidate = True
+                elif visual_label in ('section_header', 'list_item'):
+                    is_list_candidate = True
+
+                if is_list_candidate:
+                    if not list_context_active or non_list_streak > 1:
+                        list_marker_levels = {}
+                        current_list_level = None
+                    list_context_active = True
+                    non_list_streak = 0
+                    marker = self._get_text_list_marker(text)
+                    if marker:
+                        if marker in list_marker_levels:
+                            list_level = list_marker_levels[marker]
+                        else:
+                            list_level = (current_list_level or 0) + 1
+                            list_marker_levels[marker] = list_level
+                        current_list_level = list_level
+                        structural_label = f'list_level_{list_level}'
+                    else:
+                        if current_list_level:
+                            structural_label = f'list_level_{current_list_level}'
+                        else:
+                            structural_label = 'list_item'
+                else:
+                    if list_context_active:
+                        non_list_streak += 1
+                        if non_list_streak > 1:
+                            list_context_active = False
+
+            if not structural_label:
+                if elem_type_norm == 'paragraph' and visual_label == 'text':
+                    structural_label = 'paragraf'
+
+            if structural_label in ('judul_bab', 'judul_subbab') or is_subchapter_text:
+                list_marker_levels = {}
+                current_list_level = None
+                list_context_active = False
+                non_list_streak = 0
+
+            result['dev_label_struktural'] = structural_label
+
+    def _merge_duplicate_units_with_neighbors(self, alignments, duplicate_element_ids):
+        if not alignments or not duplicate_element_ids:
+            return alignments, set()
+
+        ordered = [
+            alignment for alignment in alignments
+            if not alignment.get('is_table') and alignment.get('merged_bbox')
+        ]
+        ordered.sort(key=lambda a: (self._get_alignment_center_y(a) or 0, a.get('merged_bbox')[0]))
+
+        touched = set()
+        removed_element_ids = set()
+        for idx, alignment in enumerate(ordered):
+            if alignment.get('element_id') not in duplicate_element_ids:
+                continue
+            if not self._is_duplicate_sequence_far(
+                alignments,
+                alignment,
+                self.DUPLICATE_SEQUENCE_GAP_THRESHOLD
+            ):
+                continue
+
+            units = list(alignment.get('matched_pdf_units', []))
+            if not units:
+                continue
+
+            above = ordered[idx - 1] if idx > 0 else None
+            below = ordered[idx + 1] if idx + 1 < len(ordered) else None
+
+            remaining_units = []
+            for unit in units:
+                if unit.get('item_type') != 'group':
+                    remaining_units.append(unit)
+                    continue
+                unit_bbox = unit.get('bbox')
+                if not unit_bbox:
+                    remaining_units.append(unit)
+                    continue
+                unit_text = self._normalize_text_value(unit.get('text'))
+                if not unit_text:
+                    remaining_units.append(unit)
+                    continue
+
+                target = None
+                above_text = self._normalize_text_value(above.get('element_text')) if above else ''
+                below_text = self._normalize_text_value(below.get('element_text')) if below else ''
+                above_contains = bool(above_text) and unit_text in above_text
+                below_contains = bool(below_text) and unit_text in below_text
+
+                if above_contains and not below_contains:
+                    target = above
+                elif below_contains and not above_contains:
+                    target = below
+                elif above_contains and below_contains:
+                    unit_y = self._get_bbox_center_y(unit_bbox)
+                    above_y = self._get_alignment_center_y(above)
+                    below_y = self._get_alignment_center_y(below)
+                    above_delta = abs(unit_y - above_y) if unit_y is not None and above_y is not None else None
+                    below_delta = abs(unit_y - below_y) if unit_y is not None and below_y is not None else None
+                    if above_delta is None and below_delta is None:
+                        target = below
+                    elif above_delta is None:
+                        target = below
+                    elif below_delta is None:
+                        target = above
+                    else:
+                        target = above if above_delta <= below_delta else below
+
+                if not target:
+                    remaining_units.append(unit)
+                    continue
+
+                unit_key = self._pdf_unit_key(unit)
+                target_units = target.setdefault('matched_pdf_units', [])
+                target_keys = {
+                    self._pdf_unit_key(u)
+                    for u in target_units
+                    if self._pdf_unit_key(u) is not None
+                }
+                if unit_key is None or unit_key in target_keys:
+                    remaining_units.append(unit)
+                    continue
+
+                unit['merged_from_duplicate'] = True
+                target_units.append(unit)
+                target_units.sort(key=lambda u: u.get('item_idx', -1))
+                touched.add(id(target))
+
+            alignment['matched_pdf_units'] = remaining_units
+            touched.add(id(alignment))
+            if not remaining_units:
+                removed_element_ids.add(alignment.get('element_id'))
+
+        if touched:
+            for alignment in alignments:
+                if id(alignment) in touched:
+                    self.alignment_service._recompute_alignment_bboxes(alignment)
+
+        if not removed_element_ids:
+            return alignments, set()
+        return (
+            [alignment for alignment in alignments if alignment.get('element_id') not in removed_element_ids],
+            removed_element_ids
+        )
+
+    def _sync_fused_bboxes_with_alignments(self, fused_results, alignments, removed_element_ids=None):
+        if not fused_results or not alignments:
+            return
+        if removed_element_ids:
+            fused_results[:] = [
+                result for result in fused_results
+                if not (
+                    result.get('source') == 'alignment'
+                    and result.get('element_id') in removed_element_ids
+                )
+            ]
+
+        alignment_by_id = {}
+        for alignment in alignments:
+            elem_id = alignment.get('element_id')
+            if elem_id is None:
+                continue
+            alignment_by_id.setdefault(elem_id, []).append(alignment)
+
+        updated_results = []
+        seen_picture_bboxes = set()
+
+        for result in fused_results:
+            if result.get('source') != 'alignment':
+                updated_results.append(result)
+                continue
+            elem_id = result.get('element_id')
+            if elem_id is None:
+                updated_results.append(result)
+                continue
+
+            is_picture = (
+                result.get('label') == 'picture'
+                or result.get('docling_label') == 'picture'
+                or result.get('has_pdf_image')
+                or result.get('is_image_part')
+            )
+            alignments_for_elem = alignment_by_id.get(elem_id, [])
+
+            if is_picture and alignments_for_elem:
+                image_units = [
+                    unit
+                    for alignment in alignments_for_elem
+                    for unit in (alignment.get('matched_pdf_units', []) or [])
+                    if unit.get('item_type') in ('image', 'shape') or unit.get('text') == '[IMG]'
+                ]
+                if image_units:
+                    for unit in image_units:
+                        bbox = unit.get('bbox')
+                        if not bbox or len(bbox) < 4:
+                            continue
+                        key = (elem_id, tuple(bbox))
+                        if key in seen_picture_bboxes:
+                            continue
+                        seen_picture_bboxes.add(key)
+                        new_result = dict(result)
+                        new_result['bbox'] = list(bbox)
+                        updated_results.append(new_result)
+                    continue
+
+            candidate_alignments = alignments_for_elem
+            if not is_picture and alignments_for_elem:
+                if result.get('is_text_part'):
+                    candidate_alignments = [
+                        alignment for alignment in alignments_for_elem
+                        if alignment.get('is_text_part')
+                    ]
+                elif result.get('is_image_part') is not True:
+                    candidate_alignments = [
+                        alignment for alignment in alignments_for_elem
+                        if not alignment.get('is_image_part')
+                    ]
+                if not candidate_alignments:
+                    candidate_alignments = alignments_for_elem
+
+            align_bboxes = [
+                alignment.get('merged_bbox')
+                for alignment in candidate_alignments
+                if alignment.get('merged_bbox')
+            ]
+            if not align_bboxes:
+                updated_results.append(result)
+                continue
+            align_bbox = self.alignment_service._merge_bboxes(align_bboxes)
+            if not align_bbox:
+                updated_results.append(result)
+                continue
+            bbox = result.get('bbox')
+            if not bbox or len(bbox) < 4:
+                result['bbox'] = list(align_bbox)
+                updated_results.append(result)
+                continue
+            result['bbox'] = [
+                min(bbox[0], align_bbox[0]),
+                min(bbox[1], align_bbox[1]),
+                max(bbox[2], align_bbox[2]),
+                max(bbox[3], align_bbox[3])
+            ]
+            updated_results.append(result)
+
+        fused_results[:] = updated_results
+
+    def _replace_visual_records(self, db, doc_id, page_num, fused_results):
+        if not db or doc_id is None or page_num is None:
+            return
+        if fused_results and any('dev_label_struktural' not in result for result in fused_results):
+            self._apply_structural_labels(db, fused_results)
+        db.query(DokumenElemenVisual).filter(
+            DokumenElemenVisual.dokumen_id == doc_id,
+            DokumenElemenVisual.dev_page == page_num
+        ).delete(synchronize_session=False)
+
+        for result in fused_results or []:
+            text_content = result.get('text', '')
+            if isinstance(text_content, list):
+                text_content = " ".join(text_content)
+            elif text_content is None:
+                text_content = ""
+
+            bbox = result.get('bbox')
+            x0 = y0 = x1 = y1 = 0
+            if bbox and len(bbox) == 4:
+                x0, y0, x1, y1 = bbox
+
+            dev = DokumenElemenVisual(
+                dokumen_id=doc_id,
+                dev_page=page_num,
+                dokumen_elemen_id=result.get('element_id'),
+                dev_bbox_x0=float(x0),
+                dev_bbox_y0=float(y0),
+                dev_bbox_x1=float(x1),
+                dev_bbox_y1=float(y1),
+                dev_label=result.get('label') or result.get('docling_label'),
+                dev_label_struktural=result.get('dev_label_struktural'),
+                dev_text=text_content
+            )
+            db.add(dev)
+
+    def _is_duplicate_sequence_far(self, alignments, alignment, threshold):
+        seq = self._get_alignment_sequence_value(alignment)
+        if seq is None:
+            return False
+
+        target_y = self._get_alignment_center_y(alignment)
+        if target_y is None:
+            return False
+
+        prev_seq = None
+        next_seq = None
+        best_above_delta = None
+        best_below_delta = None
+        for candidate in alignments or []:
+            if candidate is alignment:
+                continue
+            cand_seq = self._get_alignment_sequence_value(candidate)
+            if cand_seq is None:
+                continue
+            cand_y = self._get_alignment_center_y(candidate)
+            if cand_y is None:
+                continue
+            delta = cand_y - target_y
+            if delta < 0:
+                delta = abs(delta)
+                if best_above_delta is None or delta < best_above_delta:
+                    best_above_delta = delta
+                    prev_seq = cand_seq
+            elif delta > 0:
+                if best_below_delta is None or delta < best_below_delta:
+                    best_below_delta = delta
+                    next_seq = cand_seq
+
+        if prev_seq is None and next_seq is None:
+            return False
+        if prev_seq is None:
+            return (next_seq - seq) > threshold
+        if next_seq is None:
+            return (seq - prev_seq) > threshold
+        return (seq - prev_seq) > threshold or (next_seq - seq) > threshold
+
+    def _collect_duplicate_units_for_page(self, alignments, duplicate_element_ids):
+        if not alignments or not duplicate_element_ids:
+            return []
+        duplicates = []
+        for alignment in alignments:
+            if alignment.get('element_id') not in duplicate_element_ids:
+                continue
+            if not self._is_duplicate_sequence_far(
+                alignments,
+                alignment,
+                self.DUPLICATE_SEQUENCE_GAP_THRESHOLD
+            ):
+                continue
+            if alignment.get('is_table') and alignment.get('cells'):
+                for cell in alignment.get('cells') or []:
+                    duplicates.extend(
+                        unit for unit in cell.get('matched_pdf_units', [])
+                        if unit.get('item_type') == 'group'
+                    )
+            else:
+                duplicates.extend(
+                    unit for unit in alignment.get('matched_pdf_units', [])
+                    if unit.get('item_type') == 'group'
+                )
+        return duplicates
+
+    def _assign_docling_footnotes(self, db, doc_id, page_num, docling_predictions, footnote_groups):
+        if not docling_predictions:
+            self._append_footnote_log(doc_id, page_num, "no_docling_predictions")
+            return docling_predictions, []
+
+        if not footnote_groups:
+            self._append_footnote_log(doc_id, page_num, "no_docling_footnotes")
+            return docling_predictions, []
+
+        notes = db.query(DokumenNote).filter(
+            DokumenNote.dokumen_id == doc_id,
+            DokumenNote.dnote_kind == "footnote"
+        ).all()
+
+        if not notes:
+            self._append_footnote_log(doc_id, page_num, "no_dokumen_note")
+            return docling_predictions, []
+
+        note_candidates = []
+        for note in notes:
+            dnote_type = (note.dnote_type or '').lower()
+            if dnote_type in ("separator", "continuationseparator"):
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "skip_note",
+                    note_id=note.dnote_id,
+                    delemen_id=note.delemen_id,
+                    note_type=note.dnote_type,
+                    reason="separator"
+                )
+                continue
+            raw_tree = note.dnote_json_tree
+            if isinstance(raw_tree, str):
+                try:
+                    tree = json.loads(raw_tree)
+                except Exception:
+                    self._append_footnote_log(
+                        doc_id,
+                        page_num,
+                        "skip_note",
+                        note_id=note.dnote_id,
+                        delemen_id=note.delemen_id,
+                        note_type=note.dnote_type,
+                        reason="invalid_json"
+                    )
+                    continue
+            else:
+                tree = raw_tree or {}
+            if not isinstance(tree, dict):
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "skip_note",
+                    note_id=note.dnote_id,
+                    delemen_id=note.delemen_id,
+                    note_type=note.dnote_type,
+                    reason="tree_not_dict"
+                )
+                continue
+            text = self.alignment_service._extract_text_from_json_tree(tree)
+            text_norm = self.alignment_service._normalize_text(text)
+            if not text_norm:
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "skip_note",
+                    note_id=note.dnote_id,
+                    delemen_id=note.delemen_id,
+                    note_type=note.dnote_type,
+                    reason="empty_text"
+                )
+                continue
+            note_candidates.append({
+                "note": note,
+                "tree": tree,
+                "text": text,
+                "text_norm": text_norm
+            })
+            self._append_footnote_log(
+                doc_id,
+                page_num,
+                "note_candidate",
+                note_id=note.dnote_id,
+                delemen_id=note.delemen_id,
+                note_type=note.dnote_type,
+                text=text
+            )
+
+        if not note_candidates:
+            self._append_footnote_log(doc_id, page_num, "no_note_candidates")
+            return docling_predictions, []
+
+        best_scores = {}
+        candidates = []
+        best_scores = {}
+        group_norms = {}
+        for group_idx, group in enumerate(footnote_groups):
+            raw_text = group.get('text') or ''
+            doc_text = group.get('docling_pred', {}).get('text') if group.get('docling_pred') else ''
+            if isinstance(doc_text, list):
+                doc_text = ' '.join(str(t) for t in doc_text)
+            text_norm = self.alignment_service._normalize_text(str(raw_text))
+            if len(text_norm) < 3:
+                text_norm = self.alignment_service._normalize_text(str(doc_text))
+            if len(text_norm) < 3:
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "skip_group",
+                    docling_idx=group.get('docling_idx'),
+                    reason="text_too_short"
+                )
+                continue
+            group_norms[group_idx] = text_norm
+
+        if not group_norms:
+            self._append_footnote_log(doc_id, page_num, "no_group_candidates")
+            return docling_predictions, []
+
+        for group_idx, text_norm in group_norms.items():
+            for note_idx, note_entry in enumerate(note_candidates):
+                score = self._compute_text_similarity(text_norm, note_entry["text_norm"])
+                best_scores[group_idx] = max(best_scores.get(group_idx, 0.0), score)
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "candidate_score",
+                    docling_idx=footnote_groups[group_idx].get('docling_idx'),
+                    note_id=note_entry["note"].dnote_id,
+                    delemen_id=note_entry["note"].delemen_id,
+                    note_type=note_entry["note"].dnote_type,
+                    score=round(score, 3),
+                    pass_threshold=1 if score >= self.FOOTNOTE_MATCH_MIN_RATIO else 0
+                )
+                if score >= self.FOOTNOTE_MATCH_MIN_RATIO:
+                    candidates.append((score, group_idx, note_idx))
+
+        if not candidates:
+            for group_idx in group_norms:
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "no_candidate_above_threshold",
+                    docling_idx=footnote_groups[group_idx].get('docling_idx'),
+                    best_score=round(best_scores.get(group_idx, 0.0), 3)
+                )
+            footnote_entries = self._build_footnote_entries(footnote_groups, {})
+            filtered_preds = self._filter_docling_predictions(docling_predictions, footnote_groups)
+            return filtered_preds, footnote_entries
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        used_group = set()
+        used_note = set()
+        matched_groups = {}
+
+        for score, group_idx, note_idx in candidates:
+            if group_idx in used_group or note_idx in used_note:
+                continue
+            group = footnote_groups[group_idx]
+            note_entry = note_candidates[note_idx]
+            self._append_footnote_log(
+                doc_id,
+                page_num,
+                "match",
+                docling_idx=group.get('docling_idx'),
+                note_id=note_entry["note"].dnote_id,
+                delemen_id=note_entry["note"].delemen_id,
+                note_type=note_entry["note"].dnote_type,
+                score=round(score, 3),
+                docling_text=group.get("docling_pred", {}).get("text"),
+                note_text=note_entry["text"],
+                group_text=group.get("text")
+            )
+            matched_groups[group_idx] = note_entry["note"]
+            used_group.add(group_idx)
+            used_note.add(note_idx)
+
+        for group_idx in group_norms:
+            if group_idx not in matched_groups:
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "no_match",
+                    docling_idx=footnote_groups[group_idx].get('docling_idx'),
+                    best_score=round(best_scores.get(group_idx, 0.0), 3)
+                )
+
+        logger.debug(
+            "Docling footnotes matched: %s on page %s",
+            len(matched_groups),
+            page_num
+        )
+
+        footnote_entries = self._build_footnote_entries(footnote_groups, matched_groups)
+        filtered_preds = self._filter_docling_predictions(docling_predictions, footnote_groups)
+        return filtered_preds, footnote_entries
+
+    def _build_footnote_groups(self, extraction_items, docling_predictions, doc_id, page_num):
+        footnote_preds = []
+        for idx, pred in enumerate(docling_predictions or []):
+            label = str(pred.get('label', '')).lower()
+            if label in self.FOOTNOTE_LABELS and pred.get('bbox'):
+                footnote_preds.append((idx, pred))
+                self._append_footnote_log(
+                    doc_id,
+                    page_num,
+                    "docling_footnote",
+                    docling_idx=idx,
+                    label=label,
+                    bbox=pred.get("bbox"),
+                    text=pred.get("text")
+                )
+
+        if not footnote_preds:
+            return [], set()
+
+        pdf_units = self.alignment_service._flatten_extraction_items(extraction_items)
+        groups = []
+        excluded_item_idxs = set()
+
+        for docling_idx, pred in footnote_preds:
+            doc_bbox = pred.get('bbox')
+            matched_units = []
+            for unit in pdf_units:
+                if not unit.get('bbox') or not unit.get('text'):
+                    continue
+                if unit.get('item_type') in ('table', 'hline_table', 'shape', 'image'):
+                    continue
+                overlap = self.fusion_service.calculate_overlap(unit['bbox'], doc_bbox)
+                if overlap >= self.FOOTNOTE_OVERLAP_THRESHOLD:
+                    matched_units.append(unit)
+                    excluded_item_idxs.add(unit['item_idx'])
+
+            matched_units.sort(key=lambda x: x['item_idx'])
+            merged_bbox = self.alignment_service._merge_bboxes(
+                [u.get('bbox') for u in matched_units]
+            ) if matched_units else doc_bbox
+            merged_text = ' '.join(u.get('text', '') for u in matched_units).strip()
+            if not merged_text:
+                merged_text = pred.get('text', '')
+
+            groups.append({
+                'docling_idx': docling_idx,
+                'docling_pred': pred,
+                'bbox': merged_bbox,
+                'text': merged_text,
+                'matched_units': matched_units
+            })
+
+            self._append_footnote_log(
+                doc_id,
+                page_num,
+                "footnote_group",
+                docling_idx=docling_idx,
+                group_units=len(matched_units),
+                group_text=merged_text
+            )
+
+        return groups, excluded_item_idxs
+
+    def _build_footnote_entries(self, footnote_groups, matched_groups):
+        entries = []
+        for group_idx, group in enumerate(footnote_groups or []):
+            note = matched_groups.get(group_idx)
+            pred = group.get('docling_pred') or {}
+            label = str(pred.get('label', 'footnote')).lower() or 'footnote'
+            entries.append({
+                "bbox": group.get("bbox") or pred.get("bbox"),
+                "label": "footnote",
+                "text": group.get("text") or pred.get("text"),
+                "overlap": pred.get("score", 0),
+                "source": "note",
+                "element_id": note.dnote_id if note else None,
+                "note_id": note.dnote_id if note else None,
+                "note_kind": note.dnote_kind if note else "footnote",
+                "note_type": note.dnote_type if note else None,
+                "docling_label": label,
+                "merged_count": 1
+            })
+        return entries
+
+    def _filter_docling_predictions(self, docling_predictions, footnote_groups):
+        if not docling_predictions or not footnote_groups:
+            return docling_predictions
+        remove_idxs = {g.get('docling_idx') for g in footnote_groups if g.get('docling_idx') is not None}
+        return [pred for idx, pred in enumerate(docling_predictions) if idx not in remove_idxs]
+
+    def _compute_text_similarity(self, a, b):
+        if not a or not b:
+            return 0.0
+        if a in b or b in a:
+            return min(len(a), len(b)) / max(len(a), len(b))
+        return difflib.SequenceMatcher(None, a, b).ratio()
+
+    def _append_footnote_log(self, doc_id, page_num, event, **fields):
+        os.makedirs(os.path.dirname(self.FOOTNOTE_LOG_PATH), exist_ok=True)
+
+        def sanitize(text):
+            if isinstance(text, list):
+                text = ' '.join(str(t) for t in text)
+            return str(text or '').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+
+        timestamp = datetime.now().isoformat(timespec='seconds')
+        parts = [timestamp, f"doc_id={doc_id}", f"page={page_num}", f"event={event}"]
+        for key, value in fields.items():
+            parts.append(f"{key}={sanitize(value)}")
+        line = "\t".join(parts) + "\n"
+        with open(self.FOOTNOTE_LOG_PATH, "a", encoding="utf-8") as log_file:
+            log_file.write(line)
+
+    def _save_alignment_results(self, db, alignments, docling_predictions, footnote_entries=None, header_footer_units=None, section_data=None, doc_id=None, page_num=None):
         """
-        Update DokumenElemen with alignment metadata and fused Docling predictions.
+        Build fused results for visualization and downstream persistence.
         
         Args:
             db: Database session
@@ -261,86 +1266,26 @@ class MergingExtractionService:
             header_footer_units=header_footer_units or [],
             docling_predictions=docling_predictions or []
         )
-        
-        # Build lookup: element_id -> list of fused results
-        fused_by_element = {}
-        for result in fused_results:
-            elem_id = result.get('element_id')
-            if elem_id:
-                if elem_id not in fused_by_element:
-                    fused_by_element[elem_id] = []
-                fused_by_element[elem_id].append(result)
 
-            # --- NEW: Save to DokumenElemenVisual ---
-            if doc_id and page_num is not None:
-                # Text content handling
-                text_content = result.get('text', '')
-                if isinstance(text_content, list):
-                    text_content = " ".join(text_content)
-                elif text_content is None:
-                    text_content = ""
-                
-                # Bbox handling
-                bbox = result.get('bbox')
-                x0, y0, x1, y1 = 0, 0, 0, 0
-                if bbox and len(bbox) == 4:
-                    x0, y0, x1, y1 = bbox
-                
-                dev = DokumenElemenVisual(
-                    dokumen_id=doc_id,
-                    dev_page=page_num,
-                    dokumen_elemen_id=elem_id, # Can be None
-                    dev_bbox_x0=float(x0),
-                    dev_bbox_y0=float(y0),
-                    dev_bbox_x1=float(x1),
-                    dev_bbox_y1=float(y1),
-                    dev_label=result.get('label') or result.get('docling_label'),
-                    dev_text=text_content
-                )
-                db.add(dev)
-            # ----------------------------------------
-        
-        # Update each alignment's DokumenElemen
-        for align in alignments:
-            elem_id = align.get('element_id')
-            if not elem_id:
-                continue
-            
-            elem = db.query(DokumenElemen).get(elem_id)
-            if not elem:
-                continue
-            
-            # Load existing JSON tree
-            try:
-                tree = json.loads(elem.delemen_json_tree) if isinstance(elem.delemen_json_tree, str) else (elem.delemen_json_tree or {})
-            except:
-                tree = {}
-            
-            # Add alignment metadata
-            tree['alignment'] = {
-                'matched_pdf_units': align.get('matched_pdf_units', []),
-                'merged_bbox': align.get('merged_bbox'),
-                'is_table': align.get('is_table', False),
-                'timestamp': 'auto-generated'
-            }
-            
-            # Add fused Docling results for this element
-            element_fusions = fused_by_element.get(elem_id, [])
-            if element_fusions:
-                tree['docling_fusion'] = [{
-                    'label': f.get('label'),
-                    'bbox': f.get('bbox'),
-                    'overlap': f.get('overlap'),
-                    'merged_count': f.get('merged_count', 1),
-                    'is_picture_merge': f.get('is_picture_merge', False),
-                    'docling_label': f.get('docling_label')
-                } for f in element_fusions]
-                
-                # Also set primary label (first/best match)
-                tree['docling_label'] = element_fusions[0].get('label')
-            
-            # Save back to DB
-            elem.delemen_json_tree = json.dumps(tree, ensure_ascii=False)
-        
+        if footnote_entries:
+            fused_results.extend(footnote_entries)
+            from functools import cmp_to_key
+
+            def sort_key(item):
+                return item.get('bbox') or [0, 0, 0, 0]
+
+            def compare(a, b):
+                a_bbox = sort_key(a)
+                b_bbox = sort_key(b)
+                y_diff = a_bbox[1] - b_bbox[1]
+                if abs(y_diff) > 10:
+                    return -1 if y_diff < 0 else 1
+                x_diff = a_bbox[0] - b_bbox[0]
+                return -1 if x_diff < 0 else (1 if x_diff > 0 else 0)
+
+            fused_results.sort(key=cmp_to_key(compare))
+
+        self._apply_structural_labels(db, fused_results)
+
         # Return fused results for visualization
         return fused_results

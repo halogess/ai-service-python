@@ -13,6 +13,7 @@ class DokumenElemenVisual(Base):
     dev_bbox_x1 = Column(Float)
     dev_bbox_y1 = Column(Float)
     dev_label = Column(String(50))
+    dev_label_struktural = Column(String(50))
     dev_text = Column(Text)
 
     def __repr__(self):

@@ -1,0 +1,37 @@
+
+
+========== DIFFLIB MONOLITH ALIGN CALLED FOR DOC 219 ==========
+Document found: BAB_IV.pdf
+Total elements: 94
+
+=== ALIGNMENT TRACE LOG ===
+Total DOCX tokens: 1375
+Total PDF tokens: 1493
+WARNING: Element 42698 has empty text
+WARNING: Element 42724 has empty text
+WARNING: Element 42729 has empty text
+WARNING: Element 42736 has empty text
+
+Checking for unaligned elements...
+
+Found 3 images in content arrays
+Found 3 images in table cells
+Total images to align: 6
+Found 0 tables with image-only cells
+
+Aligned 3 table cell images out of 3
+
+Aligned 3 standalone images out of 3
+
+Aligned elements: 148
+=== END TRACE LOG ===
+
+
+Unaligned tokens before reassignment: 118
+Sample unaligned (first 10): ['.', '4.1', '.', '4.1.1', '.', '.', '.', '25', '26', '4.1.2']
+Refining Container 42677 on page 2: H 259.0 -> 259.0
+Refining Container 42689 on page 3: H 405.3 -> 405.3
+Refining Container 42692 on page 4: H 206.4 -> 206.4
+Refining Container 42697 on page 4: H 116.9 -> 116.9
+
+=== ALIGNMENT COMPLETE ===

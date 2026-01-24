@@ -1,0 +1,53 @@
+2026-01-17 11:23:01,164 - INFO - Opened PDF: E:\ai-service-python\src\tests\..\..\bab2.pdf (34 pages)
+[OK] Found: E:\ai-service-python\src\tests\..\..\bab2.pdf
+
+============================================================
+STEP 1: PDF EXTRACTION
+============================================================
+Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+[OK] Extracted 58 items
+
+[*] First 5 items:
+    1. Type=group, Text='BAB'
+    2. Type=group, Text='II'
+    3. Type=group, Text='TEORI'
+    4. Type=group, Text='PENUNJANG'
+    5. Type=group, Text='Pada'
+
+============================================================
+STEP 2: FLATTEN EXTRACTION ITEMS
+============================================================
+[OK] Created 58 PDF units
+
+[*] First 5 PDF units:
+    1. text='BAB' norm='bab'
+    2. text='II' norm='ii'
+    3. text='TEORI' norm='teori'
+    4. text='PENUNJANG' norm='penunjang'
+    5. text='Pada' norm='pada'
+
+============================================================
+STEP 3: CREATE MOCK OPENXML UNITS
+============================================================
+[OK] Created 10 mock OpenXML units
+
+============================================================
+STEP 4: RUN ALIGNMENT
+============================================================
+[Absorb] Absorbed 0 unaligned PDF units into alignments, 48 remaining unaligned
+[OK] Alignment completed!
+    Alignments: 10
+    Unaligned PDF units: 0
+    Max OpenXML idx: 9
+
+[*] First 3 alignments:
+    1. Element 1: 1 matched units, bbox=[305.4700012207031, 114.0965805053711, 337.97369384765625, 131.6314697265625]
+    2. Element 2: 1 matched units, bbox=[342.15545654296875, 114.0965805053711, 354.47900390625, 131.6314697265625]
+    3. Element 3: 1 matched units, bbox=[252.88999938964844, 141.83657836914062, 304.0215759277344, 159.3714599609375]
+
+[OK] Results saved to: test_output_bab2\alignment_test_result.json
+
+============================================================
+TEST COMPLETE
+============================================================
+ ALIGNMENT LOGIC WORKS!

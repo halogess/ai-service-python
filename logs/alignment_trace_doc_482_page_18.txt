@@ -1,0 +1,10 @@
+=== 2026-01-20T11:25:55 doc_id=482 page=18 phase=pass1 steps=8 min_openxml_idx=340 pdf_units=2 openxml_units=564 ===
+[0] Block0 Char="[" PDF[0] -> U0(pdf_0) OX[18948] -> U342(90984_img6) | MATCH new_assignment cnt:1
+[1] Block0 Char="i" PDF[1] -> U0(pdf_0) OX[18949] -> U342(90984_img6) | MATCH continue_existing_assignment cnt:2
+[2] Block0 Char="m" PDF[2] -> U0(pdf_0) OX[18950] -> U342(90984_img6) | MATCH continue_existing_assignment cnt:3
+[3] Block0 Char="g" PDF[3] -> U0(pdf_0) OX[18951] -> U342(90984_img6) | MATCH continue_existing_assignment cnt:4
+[4] Block0 Char="]" PDF[4] -> U0(pdf_0) OX[18952] -> U342(90984_img6) | MATCH continue_existing_assignment cnt:5
+[5] Block0 Char="(" PDF[5] -> U1(pdf_1) OX[18953] -> U343(90985) | MATCH new_assignment cnt:1
+[6] Block0 Char="a" PDF[6] -> U1(pdf_1) OX[18954] -> U343(90985) | MATCH continue_existing_assignment cnt:2
+[7] Block0 Char=")" PDF[7] -> U1(pdf_1) OX[18955] -> U343(90985) | MATCH continue_existing_assignment cnt:3
+

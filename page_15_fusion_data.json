@@ -1,0 +1,2207 @@
+{
+  "page": 15,
+  "doc_id": 483,
+  "fused_results": [
+    {
+      "bbox": [
+        170.74000549316406,
+        117.98492431640625,
+        448.7305603027344,
+        275.9260559082031
+      ],
+      "label": "caption",
+      "text": "Open(t-1) High(t-1) Low(t-1) Close (t-1)\t\t\t\t\t   Open( t+1) Open(t) High(t) Low(t) Close (t) FUZZY MODEL",
+      "overlap": 1.0,
+      "source": "alignment",
+      "element_id": 91496,
+      "element_type": "paragraph",
+      "element_sequence": 176,
+      "openxml_idx": 309,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "91496",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true
+    },
+    {
+      "bbox": [
+        143.3800048828125,
+        287.61492919921875,
+        479.5724182128906,
+        314.4460754394531
+      ],
+      "label": "caption",
+      "text": "Gambar 2. 4   \n Model fuzzy untuk prediksi harga pembukaan (open price) (t + 1)",
+      "overlap": 0.9884523501413564,
+      "source": "alignment",
+      "element_id": 91497,
+      "element_type": "paragraph",
+      "element_sequence": 177,
+      "openxml_idx": 310,
+      "zone": null,
+      "docling_label": "caption",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "91497",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true
+    },
+    {
+      "bbox": [
+        113.43000030517578,
+        334.79998779296875,
+        306.0799865722656,
+        483.0199890136719
+      ],
+      "label": "picture",
+      "text": "[IMG]",
+      "overlap": 0.9903541714494769,
+      "source": "alignment",
+      "element_id": 91499,
+      "element_type": "paragraph",
+      "element_sequence": 179,
+      "openxml_idx": 312,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91499_img2_m0",
+      "merged_count": 1,
+      "is_picture_area": true,
+      "has_shape_units": false,
+      "has_pdf_image": true,
+      "has_table_units": false,
+      "is_text_only_item": false
+    },
+    {
+      "bbox": [
+        306.07000732421875,
+        328.1999816894531,
+        510.3699951171875,
+        483.29998779296875
+      ],
+      "label": "picture",
+      "text": "[IMG]",
+      "overlap": 0.9903541714494769,
+      "source": "alignment",
+      "element_id": 91499,
+      "element_type": "paragraph",
+      "element_sequence": 179,
+      "openxml_idx": 312,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91499_img2_m0",
+      "merged_count": 1,
+      "is_picture_area": true,
+      "has_shape_units": false,
+      "has_pdf_image": true,
+      "has_table_units": false,
+      "is_text_only_item": false
+    },
+    {
+      "bbox": [
+        121.0999984741211,
+        490.1999816894531,
+        323.79998779296875,
+        645.4199829101562
+      ],
+      "label": "picture",
+      "text": "[IMG]",
+      "overlap": 1.0,
+      "source": "alignment",
+      "element_id": 91500,
+      "element_type": "paragraph",
+      "element_sequence": 180,
+      "openxml_idx": 314,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91500_img4_m0",
+      "merged_count": 1,
+      "is_picture_area": true,
+      "has_shape_units": false,
+      "has_pdf_image": true,
+      "has_table_units": false,
+      "is_text_only_item": false
+    },
+    {
+      "bbox": [
+        323.79998779296875,
+        501.45001220703125,
+        509.489990234375,
+        644.9000244140625
+      ],
+      "label": "picture",
+      "text": "[IMG]",
+      "overlap": 1.0,
+      "source": "alignment",
+      "element_id": 91500,
+      "element_type": "paragraph",
+      "element_sequence": 180,
+      "openxml_idx": 314,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91500_img4_m0",
+      "merged_count": 1,
+      "is_picture_area": true,
+      "has_shape_units": false,
+      "has_pdf_image": true,
+      "has_table_units": false,
+      "is_text_only_item": false
+    },
+    {
+      "bbox": [
+        121.0999984741211,
+        490.1999816894531,
+        509.489990234375,
+        673.1760864257812
+      ],
+      "label": "caption",
+      "text": "Gambar 2. 4   \n Diagram Perbandingan Harga Aktual dan Harga Prediksi",
+      "overlap": 0.9872336974442754,
+      "source": "alignment",
+      "element_id": 91500,
+      "element_type": "paragraph",
+      "element_sequence": 180,
+      "openxml_idx": 316,
+      "zone": null,
+      "docling_label": "caption",
+      "is_text_part": true,
+      "is_image_part": false,
+      "unit_id": "91500_text",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        694.5848999023438,
+        510.614501953125,
+        728.6361083984375
+      ],
+      "label": "text",
+      "text": "Hasil menunjukkan bahwa kita setidaknya dapat memperkirakan tren pasar saham berdasarkan prediksi nilai open, high, low dan close. Metode kami juga dapat",
+      "overlap": 0.9927247521776303,
+      "source": "alignment",
+      "element_id": 91502,
+      "element_type": "paragraph",
+      "element_sequence": 182,
+      "openxml_idx": 318,
+      "zone": null,
+      "docling_label": "text",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "91502",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true
+    },
+    {
+      "bbox": [
+        306.19000244140625,
+        786.0709228515625,
+        318.25,
+        799.2221069335938
+      ],
+      "label": "page_footer",
+      "text": "21",
+      "overlap": 0.8121210477167496,
+      "source": "header_footer",
+      "element_id": null,
+      "element_type": null,
+      "element_sequence": null,
+      "openxml_idx": null,
+      "zone": "footer",
+      "docling_label": "page_footer",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": false
+    }
+  ],
+  "raw_docling": [
+    {
+      "text": "[Picture]",
+      "bbox": [
+        161.925048828125,
+        112.57292938232422,
+        457.9633483886719,
+        278.6208190917969
+      ],
+      "label": "picture",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Open(t-1)",
+      "bbox": [
+        170.74,
+        120.33699999999999,
+        220.91,
+        130.56599999999992
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "High(t-1)",
+      "bbox": [
+        170.74,
+        140.87699999999995,
+        219.11,
+        151.106
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Low(t-1)",
+      "bbox": [
+        170.74,
+        161.75699999999995,
+        216.95,
+        171.986
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "FUZZY",
+      "bbox": [
+        320.59,
+        166.4369999999999,
+        362.051,
+        176.66599999999994
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "MODEL",
+      "bbox": [
+        318.43,
+        180.47699999999998,
+        363.91,
+        190.7059999999999
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Close (t-1)",
+      "bbox": [
+        170.74,
+        182.27699999999993,
+        225.23,
+        192.50599999999997
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Open( t+1)",
+      "bbox": [
+        386.88,
+        182.27699999999993,
+        451.82,
+        192.50599999999997
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Open(t)",
+      "bbox": [
+        170.74,
+        203.1869999999999,
+        211.17,
+        213.41599999999994
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "High(t)",
+      "bbox": [
+        170.74,
+        223.707,
+        209.01,
+        233.93599999999992
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Low(t)",
+      "bbox": [
+        170.74,
+        244.587,
+        207.21,
+        254.81599999999992
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Close (t)",
+      "bbox": [
+        170.74,
+        265.12699999999995,
+        215.51,
+        275.356
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Gambar 2.4 Model fuzzy untuk prediksi harga pembukaan (open price) (t + 1)",
+      "bbox": [
+        143.38,
+        290.1569999999999,
+        483.5,
+        313.8299999999999
+      ],
+      "label": "caption",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2100",
+      "bbox": [
+        315.33333333333337,
+        332.0,
+        330.33333333333337,
+        341.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "[Picture]",
+      "bbox": [
+        115.28826904296875,
+        333.53887939453125,
+        508.137939453125,
+        653.865234375
+      ],
+      "label": "picture",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2100",
+      "bbox": [
+        123.33333333333333,
+        341.6666666666667,
+        137.0,
+        349.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2000",
+      "bbox": [
+        315.33333333333337,
+        349.3333333333333,
+        333.33333333333337,
+        357.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "dot predicted",
+      "bbox": [
+        341.0,
+        358.0,
+        375.0,
+        365.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2000",
+      "bbox": [
+        123.33333333333333,
+        359.3333333333333,
+        137.66666666666666,
+        365.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "dot predicted",
+      "bbox": [
+        246.33333333333334,
+        359.3333333333333,
+        278.0,
+        366.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1900",
+      "bbox": [
+        315.66666666666663,
+        365.6666666666667,
+        333.0,
+        373.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "KOSPI weekly closeprice",
+      "bbox": [
+        307.33333333333337,
+        370.0,
+        315.66666666666663,
+        434.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1900",
+      "bbox": [
+        123.66666666666667,
+        376.6666666666667,
+        137.0,
+        385.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "KOSPI dailyclose price",
+      "bbox": [
+        115.0,
+        377.6666666666667,
+        124.0,
+        434.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1800",
+      "bbox": [
+        316.0,
+        382.0,
+        333.0,
+        390.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1800",
+      "bbox": [
+        122.66666666666667,
+        392.6666666666667,
+        137.66666666666666,
+        403.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1700",
+      "bbox": [
+        315.66666666666663,
+        398.3333333333333,
+        332.0,
+        406.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1700",
+      "bbox": [
+        124.0,
+        409.0,
+        136.66666666666666,
+        422.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1600",
+      "bbox": [
+        315.33333333333337,
+        415.0,
+        332.66666666666663,
+        422.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1600",
+      "bbox": [
+        123.66666666666667,
+        429.3333333333333,
+        140.33333333333334,
+        437.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1500",
+      "bbox": [
+        315.66666666666663,
+        431.3333333333333,
+        333.0,
+        439.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1500",
+      "bbox": [
+        123.0,
+        447.66666666666663,
+        140.33333333333334,
+        455.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1400",
+      "bbox": [
+        316.0,
+        447.66666666666663,
+        331.33333333333337,
+        455.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "心",
+      "bbox": [
+        331.0,
+        454.66666666666663,
+        339.33333333333337,
+        461.33333333333337
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1300",
+      "bbox": [
+        315.66666666666663,
+        464.0,
+        331.0,
+        472.33333333333337
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1400",
+      "bbox": [
+        123.33333333333333,
+        465.66666666666663,
+        137.0,
+        473.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "20",
+      "bbox": [
+        360.0,
+        468.33333333333337,
+        369.0,
+        476.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "0",
+      "bbox": [
+        327.66666666666663,
+        468.66666666666663,
+        331.66666666666663,
+        476.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "40",
+      "bbox": [
+        394.6666666666667,
+        469.0,
+        403.0,
+        475.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "60",
+      "bbox": [
+        428.6666666666667,
+        469.0,
+        437.0,
+        476.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "80",
+      "bbox": [
+        463.0,
+        469.0,
+        471.3333333333333,
+        476.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "100",
+      "bbox": [
+        497.0,
+        469.0,
+        507.3333333333333,
+        475.33333333333337
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "150",
+      "bbox": [
+        229.0,
+        469.33333333333337,
+        239.66666666666666,
+        476.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "200",
+      "bbox": [
+        261.0,
+        469.33333333333337,
+        271.66666666666663,
+        476.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "50",
+      "bbox": [
+        165.33333333333334,
+        469.66666666666663,
+        173.66666666666669,
+        476.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "100",
+      "bbox": [
+        197.0,
+        469.66666666666663,
+        207.33333333333331,
+        476.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "250",
+      "bbox": [
+        293.66666666666663,
+        469.66666666666663,
+        304.66666666666663,
+        476.33333333333337
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "0",
+      "bbox": [
+        133.66666666666666,
+        470.33333333333337,
+        139.66666666666666,
+        476.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "ea",
+      "bbox": [
+        211.33333333333331,
+        475.0,
+        223.0,
+        484.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Week",
+      "bbox": [
+        407.3333333333333,
+        475.66666666666663,
+        423.6666666666667,
+        483.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2100",
+      "bbox": [
+        133.0,
+        495.66666666666663,
+        147.33333333333334,
+        503.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "upper.actual high",
+      "bbox": [
+        262.0,
+        505.0,
+        303.33333333333337,
+        511.66666666666663
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2100",
+      "bbox": [
+        332.66666666666663,
+        508.33333333333337,
+        347.66666666666663,
+        515.6666666666666
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "lower.actual low",
+      "bbox": [
+        262.0,
+        512.3333333333334,
+        300.66666666666663,
+        518.6666666666666
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2000",
+      "bbox": [
+        133.0,
+        514.0,
+        147.33333333333334,
+        521.3333333333334
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "dot predicted average",
+      "bbox": [
+        261.33333333333337,
+        519.0,
+        314.66666666666663,
+        527.3333333333334
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2000",
+      "bbox": [
+        333.0,
+        523.0,
+        349.66666666666663,
+        530.3333333333334
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "upper. actual high",
+      "bbox": [
+        352.66666666666663,
+        523.6666666666666,
+        392.0,
+        530.3333333333334
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "KOSPIdailyhigh&lowprices",
+      "bbox": [
+        124.33333333333333,
+        526.0,
+        133.33333333333334,
+        598.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "lower actual low",
+      "bbox": [
+        353.0,
+        529.3333333333334,
+        389.6666666666667,
+        536.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1900",
+      "bbox": [
+        133.33333333333334,
+        531.6666666666666,
+        147.33333333333334,
+        540.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "KOSPIweekly high&low prices",
+      "bbox": [
+        324.66666666666663,
+        534.6666666666666,
+        334.0,
+        606.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "dot predicted average",
+      "bbox": [
+        352.33333333333337,
+        535.0,
+        402.6666666666667,
+        543.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1900",
+      "bbox": [
+        333.0,
+        537.6666666666666,
+        349.0,
+        545.6666666666666
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1800",
+      "bbox": [
+        132.66666666666666,
+        550.6666666666666,
+        147.33333333333334,
+        559.3333333333334
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1800",
+      "bbox": [
+        333.33333333333337,
+        552.6666666666666,
+        348.66666666666663,
+        560.6666666666666
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1700",
+      "bbox": [
+        333.0,
+        567.0,
+        348.66666666666663,
+        576.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1700",
+      "bbox": [
+        133.0,
+        568.3333333333334,
+        148.0,
+        577.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1600",
+      "bbox": [
+        333.33333333333337,
+        583.0,
+        348.33333333333337,
+        590.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1600",
+      "bbox": [
+        132.66666666666666,
+        587.3333333333333,
+        148.33333333333334,
+        595.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1500",
+      "bbox": [
+        333.33333333333337,
+        598.3333333333333,
+        348.33333333333337,
+        605.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1500",
+      "bbox": [
+        132.66666666666666,
+        606.3333333333333,
+        150.33333333333334,
+        614.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1400",
+      "bbox": [
+        333.33333333333337,
+        613.3333333333333,
+        348.0,
+        620.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1400",
+      "bbox": [
+        132.0,
+        625.6666666666667,
+        148.0,
+        632.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "1300",
+      "bbox": [
+        333.0,
+        628.3333333333333,
+        346.33333333333337,
+        635.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "50",
+      "bbox": [
+        176.33333333333331,
+        629.0,
+        185.33333333333331,
+        637.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "100",
+      "bbox": [
+        209.66666666666669,
+        629.0,
+        221.0,
+        636.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "150",
+      "bbox": [
+        243.0,
+        629.0,
+        254.66666666666666,
+        637.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "200",
+      "bbox": [
+        276.66666666666663,
+        629.0,
+        288.66666666666663,
+        637.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "250",
+      "bbox": [
+        308.0,
+        629.0,
+        323.33333333333337,
+        637.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "0",
+      "bbox": [
+        144.33333333333334,
+        630.3333333333333,
+        150.0,
+        636.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "20",
+      "bbox": [
+        373.6666666666667,
+        632.0,
+        381.6666666666667,
+        639.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "60",
+      "bbox": [
+        436.0,
+        632.0,
+        444.0,
+        639.3333333333333
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "80",
+      "bbox": [
+        467.0,
+        632.0,
+        475.3333333333333,
+        639.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "40",
+      "bbox": [
+        404.6666666666667,
+        632.3333333333333,
+        412.6666666666667,
+        639.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "100",
+      "bbox": [
+        498.3333333333333,
+        632.3333333333333,
+        508.0,
+        638.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "0",
+      "bbox": [
+        343.0,
+        633.0,
+        349.0,
+        638.6666666666667
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Day",
+      "bbox": [
+        224.66666666666669,
+        635.6666666666667,
+        238.0,
+        644.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Week",
+      "bbox": [
+        415.6666666666667,
+        638.0,
+        432.0,
+        646.0
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Gambar 2.5 Diagram Perbandingan Harga Aktual dan Harga Prediksi",
+      "bbox": [
+        162.46,
+        648.857,
+        464.42,
+        672.56
+      ],
+      "label": "caption",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Hasil menunjukkan bahwa kita setidaknya dapat memperkirakan tren pasar saham berdasarkan prediksi nilai open, high, low dan close. Metode kami juga dapat",
+      "bbox": [
+        113.47,
+        696.9369999999999,
+        513.525,
+        728.0659999999999
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "21",
+      "bbox": [
+        306.19,
+        788.423,
+        321.04,
+        798.6519999999999
+      ],
+      "label": "page_footer",
+      "confidence": 1.0,
+      "source": "docling"
+    }
+  ],
+  "alignments": [
+    {
+      "element_id": 91496,
+      "element_sequence": 176,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Open(t-1) High(t-1) Low(t-1) Close (t-1)\t\t\t\t\t   Open( t+1) Open(t) High(t) Low(t) Close (t) FUZZY MODEL",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_0",
+          "item_idx": 0,
+          "item_type": "group",
+          "text": "Open(t-1)",
+          "bbox": [
+            170.74000549316406,
+            117.98492431640625,
+            218.27603149414062,
+            131.13609313964844
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "open(t-1)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_1",
+          "item_idx": 1,
+          "item_type": "group",
+          "text": "High(t-1)",
+          "bbox": [
+            170.74000549316406,
+            138.52490234375,
+            216.11602783203125,
+            151.6760711669922
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "high(t-1)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_2",
+          "item_idx": 2,
+          "item_type": "group",
+          "text": "Low(t-1)",
+          "bbox": [
+            170.74000549316406,
+            159.4049072265625,
+            213.95603942871094,
+            172.5560760498047
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "low(t-1)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_3",
+          "item_idx": 3,
+          "item_type": "group",
+          "text": "FUZZY",
+          "bbox": [
+            320.5899963378906,
+            164.08489990234375,
+            358.6654052734375,
+            177.23606872558594
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "debug": {}
+        },
+        {
+          "pdf_unit_id": "pdf_4",
+          "item_idx": 4,
+          "item_type": "group",
+          "text": "Close(t-1)",
+          "bbox": [
+            170.74000549316406,
+            179.9249267578125,
+            222.2560272216797,
+            193.0760955810547
+          ],
+          "matched_count": 10,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "close(t-1)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_5",
+          "item_idx": 5,
+          "item_type": "group",
+          "text": "MODEL",
+          "bbox": [
+            318.42999267578125,
+            178.12493896484375,
+            360.5802001953125,
+            191.27610778808594
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "debug": {}
+        },
+        {
+          "pdf_unit_id": "pdf_6",
+          "item_idx": 6,
+          "item_type": "group",
+          "text": "Open(t+1)",
+          "bbox": [
+            395.5199890136719,
+            179.9249267578125,
+            448.7305603027344,
+            193.0760955810547
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "open(t+1)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_7",
+          "item_idx": 7,
+          "item_type": "group",
+          "text": "Open(t)",
+          "bbox": [
+            170.74000549316406,
+            200.83489990234375,
+            208.12637329101562,
+            213.98606872558594
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "open(t)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_8",
+          "item_idx": 8,
+          "item_type": "group",
+          "text": "High(t)",
+          "bbox": [
+            170.74000549316406,
+            221.35491943359375,
+            205.97608947753906,
+            234.50608825683594
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "high(t)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_9",
+          "item_idx": 9,
+          "item_type": "group",
+          "text": "Low(t)",
+          "bbox": [
+            170.74000549316406,
+            242.23492431640625,
+            203.8258056640625,
+            255.38609313964844
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "low(t)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_10",
+          "item_idx": 10,
+          "item_type": "group",
+          "text": "Close(t)",
+          "bbox": [
+            170.74000549316406,
+            262.77490234375,
+            212.09429931640625,
+            275.9260559082031
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "close(t)"
+          }
+        }
+      ],
+      "merged_bbox": [
+        170.74000549316406,
+        117.98492431640625,
+        448.7305603027344,
+        275.9260559082031
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "91496",
+      "openxml_indices": [
+        309
+      ]
+    },
+    {
+      "element_id": 91497,
+      "element_sequence": 177,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Gambar 2. 4   \n Model fuzzy untuk prediksi harga pembukaan (open price) (t + 1)",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_11",
+          "item_idx": 11,
+          "item_type": "group",
+          "text": "Gambar2.4",
+          "bbox": [
+            281.3299865722656,
+            287.61492919921875,
+            342.760009765625,
+            300.7660827636719
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "gambar2.4"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_12",
+          "item_idx": 12,
+          "item_type": "group",
+          "text": "Modelfuzzy",
+          "bbox": [
+            143.3800048828125,
+            301.294921875,
+            206.14207458496094,
+            314.4460754394531
+          ],
+          "matched_count": 10,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "modelfuzzy"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_13",
+          "item_idx": 13,
+          "item_type": "group",
+          "text": "untuk",
+          "bbox": [
+            209.183349609375,
+            301.294921875,
+            239.52490234375,
+            314.4460754394531
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "untuk"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_14",
+          "item_idx": 14,
+          "item_type": "group",
+          "text": "prediksiharga",
+          "bbox": [
+            242.62557983398438,
+            301.294921875,
+            317.6003112792969,
+            314.4460754394531
+          ],
+          "matched_count": 13,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "prediksiharga"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_15",
+          "item_idx": 15,
+          "item_type": "group",
+          "text": "pembukaan(open",
+          "bbox": [
+            320.6416015625,
+            301.294921875,
+            412.80670166015625,
+            314.4460754394531
+          ],
+          "matched_count": 14,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "pembukaan(open"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_16",
+          "item_idx": 16,
+          "item_type": "group",
+          "text": "price)(t+",
+          "bbox": [
+            415.9073791503906,
+            301.294921875,
+            466.2192687988281,
+            314.4460754394531
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "price)(t+"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_17",
+          "item_idx": 17,
+          "item_type": "group",
+          "text": "1)",
+          "bbox": [
+            469.5100402832031,
+            301.294921875,
+            479.5724182128906,
+            314.4460754394531
+          ],
+          "matched_count": 2,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "1)"
+          }
+        }
+      ],
+      "merged_bbox": [
+        143.3800048828125,
+        287.61492919921875,
+        479.5724182128906,
+        314.4460754394531
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "91497",
+      "openxml_indices": [
+        310
+      ]
+    },
+    {
+      "element_id": 91499,
+      "element_sequence": 179,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "[IMG]",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_18",
+          "item_idx": 18,
+          "item_type": "image",
+          "text": "[IMG]",
+          "bbox": [
+            113.43000030517578,
+            334.79998779296875,
+            306.0799865722656,
+            483.0199890136719
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "[img]"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.43000030517578,
+        334.79998779296875,
+        306.0799865722656,
+        483.0199890136719
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91499_img2_m0",
+      "openxml_indices": [
+        312
+      ],
+      "image_index": 2
+    },
+    {
+      "element_id": 91499,
+      "element_sequence": 179,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "[IMG]",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_19",
+          "item_idx": 19,
+          "item_type": "image",
+          "text": "[IMG]",
+          "bbox": [
+            306.07000732421875,
+            328.1999816894531,
+            510.3699951171875,
+            483.29998779296875
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "[img]"
+          }
+        }
+      ],
+      "merged_bbox": [
+        306.07000732421875,
+        328.1999816894531,
+        510.3699951171875,
+        483.29998779296875
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91499_img3_m0",
+      "openxml_indices": [
+        313
+      ],
+      "image_index": 3
+    },
+    {
+      "element_id": 91500,
+      "element_sequence": 180,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "[IMG]",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_20",
+          "item_idx": 20,
+          "item_type": "image",
+          "text": "[IMG]",
+          "bbox": [
+            121.0999984741211,
+            490.1999816894531,
+            323.79998779296875,
+            645.4199829101562
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "[img]"
+          }
+        }
+      ],
+      "merged_bbox": [
+        121.0999984741211,
+        490.1999816894531,
+        323.79998779296875,
+        645.4199829101562
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91500_img4_m0",
+      "openxml_indices": [
+        314
+      ],
+      "image_index": 4
+    },
+    {
+      "element_id": 91500,
+      "element_sequence": 180,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "[IMG]",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_21",
+          "item_idx": 21,
+          "item_type": "image",
+          "text": "[IMG]",
+          "bbox": [
+            323.79998779296875,
+            501.45001220703125,
+            509.489990234375,
+            644.9000244140625
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "[img]"
+          }
+        }
+      ],
+      "merged_bbox": [
+        323.79998779296875,
+        501.45001220703125,
+        509.489990234375,
+        644.9000244140625
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "91500_img5_m0",
+      "openxml_indices": [
+        315
+      ],
+      "image_index": 5
+    },
+    {
+      "element_id": 91500,
+      "element_sequence": 180,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Gambar 2. 4   \n Diagram Perbandingan Harga Aktual dan Harga Prediksi",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_22",
+          "item_idx": 22,
+          "item_type": "group",
+          "text": "Gambar2.5",
+          "bbox": [
+            281.3299865722656,
+            646.31494140625,
+            342.760009765625,
+            659.4661254882812
+          ],
+          "matched_count": 8,
+          "score": 0.889,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "gambar2."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_23",
+          "item_idx": 23,
+          "item_type": "group",
+          "text": "Diagram",
+          "bbox": [
+            162.4600067138672,
+            660.02490234375,
+            207.93666076660156,
+            673.1760864257812
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "diagram"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_24",
+          "item_idx": 24,
+          "item_type": "group",
+          "text": "PerbandinganHarga",
+          "bbox": [
+            210.97793579101562,
+            660.02490234375,
+            318.6702575683594,
+            673.1760864257812
+          ],
+          "matched_count": 17,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "perbandinganharga"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_25",
+          "item_idx": 25,
+          "item_type": "group",
+          "text": "AktualdanHarga",
+          "bbox": [
+            321.7115478515625,
+            660.02490234375,
+            415.01715087890625,
+            673.1760864257812
+          ],
+          "matched_count": 14,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "aktualdanharga"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_26",
+          "item_idx": 26,
+          "item_type": "group",
+          "text": "Prediksi",
+          "bbox": [
+            418.0584411621094,
+            660.02490234375,
+            460.5650939941406,
+            673.1760864257812
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "prediksi"
+          }
+        }
+      ],
+      "merged_bbox": [
+        162.4600067138672,
+        646.31494140625,
+        460.5650939941406,
+        673.1760864257812
+      ],
+      "cells": null,
+      "is_text_part": true,
+      "is_image_part": false,
+      "unit_id": "91500_text",
+      "openxml_indices": [
+        316
+      ]
+    },
+    {
+      "element_id": 91502,
+      "element_sequence": 182,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Hasil menunjukkan bahwa kita setidaknya dapat memperkirakan tren pasar saham berdasarkan prediksi nilai open, high, low dan close. Metode kami juga dapat",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_27",
+          "item_idx": 27,
+          "item_type": "group",
+          "text": "Hasilmenunjukkan",
+          "bbox": [
+            149.5,
+            694.5848999023438,
+            243.1500701904297,
+            707.736083984375
+          ],
+          "matched_count": 16,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "hasilmenunjukkan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_28",
+          "item_idx": 28,
+          "item_type": "group",
+          "text": "bahwakitasetidaknyadapatmemperkirakan",
+          "bbox": [
+            246.19134521484375,
+            694.5848999023438,
+            460.30487060546875,
+            707.736083984375
+          ],
+          "matched_count": 37,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bahwakitasetidaknyadapatmemperkirakan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_29",
+          "item_idx": 29,
+          "item_type": "group",
+          "text": "tren",
+          "bbox": [
+            463.3461608886719,
+            694.5848999023438,
+            481.8789978027344,
+            707.736083984375
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tren"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_30",
+          "item_idx": 30,
+          "item_type": "group",
+          "text": "pasar",
+          "bbox": [
+            484.9202880859375,
+            694.5848999023438,
+            510.43853759765625,
+            707.736083984375
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "pasar"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_31",
+          "item_idx": 31,
+          "item_type": "group",
+          "text": "sahamberdasarkanprediksinilaiopen,high,lowdanclose.Metodekamijugadapat",
+          "bbox": [
+            113.47000122070312,
+            715.4849243164062,
+            510.614501953125,
+            728.6361083984375
+          ],
+          "matched_count": 70,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "sahamberdasarkanprediksinilaiopen,high,lowdanclose.metodekamijugadapat"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        694.5848999023438,
+        510.614501953125,
+        728.6361083984375
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "91502",
+      "openxml_indices": [
+        318
+      ]
+    }
+  ]
+}

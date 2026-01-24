@@ -1,0 +1,3933 @@
+{
+  "page": 4,
+  "doc_id": 502,
+  "fused_results": [
+    {
+      "bbox": [
+        498.9100036621094,
+        71.544921875,
+        510.9700012207031,
+        84.69608306884766
+      ],
+      "label": "page_header",
+      "text": "16",
+      "overlap": 0.8121210477167528,
+      "source": "header_footer",
+      "element_id": null,
+      "element_type": null,
+      "element_sequence": null,
+      "openxml_idx": null,
+      "zone": "header",
+      "docling_label": "page_header",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": false,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        114.02490234375,
+        509.83453369140625,
+        168.59605407714844
+      ],
+      "label": "text",
+      "text": "Kemampuan graph convolution untuk menyesuaikan diri dengan struktur yang tidak tetap ini menjadikannya alat yang sangat powerful dalam berbagai domain aplikasi. Misalnya, dalam jaringan sosial, seseorang bisa terhubung ke lima orang, sementara orang lain bisa terhubung ke ribuan, dan koneksi ini bisa bersifat timbal balik, bersyarat, atau berarah. Model berbasis 2D convolution tidak akan mampu menangkap kompleksitas seperti ini secara efektif.",
+      "overlap": 0.9930065750501137,
+      "source": "alignment",
+      "element_id": 97043,
+      "element_type": "paragraph",
+      "element_sequence": 24,
+      "openxml_idx": 23,
+      "zone": null,
+      "docling_label": "text",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97043",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "paragraf"
+    },
+    {
+      "bbox": [
+        213.60000610351562,
+        196.18997192382812,
+        304.5570068359375,
+        283.0899658203125
+      ],
+      "label": "picture",
+      "text": "[IMG]",
+      "overlap": 0.9202582881980622,
+      "source": "alignment",
+      "element_id": 97045,
+      "element_type": "paragraph",
+      "element_sequence": 26,
+      "openxml_idx": 25,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "97045_img2_m0",
+      "merged_count": 1,
+      "is_picture_area": true,
+      "has_shape_units": false,
+      "has_pdf_image": true,
+      "has_table_units": false,
+      "is_text_only_item": false,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        320.1000061035156,
+        196.18997192382812,
+        409.8580017089844,
+        283.0899658203125
+      ],
+      "label": "picture",
+      "text": "[IMG]",
+      "overlap": 0.9202582881980622,
+      "source": "alignment",
+      "element_id": 97045,
+      "element_type": "paragraph",
+      "element_sequence": 26,
+      "openxml_idx": 25,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "97045_img2_m0",
+      "merged_count": 1,
+      "is_picture_area": true,
+      "has_shape_units": false,
+      "has_pdf_image": true,
+      "has_table_units": false,
+      "is_text_only_item": false,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        253.25,
+        284.014892578125,
+        267.2684326171875,
+        297.1660461425781
+      ],
+      "label": "caption",
+      "text": "(a)",
+      "overlap": 1.0,
+      "source": "cell",
+      "element_id": 97046,
+      "element_type": "table",
+      "element_sequence": 27,
+      "openxml_idx": 27,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": true,
+      "is_text_only_item": false,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        366.3399963378906,
+        284.014892578125,
+        380.75604248046875,
+        297.1660461425781
+      ],
+      "label": "caption",
+      "text": "(b)",
+      "overlap": 1.0,
+      "source": "cell",
+      "element_id": 97046,
+      "element_type": "table",
+      "element_sequence": 27,
+      "openxml_idx": 27,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": true,
+      "is_text_only_item": false,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        288.1700134277344,
+        297.71490478515625,
+        349.458984375,
+        310.8660583496094
+      ],
+      "label": "caption",
+      "text": "Gambar 2.2",
+      "overlap": 0.623907903011345,
+      "source": "alignment",
+      "element_id": 97047,
+      "element_type": "paragraph",
+      "element_sequence": 28,
+      "openxml_idx": 29,
+      "zone": null,
+      "docling_label": "picture",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97047",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        133.6300048828125,
+        310.9632263183594,
+        503.73291015625,
+        338.5860595703125
+      ],
+      "label": "text",
+      "text": "Perbedaan struktur 2D dan Graph Convolution (a) 2D Convolution. (b) Graph Convolution.",
+      "overlap": 0.9910931000898097,
+      "source": "alignment",
+      "element_id": 97048,
+      "element_type": "paragraph",
+      "element_sequence": 29,
+      "openxml_idx": 30,
+      "zone": null,
+      "docling_label": "text",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97048",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "paragraf"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        359.90032958984375,
+        413.6625671386719,
+        375.442626953125
+      ],
+      "label": "section_header",
+      "text": "2.5  Representasi Graf dalam Machine Learning",
+      "overlap": 0.9876704807460969,
+      "source": "alignment",
+      "element_id": 97050,
+      "element_type": "list-item-11-0",
+      "element_sequence": 31,
+      "openxml_idx": 32,
+      "zone": null,
+      "docling_label": "section_header",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97050",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "judul_subbab"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        384.1448974609375,
+        510.1770324707031,
+        480.14605712890625
+      ],
+      "label": "text",
+      "text": "Sebelum memahami bagaimana Graph Neural Networks (GNNs) bekerja, penting untuk mengetahui bagaimana data berbentuk graf direpresentasikan dalam machine learning. Graf berbeda dengan bentuk data lain seperti tabel atau gambar karena tidak memiliki struktur yang tetap. Bentuk graf terdiri dari kumpulan entitas (node) yang saling terhubung melalui hubungan tertentu (edge).",
+      "overlap": 0.9927976056408526,
+      "source": "alignment",
+      "element_id": 97051,
+      "element_type": "paragraph",
+      "element_sequence": 32,
+      "openxml_idx": 33,
+      "zone": null,
+      "docling_label": "text",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97051",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "paragraf"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        487.514892578125,
+        400.0751647949219,
+        500.6660461425781
+      ],
+      "label": "text",
+      "text": "Secara formal, sebuah graf dapat direpresentasikan sebagai:",
+      "overlap": 0.988089235241739,
+      "source": "alignment",
+      "element_id": 97052,
+      "element_type": "paragraph",
+      "element_sequence": 33,
+      "openxml_idx": 34,
+      "zone": null,
+      "docling_label": "text",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97052",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "paragraf"
+    },
+    {
+      "bbox": [
+        149.5,
+        508.77490234375,
+        496.3297119140625,
+        521.9973754882812
+      ],
+      "label": "formula",
+      "text": "G=(V, E, X) \t\t(2.1)",
+      "overlap": 0.9913385694679656,
+      "source": "alignment",
+      "element_id": 97053,
+      "element_type": "paragraph",
+      "element_sequence": 34,
+      "openxml_idx": 35,
+      "zone": null,
+      "docling_label": "formula",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97053",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        529.294921875,
+        155.24009704589844,
+        542.4461059570312
+      ],
+      "label": "text",
+      "text": "di mana:",
+      "overlap": 0.9332014259427015,
+      "source": "alignment",
+      "element_id": 97054,
+      "element_type": "paragraph",
+      "element_sequence": 35,
+      "openxml_idx": 36,
+      "zone": null,
+      "docling_label": "text",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97054",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "paragraf"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        550.1749267578125,
+        509.5662841796875,
+        604.74609375
+      ],
+      "label": "list_item",
+      "text": "•  V adalah kumpulan node (simpul) dalam graf. Setiap node mewakili suatu entitas dalam dataset, seperti pengguna dalam jejaring sosial, molekul dalam struktur kimia, atau kota dalam jaringan transportasi.",
+      "overlap": 0.9922922716691369,
+      "source": "alignment",
+      "element_id": 97055,
+      "element_type": "list-item-62-0",
+      "element_sequence": 36,
+      "openxml_idx": 37,
+      "zone": null,
+      "docling_label": "list_item",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97055",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "list_level_1"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        612.1148681640625,
+        510.4260559082031,
+        666.6961059570312
+      ],
+      "label": "list_item",
+      "text": "•  E adalah kumpulan edge (sisi) yang menunjukkan koneksi antara dua node. Hubungan ini bisa berupa interaksi dalam jejaring sosial, ikatan kimia antar-atom, atau jalur antara dua lokasi dalam transportasi.",
+      "overlap": 0.9943589674743493,
+      "source": "alignment",
+      "element_id": 97056,
+      "element_type": "list-item-62-0",
+      "element_sequence": 37,
+      "openxml_idx": 38,
+      "zone": null,
+      "docling_label": "list_item",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97056",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "list_level_1"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        674.4448852539062,
+        509.82757568359375,
+        708.1160888671875
+      ],
+      "label": "list_item",
+      "text": "•  X adalah matriks fitur yang berisi informasi tambahan tentang setiap node. Contohnya, dalam jejaring sosial, fitur node dapat berupa profil pengguna.",
+      "overlap": 0.9928001123729827,
+      "source": "alignment",
+      "element_id": 97057,
+      "element_type": "list-item-62-0",
+      "element_sequence": 38,
+      "openxml_idx": 39,
+      "zone": null,
+      "docling_label": "list_item",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97057",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "list_level_1"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        734.3662719726562,
+        510.2835998535156,
+        757.4332885742188
+      ],
+      "label": "footnote",
+      "text": "2Wu,Z.,Pan,S.,Chen,F.,Long,G.,Zhang,C.,&Yu,P.S.(2021).AComprehensiveSurveyon GraphNeuralNetworks.IEEETransactionsonNeuralNetworksandLearningSystemshlm2.",
+      "overlap": 0,
+      "source": "note",
+      "element_id": 309,
+      "note_id": 309,
+      "note_kind": "footnote",
+      "note_type": "normal",
+      "docling_label": "footnote",
+      "merged_count": 1,
+      "dev_label_struktural": null
+    }
+  ],
+  "raw_docling": [
+    {
+      "text": "16",
+      "bbox": [
+        498.91,
+        73.89699999999993,
+        513.76,
+        84.12599999999998
+      ],
+      "label": "page_header",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "orang, sementara orang lain bisa terhubung ke ribuan, dan koneksi ini bisa bersifat timbal balik, bersyarat, atau berarah. Model berbasis 2D convolution tidak akan mampu menangkap kompleksitas seperti ini secara efektif.",
+      "bbox": [
+        113.47,
+        116.37699999999995,
+        512.626,
+        168.02599999999995
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "[Picture]",
+      "bbox": [
+        217.93016052246094,
+        199.12210083007812,
+        406.4250183105469,
+        305.9200134277344
+      ],
+      "label": "picture",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "(a)",
+      "bbox": [
+        253.25,
+        286.557,
+        267.268,
+        296.54999999999995
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "(b)",
+      "bbox": [
+        366.34,
+        286.557,
+        380.756,
+        296.54999999999995
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Gambar 2.2",
+      "bbox": [
+        288.17,
+        300.25699999999995,
+        355.63,
+        310.25
+      ],
+      "label": "caption",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Perbedaan struktur 2D dan Graph Convolution 2  (a) 2D Convolution. (b) Graph Convolution.",
+      "bbox": [
+        133.63,
+        313.937,
+        507.059,
+        337.96999999999997
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "2.5 Representasi Graf dalam Machine Learning",
+      "bbox": [
+        113.47,
+        362.905,
+        417.41,
+        374.71399999999994
+      ],
+      "label": "section_header",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Sebelum memahami bagaimana Graph Neural Networks (GNNs) bekerja, penting untuk mengetahui bagaimana data berbentuk graf direpresentasikan dalam machine learning. Graf berbeda dengan bentuk data lain seperti tabel atau gambar karena tidak memiliki struktur yang tetap. Bentuk graf terdiri dari kumpulan entitas (node) yang saling terhubung melalui hubungan tertentu (edge).",
+      "bbox": [
+        113.47,
+        386.49699999999996,
+        513.055,
+        479.57599999999996
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "Secara formal, sebuah graf dapat direpresentasikan sebagai:",
+      "bbox": [
+        113.47,
+        489.86699999999996,
+        403.53,
+        500.09599999999995
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "",
+      "bbox": [
+        149.5,
+        510.11699999999996,
+        499.36,
+        521.9939999999999
+      ],
+      "label": "formula",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "di mana:",
+      "bbox": [
+        113.47,
+        531.6469999999999,
+        158.23,
+        541.876
+      ],
+      "label": "text",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "V adalah kumpulan node (simpul) dalam graf. Setiap node mewakili suatu entitas dalam dataset, seperti pengguna dalam jejaring sosial, molekul dalam struktur kimia, atau kota dalam jaringan transportasi.",
+      "bbox": [
+        113.47,
+        552.527,
+        512.643,
+        604.1759999999999
+      ],
+      "label": "list_item",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "E adalah kumpulan edge (sisi) yang menunjukkan koneksi antara dua node. Hubungan ini bisa berupa interaksi dalam jejaring sosial, ikatan kimia antaratom, atau jalur antara dua lokasi dalam transportasi.",
+      "bbox": [
+        113.47,
+        614.467,
+        512.678,
+        666.126
+      ],
+      "label": "list_item",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "X adalah matriks fitur  yang  berisi  informasi  tambahan  tentang  setiap  node. Contohnya, dalam jejaring sosial, fitur node dapat berupa profil pengguna.",
+      "bbox": [
+        113.47,
+        676.797,
+        512.702,
+        707.5459999999999
+      ],
+      "label": "list_item",
+      "confidence": 1.0,
+      "source": "docling"
+    }
+  ],
+  "alignments": [
+    {
+      "element_id": 97043,
+      "element_sequence": 24,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Kemampuan graph convolution untuk menyesuaikan diri dengan struktur yang tidak tetap ini menjadikannya alat yang sangat powerful dalam berbagai domain aplikasi. Misalnya, dalam jaringan sosial, seseorang bisa terhubung ke lima orang, sementara orang lain bisa terhubung ke ribuan, dan koneksi ini bisa bersifat timbal balik, bersyarat, atau berarah. Model berbasis 2D convolution tidak akan mampu menangkap kompleksitas seperti ini secara efektif.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_1",
+          "item_idx": 1,
+          "item_type": "group",
+          "text": "orang,sementaraorang",
+          "bbox": [
+            113.47000122070312,
+            114.02490234375,
+            225.81918334960938,
+            127.17606353759766
+          ],
+          "matched_count": 20,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "orang,sementaraorang"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_2",
+          "item_idx": 2,
+          "item_type": "group",
+          "text": "lain",
+          "bbox": [
+            228.86045837402344,
+            114.02490234375,
+            246.6804656982422,
+            127.17606353759766
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "lain"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_3",
+          "item_idx": 3,
+          "item_type": "group",
+          "text": "bisaterhubung",
+          "bbox": [
+            249.72174072265625,
+            114.02490234375,
+            321.0730895996094,
+            127.17606353759766
+          ],
+          "matched_count": 13,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bisaterhubung"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_4",
+          "item_idx": 4,
+          "item_type": "group",
+          "text": "keribuan,dan",
+          "bbox": [
+            324.1143798828125,
+            114.02490234375,
+            392.5907897949219,
+            127.17606353759766
+          ],
+          "matched_count": 12,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "keribuan,dan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_5",
+          "item_idx": 5,
+          "item_type": "group",
+          "text": "koneksiinibisabersifat",
+          "bbox": [
+            395.632080078125,
+            114.02490234375,
+            509.6683349609375,
+            127.17606353759766
+          ],
+          "matched_count": 22,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "koneksiinibisabersifat"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_6",
+          "item_idx": 6,
+          "item_type": "group",
+          "text": "timbal",
+          "bbox": [
+            113.47000122070312,
+            134.56488037109375,
+            144.10853576660156,
+            147.71604919433594
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "timbal"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_7",
+          "item_idx": 7,
+          "item_type": "group",
+          "text": "balik,",
+          "bbox": [
+            148.361572265625,
+            134.56488037109375,
+            175.42422485351562,
+            147.71604919433594
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "balik,"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_8",
+          "item_idx": 8,
+          "item_type": "group",
+          "text": "bersyarat,",
+          "bbox": [
+            179.64161682128906,
+            134.56488037109375,
+            226.82899475097656,
+            147.71604919433594
+          ],
+          "matched_count": 10,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bersyarat,"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_9",
+          "item_idx": 9,
+          "item_type": "group",
+          "text": "atau",
+          "bbox": [
+            231.04638671875,
+            134.56488037109375,
+            251.0166778564453,
+            147.71604919433594
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "atau"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_10",
+          "item_idx": 10,
+          "item_type": "group",
+          "text": "berarah.",
+          "bbox": [
+            255.4954376220703,
+            134.56488037109375,
+            294.770751953125,
+            147.71604919433594
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "berarah."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_11",
+          "item_idx": 11,
+          "item_type": "group",
+          "text": "Model",
+          "bbox": [
+            298.9881591796875,
+            134.56488037109375,
+            330.3394775390625,
+            147.71604919433594
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "model"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_12",
+          "item_idx": 12,
+          "item_type": "group",
+          "text": "berbasis",
+          "bbox": [
+            334.592529296875,
+            134.56488037109375,
+            374.0816650390625,
+            147.71604919433594
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "berbasis"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_13",
+          "item_idx": 13,
+          "item_type": "group",
+          "text": "2D",
+          "bbox": [
+            378.4416198730469,
+            134.56488037109375,
+            393.12530517578125,
+            147.71604919433594
+          ],
+          "matched_count": 2,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "2d"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_14",
+          "item_idx": 14,
+          "item_type": "group",
+          "text": "convolution",
+          "bbox": [
+            397.4852600097656,
+            134.56488037109375,
+            454.47369384765625,
+            147.71604919433594
+          ],
+          "matched_count": 11,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "convolution"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_15",
+          "item_idx": 15,
+          "item_type": "group",
+          "text": "tidak",
+          "bbox": [
+            458.95245361328125,
+            134.56488037109375,
+            482.8788146972656,
+            147.71604919433594
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tidak"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_16",
+          "item_idx": 16,
+          "item_type": "group",
+          "text": "akan",
+          "bbox": [
+            487.3575744628906,
+            134.56488037109375,
+            509.83453369140625,
+            147.71604919433594
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "akan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_17",
+          "item_idx": 17,
+          "item_type": "group",
+          "text": "mampu",
+          "bbox": [
+            113.47000122070312,
+            155.44488525390625,
+            149.60897827148438,
+            168.59605407714844
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "mampu"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_18",
+          "item_idx": 18,
+          "item_type": "group",
+          "text": "menangkap",
+          "bbox": [
+            152.65025329589844,
+            155.44488525390625,
+            207.85662841796875,
+            168.59605407714844
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "menangkap"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_19",
+          "item_idx": 19,
+          "item_type": "group",
+          "text": "kompleksitassepertiinisecaraefektif.",
+          "bbox": [
+            210.8979034423828,
+            155.44488525390625,
+            394.74114990234375,
+            168.59605407714844
+          ],
+          "matched_count": 35,
+          "score": 0.972,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "kompleksitassepertiinisecaraefektif"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        114.02490234375,
+        509.83453369140625,
+        168.59605407714844
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97043",
+      "openxml_indices": [
+        23
+      ]
+    },
+    {
+      "element_id": 97045,
+      "element_sequence": 26,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "[IMG]",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_20",
+          "item_idx": 20,
+          "item_type": "image",
+          "text": "[IMG]",
+          "bbox": [
+            213.60000610351562,
+            196.18997192382812,
+            304.5570068359375,
+            283.0899658203125
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "[img]"
+          }
+        }
+      ],
+      "merged_bbox": [
+        213.60000610351562,
+        196.18997192382812,
+        304.5570068359375,
+        283.0899658203125
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "97045_img2_m0",
+      "openxml_indices": [
+        25
+      ],
+      "image_index": 2
+    },
+    {
+      "element_id": 97045,
+      "element_sequence": 26,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "[IMG]",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_21",
+          "item_idx": 21,
+          "item_type": "image",
+          "text": "[IMG]",
+          "bbox": [
+            320.1000061035156,
+            196.18997192382812,
+            409.8580017089844,
+            283.0899658203125
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "[img]"
+          }
+        }
+      ],
+      "merged_bbox": [
+        320.1000061035156,
+        196.18997192382812,
+        409.8580017089844,
+        283.0899658203125
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": true,
+      "unit_id": "97045_img3_m0",
+      "openxml_indices": [
+        26
+      ],
+      "image_index": 3
+    },
+    {
+      "element_id": 97046,
+      "element_sequence": 27,
+      "element_type": "table",
+      "is_table": true,
+      "element_text": "",
+      "matched_pdf_units": [],
+      "merged_bbox": [
+        253.25,
+        284.014892578125,
+        380.75604248046875,
+        297.1660461425781
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "text": "(a)",
+          "matched_pdf_units": [
+            {
+              "pdf_unit_id": "pdf_22",
+              "item_idx": 22,
+              "item_type": "group",
+              "text": "(a)",
+              "bbox": [
+                253.25,
+                284.014892578125,
+                267.2684326171875,
+                297.1660461425781
+              ],
+              "matched_count": 3,
+              "score": 1.0,
+              "is_cell": false,
+              "is_hline_table_unit": false,
+              "row": null,
+              "col": null,
+              "debug": {
+                "matched_str": "(a)"
+              }
+            }
+          ],
+          "openxml_idx": 27,
+          "merged_bbox": [
+            253.25,
+            284.014892578125,
+            267.2684326171875,
+            297.1660461425781
+          ]
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "text": "(b)",
+          "matched_pdf_units": [
+            {
+              "pdf_unit_id": "pdf_23",
+              "item_idx": 23,
+              "item_type": "group",
+              "text": "(b)",
+              "bbox": [
+                366.3399963378906,
+                284.014892578125,
+                380.75604248046875,
+                297.1660461425781
+              ],
+              "matched_count": 3,
+              "score": 1.0,
+              "is_cell": false,
+              "is_hline_table_unit": false,
+              "row": null,
+              "col": null,
+              "debug": {
+                "matched_str": "(b)"
+              }
+            }
+          ],
+          "openxml_idx": 28,
+          "merged_bbox": [
+            366.3399963378906,
+            284.014892578125,
+            380.75604248046875,
+            297.1660461425781
+          ]
+        }
+      ],
+      "openxml_indices": [
+        27,
+        28
+      ]
+    },
+    {
+      "element_id": 97047,
+      "element_sequence": 28,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Gambar 2.2",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_24",
+          "item_idx": 24,
+          "item_type": "group",
+          "text": "Gambar2.2",
+          "bbox": [
+            288.1700134277344,
+            297.71490478515625,
+            349.458984375,
+            310.8660583496094
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "gambar2.2"
+          }
+        }
+      ],
+      "merged_bbox": [
+        288.1700134277344,
+        297.71490478515625,
+        349.458984375,
+        310.8660583496094
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97047",
+      "openxml_indices": [
+        29
+      ]
+    },
+    {
+      "element_id": 97048,
+      "element_sequence": 29,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Perbedaan struktur 2D dan Graph Convolution (a) 2D Convolution. (b) Graph Convolution.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_25",
+          "item_idx": 25,
+          "item_type": "group",
+          "text": "Perbedaanstruktur2Ddan",
+          "bbox": [
+            133.6300048828125,
+            311.3948974609375,
+            274.6932067871094,
+            324.5460510253906
+          ],
+          "matched_count": 22,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "perbedaanstruktur2ddan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_26",
+          "item_idx": 26,
+          "item_type": "group",
+          "text": "Graph",
+          "bbox": [
+            277.79388427734375,
+            311.3948974609375,
+            311.72320556640625,
+            324.5460510253906
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "graph"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_27",
+          "item_idx": 27,
+          "item_type": "group",
+          "text": "Convolution2(a)2DConvolution.",
+          "bbox": [
+            314.8238830566406,
+            310.9632263183594,
+            486.197998046875,
+            324.5460510253906
+          ],
+          "matched_count": 28,
+          "score": 0.966,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "convolution(a)2dconvolution."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_28",
+          "item_idx": 28,
+          "item_type": "group",
+          "text": "(b)",
+          "bbox": [
+            489.3343200683594,
+            311.3948974609375,
+            503.73291015625,
+            324.5460510253906
+          ],
+          "matched_count": 3,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(b)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_29",
+          "item_idx": 29,
+          "item_type": "group",
+          "text": "GraphConvolution.",
+          "bbox": [
+            260.0899963378906,
+            325.4349060058594,
+            363.006591796875,
+            338.5860595703125
+          ],
+          "matched_count": 16,
+          "score": 0.941,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "graphconvolution"
+          }
+        }
+      ],
+      "merged_bbox": [
+        133.6300048828125,
+        310.9632263183594,
+        503.73291015625,
+        338.5860595703125
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97048",
+      "openxml_indices": [
+        30
+      ]
+    },
+    {
+      "element_id": 97050,
+      "element_sequence": 31,
+      "element_type": "list-item-11-0",
+      "is_table": false,
+      "element_text": "2.5  Representasi Graf dalam Machine Learning",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_30",
+          "item_idx": 30,
+          "item_type": "group",
+          "text": "2.5",
+          "bbox": [
+            113.47000122070312,
+            359.90032958984375,
+            131.25868225097656,
+            375.442626953125
+          ],
+          "matched_count": 3,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "2.5"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_31",
+          "item_idx": 31,
+          "item_type": "group",
+          "text": "Representasi",
+          "bbox": [
+            149.5,
+            359.90032958984375,
+            226.45327758789062,
+            375.442626953125
+          ],
+          "matched_count": 12,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "representasi"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_32",
+          "item_idx": 32,
+          "item_type": "group",
+          "text": "Graf",
+          "bbox": [
+            230.07559204101562,
+            359.90032958984375,
+            258.84356689453125,
+            375.442626953125
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "graf"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_33",
+          "item_idx": 33,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            262.43780517578125,
+            359.90032958984375,
+            299.6578369140625,
+            375.442626953125
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_34",
+          "item_idx": 34,
+          "item_type": "group",
+          "text": "Machine",
+          "bbox": [
+            303.069580078125,
+            359.90032958984375,
+            355.326416015625,
+            375.442626953125
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "machine"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_35",
+          "item_idx": 35,
+          "item_type": "group",
+          "text": "Learning",
+          "bbox": [
+            358.7942810058594,
+            359.90032958984375,
+            413.6625671386719,
+            375.442626953125
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "learning"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        359.90032958984375,
+        413.6625671386719,
+        375.442626953125
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97050",
+      "openxml_indices": [
+        32
+      ]
+    },
+    {
+      "element_id": 97051,
+      "element_sequence": 32,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Sebelum memahami bagaimana Graph Neural Networks (GNNs) bekerja, penting untuk mengetahui bagaimana data berbentuk graf direpresentasikan dalam machine learning. Graf berbeda dengan bentuk data lain seperti tabel atau gambar karena tidak memiliki struktur yang tetap. Bentuk graf terdiri dari kumpulan entitas (node) yang saling terhubung melalui hubungan tertentu (edge).",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_36",
+          "item_idx": 36,
+          "item_type": "group",
+          "text": "Sebelum",
+          "bbox": [
+            149.5,
+            384.1448974609375,
+            191.46018981933594,
+            397.2960510253906
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "sebelum"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_37",
+          "item_idx": 37,
+          "item_type": "group",
+          "text": "memahami",
+          "bbox": [
+            195.5112762451172,
+            384.1448974609375,
+            248.8049774169922,
+            397.2960510253906
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "memahami"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_38",
+          "item_idx": 38,
+          "item_type": "group",
+          "text": "bagaimana",
+          "bbox": [
+            252.6897430419922,
+            384.1448974609375,
+            304.7123107910156,
+            397.2960510253906
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bagaimana"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_39",
+          "item_idx": 39,
+          "item_type": "group",
+          "text": "Graph",
+          "bbox": [
+            308.7752685546875,
+            384.1448974609375,
+            338.4515380859375,
+            397.2960510253906
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "graph"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_40",
+          "item_idx": 40,
+          "item_type": "group",
+          "text": "Neural",
+          "bbox": [
+            342.56201171875,
+            384.1448974609375,
+            374.9825439453125,
+            397.2960510253906
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "neural"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_41",
+          "item_idx": 41,
+          "item_type": "group",
+          "text": "Networks",
+          "bbox": [
+            378.8673095703125,
+            384.1448974609375,
+            425.5438537597656,
+            397.2960510253906
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "networks"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_42",
+          "item_idx": 42,
+          "item_type": "group",
+          "text": "(GNNs)",
+          "bbox": [
+            429.5355224609375,
+            384.1448974609375,
+            468.0029602050781,
+            397.2960510253906
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(gnns)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_43",
+          "item_idx": 43,
+          "item_type": "group",
+          "text": "bekerja,",
+          "bbox": [
+            471.9590148925781,
+            384.1448974609375,
+            510.1770324707031,
+            397.2960510253906
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bekerja,"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_44",
+          "item_idx": 44,
+          "item_type": "group",
+          "text": "penting",
+          "bbox": [
+            113.47000122070312,
+            404.6849060058594,
+            149.6089630126953,
+            417.8360595703125
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "penting"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_45",
+          "item_idx": 45,
+          "item_type": "group",
+          "text": "untuk",
+          "bbox": [
+            152.65023803710938,
+            404.6849060058594,
+            180.15245056152344,
+            417.8360595703125
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "untuk"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_46",
+          "item_idx": 46,
+          "item_type": "group",
+          "text": "mengetahuibagaimanadataberbentuk",
+          "bbox": [
+            183.1937255859375,
+            404.6849060058594,
+            368.1892395019531,
+            417.8360595703125
+          ],
+          "matched_count": 32,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "mengetahuibagaimanadataberbentuk"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_47",
+          "item_idx": 47,
+          "item_type": "group",
+          "text": "grafdirepresentasikan",
+          "bbox": [
+            371.23052978515625,
+            404.6849060058594,
+            477.4853515625,
+            417.8360595703125
+          ],
+          "matched_count": 21,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "grafdirepresentasikan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_48",
+          "item_idx": 48,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            480.5266418457031,
+            404.6849060058594,
+            509.9059143066406,
+            417.8360595703125
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_49",
+          "item_idx": 49,
+          "item_type": "group",
+          "text": "machine",
+          "bbox": [
+            113.47000122070312,
+            425.56488037109375,
+            154.33721923828125,
+            438.7160339355469
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "machine"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_50",
+          "item_idx": 50,
+          "item_type": "group",
+          "text": "learning.",
+          "bbox": [
+            157.6873779296875,
+            425.56488037109375,
+            200.3699951171875,
+            438.7160339355469
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "learning."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_51",
+          "item_idx": 51,
+          "item_type": "group",
+          "text": "Graf",
+          "bbox": [
+            203.5063018798828,
+            425.56488037109375,
+            225.43678283691406,
+            438.7160339355469
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "graf"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_52",
+          "item_idx": 52,
+          "item_type": "group",
+          "text": "berbeda",
+          "bbox": [
+            228.6681365966797,
+            425.56488037109375,
+            266.64849853515625,
+            438.7160339355469
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "berbeda"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_53",
+          "item_idx": 53,
+          "item_type": "group",
+          "text": "dengan",
+          "bbox": [
+            269.9986572265625,
+            425.56488037109375,
+            304.7001647949219,
+            438.7160339355469
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dengan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_54",
+          "item_idx": 54,
+          "item_type": "group",
+          "text": "bentuk",
+          "bbox": [
+            308.09783935546875,
+            425.56488037109375,
+            340.62530517578125,
+            438.7160339355469
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bentuk"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_55",
+          "item_idx": 55,
+          "item_type": "group",
+          "text": "data",
+          "bbox": [
+            344.0229797363281,
+            425.56488037109375,
+            364.0408020019531,
+            438.7160339355469
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "data"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_56",
+          "item_idx": 56,
+          "item_type": "group",
+          "text": "lain",
+          "bbox": [
+            367.3909606933594,
+            425.56488037109375,
+            385.21099853515625,
+            438.7160339355469
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "lain"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_57",
+          "item_idx": 57,
+          "item_type": "group",
+          "text": "seperti",
+          "bbox": [
+            388.6086730957031,
+            425.56488037109375,
+            420.6728210449219,
+            438.7160339355469
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "seperti"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_58",
+          "item_idx": 58,
+          "item_type": "group",
+          "text": "tabel",
+          "bbox": [
+            423.84478759765625,
+            425.56488037109375,
+            447.2840576171875,
+            438.7160339355469
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tabel"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_59",
+          "item_idx": 59,
+          "item_type": "group",
+          "text": "atau",
+          "bbox": [
+            450.4560241699219,
+            425.56488037109375,
+            470.42633056640625,
+            438.7160339355469
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "atau"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_60",
+          "item_idx": 60,
+          "item_type": "group",
+          "text": "gambar",
+          "bbox": [
+            473.8240051269531,
+            425.56488037109375,
+            510.12933349609375,
+            438.7160339355469
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "gambar"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_61",
+          "item_idx": 61,
+          "item_type": "group",
+          "text": "karenatidakmemilikistrukturyangtetap.Bentukgrafterdiridarikumpulanentitas",
+          "bbox": [
+            113.47000122070312,
+            446.08489990234375,
+            510.0373840332031,
+            459.2360534667969
+          ],
+          "matched_count": 73,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "karenatidakmemilikistrukturyangtetap.bentukgrafterdiridarikumpulanentitas"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_62",
+          "item_idx": 62,
+          "item_type": "group",
+          "text": "(node)yang",
+          "bbox": [
+            113.47000122070312,
+            466.9949035644531,
+            171.1711883544922,
+            480.14605712890625
+          ],
+          "matched_count": 10,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(node)yang"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_63",
+          "item_idx": 63,
+          "item_type": "group",
+          "text": "saling",
+          "bbox": [
+            174.21246337890625,
+            466.9949035644531,
+            202.80763244628906,
+            480.14605712890625
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "saling"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_64",
+          "item_idx": 64,
+          "item_type": "group",
+          "text": "terhubung",
+          "bbox": [
+            205.84890747070312,
+            466.9949035644531,
+            254.5688018798828,
+            480.14605712890625
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "terhubung"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_65",
+          "item_idx": 65,
+          "item_type": "group",
+          "text": "melaluihubungan",
+          "bbox": [
+            257.6100769042969,
+            466.9949035644531,
+            343.7402038574219,
+            480.14605712890625
+          ],
+          "matched_count": 15,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "melaluihubungan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_66",
+          "item_idx": 66,
+          "item_type": "group",
+          "text": "tertentu",
+          "bbox": [
+            346.781494140625,
+            466.9949035644531,
+            383.3006896972656,
+            480.14605712890625
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tertentu"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_67",
+          "item_idx": 67,
+          "item_type": "group",
+          "text": "(edge).",
+          "bbox": [
+            386.34197998046875,
+            466.9949035644531,
+            419.8792724609375,
+            480.14605712890625
+          ],
+          "matched_count": 6,
+          "score": 0.857,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(edge)"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        384.1448974609375,
+        510.1770324707031,
+        480.14605712890625
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97051",
+      "openxml_indices": [
+        33
+      ]
+    },
+    {
+      "element_id": 97052,
+      "element_sequence": 33,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Secara formal, sebuah graf dapat direpresentasikan sebagai:",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_68",
+          "item_idx": 68,
+          "item_type": "group",
+          "text": "Secaraformal,sebuah",
+          "bbox": [
+            113.47000122070312,
+            487.514892578125,
+            219.71286010742188,
+            500.6660461425781
+          ],
+          "matched_count": 19,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "secaraformal,sebuah"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_69",
+          "item_idx": 69,
+          "item_type": "group",
+          "text": "grafdapatdirepresentasikan",
+          "bbox": [
+            222.75413513183594,
+            487.514892578125,
+            357.7823486328125,
+            500.6660461425781
+          ],
+          "matched_count": 26,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "grafdapatdirepresentasikan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_70",
+          "item_idx": 70,
+          "item_type": "group",
+          "text": "sebagai:",
+          "bbox": [
+            360.8236389160156,
+            487.514892578125,
+            400.0751647949219,
+            500.6660461425781
+          ],
+          "matched_count": 7,
+          "score": 0.875,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "sebagai"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        487.514892578125,
+        400.0751647949219,
+        500.6660461425781
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97052",
+      "openxml_indices": [
+        34
+      ]
+    },
+    {
+      "element_id": 97053,
+      "element_sequence": 34,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "G=(V, E, X) \t\t(2.1)",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_71",
+          "item_idx": 71,
+          "item_type": "group",
+          "text": "𝐺",
+          "bbox": [
+            149.5,
+            510.10546875,
+            156.98440551757812,
+            521.9973754882812
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "g"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_72",
+          "item_idx": 72,
+          "item_type": "group",
+          "text": "=",
+          "bbox": [
+            161.02000427246094,
+            510.10546875,
+            169.8943634033203,
+            521.9973754882812
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "="
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_73",
+          "item_idx": 73,
+          "item_type": "group",
+          "text": "(𝑉,𝐸,𝑋)",
+          "bbox": [
+            173.27999877929688,
+            510.10546875,
+            216.0102081298828,
+            521.9973754882812
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(v,e,x)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_74",
+          "item_idx": 74,
+          "item_type": "group",
+          "text": "................................................................................(2.1)",
+          "bbox": [
+            242.05999755859375,
+            508.77490234375,
+            496.3297119140625,
+            521.9260864257812
+          ],
+          "matched_count": 5,
+          "score": 0.059,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(2.1)"
+          }
+        }
+      ],
+      "merged_bbox": [
+        149.5,
+        508.77490234375,
+        496.3297119140625,
+        521.9973754882812
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97053",
+      "openxml_indices": [
+        35
+      ]
+    },
+    {
+      "element_id": 97054,
+      "element_sequence": 35,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "di mana:",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_75",
+          "item_idx": 75,
+          "item_type": "group",
+          "text": "dimana:",
+          "bbox": [
+            113.47000122070312,
+            529.294921875,
+            155.24009704589844,
+            542.4461059570312
+          ],
+          "matched_count": 6,
+          "score": 0.857,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dimana"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        529.294921875,
+        155.24009704589844,
+        542.4461059570312
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97054",
+      "openxml_indices": [
+        36
+      ]
+    },
+    {
+      "element_id": 97055,
+      "element_sequence": 36,
+      "element_type": "list-item-62-0",
+      "is_table": false,
+      "element_text": "•  V adalah kumpulan node (simpul) dalam graf. Setiap node mewakili suatu entitas dalam dataset, seperti pengguna dalam jejaring sosial, molekul dalam struktur kimia, atau kota dalam jaringan transportasi.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_76",
+          "item_idx": 76,
+          "item_type": "group",
+          "text": "•",
+          "bbox": [
+            113.47000122070312,
+            550.629638671875,
+            118.10680389404297,
+            562.9373168945312
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "*"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_77",
+          "item_idx": 77,
+          "item_type": "group",
+          "text": "V",
+          "bbox": [
+            134.74000549316406,
+            550.1749267578125,
+            143.31736755371094,
+            563.3261108398438
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "v"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_78",
+          "item_idx": 78,
+          "item_type": "group",
+          "text": "adalah",
+          "bbox": [
+            148.03372192382812,
+            550.1749267578125,
+            179.5038604736328,
+            563.3261108398438
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "adalah"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_79",
+          "item_idx": 79,
+          "item_type": "group",
+          "text": "kumpulan",
+          "bbox": [
+            184.33901977539062,
+            550.1749267578125,
+            232.33424377441406,
+            563.3261108398438
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "kumpulan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_80",
+          "item_idx": 80,
+          "item_type": "group",
+          "text": "node",
+          "bbox": [
+            237.16940307617188,
+            550.1749267578125,
+            260.7630920410156,
+            563.3261108398438
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "node"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_81",
+          "item_idx": 81,
+          "item_type": "group",
+          "text": "(simpul)",
+          "bbox": [
+            265.5507507324219,
+            550.1749267578125,
+            306.180419921875,
+            563.3261108398438
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(simpul)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_82",
+          "item_idx": 82,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            310.8492736816406,
+            550.1749267578125,
+            340.2285461425781,
+            563.3261108398438
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_83",
+          "item_idx": 83,
+          "item_type": "group",
+          "text": "graf.",
+          "bbox": [
+            345.00433349609375,
+            550.1749267578125,
+            367.38629150390625,
+            563.3261108398438
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "graf."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_84",
+          "item_idx": 84,
+          "item_type": "group",
+          "text": "Setiap",
+          "bbox": [
+            371.97198486328125,
+            550.1749267578125,
+            401.66015625,
+            563.3261108398438
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "setiap"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_85",
+          "item_idx": 85,
+          "item_type": "group",
+          "text": "node",
+          "bbox": [
+            406.4953308105469,
+            550.1749267578125,
+            430.0890197753906,
+            563.3261108398438
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "node"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_86",
+          "item_idx": 86,
+          "item_type": "group",
+          "text": "mewakili",
+          "bbox": [
+            434.8766784667969,
+            550.1749267578125,
+            479.5336608886719,
+            563.3261108398438
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "mewakili"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_87",
+          "item_idx": 87,
+          "item_type": "group",
+          "text": "suatu",
+          "bbox": [
+            484.14312744140625,
+            550.1749267578125,
+            509.49505615234375,
+            563.3261108398438
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "suatu"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_88",
+          "item_idx": 88,
+          "item_type": "group",
+          "text": "entitas",
+          "bbox": [
+            134.74000549316406,
+            570.7149047851562,
+            165.9844207763672,
+            583.8660888671875
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "entitas"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_89",
+          "item_idx": 89,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            169.6197052001953,
+            570.7149047851562,
+            198.99896240234375,
+            583.8660888671875
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_90",
+          "item_idx": 90,
+          "item_type": "group",
+          "text": "dataset,",
+          "bbox": [
+            202.6936492919922,
+            570.7149047851562,
+            239.10586547851562,
+            583.8660888671875
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dataset,"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_91",
+          "item_idx": 91,
+          "item_type": "group",
+          "text": "seperti",
+          "bbox": [
+            242.95498657226562,
+            570.7149047851562,
+            275.0191345214844,
+            583.8660888671875
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "seperti"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_92",
+          "item_idx": 92,
+          "item_type": "group",
+          "text": "pengguna",
+          "bbox": [
+            278.5475158691406,
+            570.7149047851562,
+            325.85369873046875,
+            583.8660888671875
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "pengguna"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_93",
+          "item_idx": 93,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            329.5602722167969,
+            570.7149047851562,
+            358.9395446777344,
+            583.8660888671875
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_94",
+          "item_idx": 94,
+          "item_type": "group",
+          "text": "jejaring",
+          "bbox": [
+            362.6342468261719,
+            570.7149047851562,
+            399.1534423828125,
+            583.8660888671875
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "jejaring"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_95",
+          "item_idx": 95,
+          "item_type": "group",
+          "text": "sosial,",
+          "bbox": [
+            402.90753173828125,
+            570.7149047851562,
+            433.2015380859375,
+            583.8660888671875
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "sosial,"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_96",
+          "item_idx": 96,
+          "item_type": "group",
+          "text": "molekul",
+          "bbox": [
+            437.0506591796875,
+            570.7149047851562,
+            476.65863037109375,
+            583.8660888671875
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "molekul"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_97",
+          "item_idx": 97,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            480.18701171875,
+            570.7149047851562,
+            509.5662841796875,
+            583.8660888671875
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_98",
+          "item_idx": 98,
+          "item_type": "group",
+          "text": "strukturkimia,atau",
+          "bbox": [
+            134.74000549316406,
+            591.5949096679688,
+            228.06930541992188,
+            604.74609375
+          ],
+          "matched_count": 18,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "strukturkimia,atau"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_99",
+          "item_idx": 99,
+          "item_type": "group",
+          "text": "kotadalam",
+          "bbox": [
+            231.11058044433594,
+            591.5949096679688,
+            284.2142028808594,
+            604.74609375
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "kotadalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_100",
+          "item_idx": 100,
+          "item_type": "group",
+          "text": "jaringan",
+          "bbox": [
+            287.45001220703125,
+            591.5949096679688,
+            326.832275390625,
+            604.74609375
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "jaringan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_101",
+          "item_idx": 101,
+          "item_type": "group",
+          "text": "transportasi.",
+          "bbox": [
+            329.8735656738281,
+            591.5949096679688,
+            388.9291076660156,
+            604.74609375
+          ],
+          "matched_count": 12,
+          "score": 0.923,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "transportasi"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        550.1749267578125,
+        509.5662841796875,
+        604.74609375
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97055",
+      "openxml_indices": [
+        37
+      ]
+    },
+    {
+      "element_id": 97056,
+      "element_sequence": 37,
+      "element_type": "list-item-62-0",
+      "is_table": false,
+      "element_text": "•  E adalah kumpulan edge (sisi) yang menunjukkan koneksi antara dua node. Hubungan ini bisa berupa interaksi dalam jejaring sosial, ikatan kimia antar-atom, atau jalur antara dua lokasi dalam transportasi.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_102",
+          "item_idx": 102,
+          "item_type": "group",
+          "text": "•",
+          "bbox": [
+            113.47000122070312,
+            612.569580078125,
+            118.10680389404297,
+            624.8772583007812
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "*"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_103",
+          "item_idx": 103,
+          "item_type": "group",
+          "text": "E",
+          "bbox": [
+            134.74000549316406,
+            612.1148681640625,
+            141.99868774414062,
+            625.2660522460938
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "e"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_104",
+          "item_idx": 104,
+          "item_type": "group",
+          "text": "adalah",
+          "bbox": [
+            146.25172424316406,
+            612.1148681640625,
+            177.72186279296875,
+            625.2660522460938
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "adalah"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_105",
+          "item_idx": 105,
+          "item_type": "group",
+          "text": "kumpulan",
+          "bbox": [
+            182.20062255859375,
+            612.1148681640625,
+            230.20773315429688,
+            625.2660522460938
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "kumpulan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_106",
+          "item_idx": 106,
+          "item_type": "group",
+          "text": "edge",
+          "bbox": [
+            234.68649291992188,
+            612.1148681640625,
+            257.21099853515625,
+            625.2660522460938
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "edge"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_107",
+          "item_idx": 107,
+          "item_type": "group",
+          "text": "(sisi)",
+          "bbox": [
+            261.6422424316406,
+            612.1148681640625,
+            285.3785095214844,
+            625.2660522460938
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "(sisi)"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_108",
+          "item_idx": 108,
+          "item_type": "group",
+          "text": "yang",
+          "bbox": [
+            289.6909484863281,
+            612.1148681640625,
+            312.8926086425781,
+            625.2660522460938
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "yang"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_109",
+          "item_idx": 109,
+          "item_type": "group",
+          "text": "menunjukkan",
+          "bbox": [
+            317.3713684082031,
+            612.1148681640625,
+            382.6401672363281,
+            625.2660522460938
+          ],
+          "matched_count": 11,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "menunjukkan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_110",
+          "item_idx": 110,
+          "item_type": "group",
+          "text": "koneksi",
+          "bbox": [
+            386.7506408691406,
+            612.1148681640625,
+            424.18450927734375,
+            625.2660522460938
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "koneksi"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_111",
+          "item_idx": 111,
+          "item_type": "group",
+          "text": "antara",
+          "bbox": [
+            428.43756103515625,
+            612.1148681640625,
+            457.8049621582031,
+            625.2660522460938
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "antara"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_112",
+          "item_idx": 112,
+          "item_type": "group",
+          "text": "dua",
+          "bbox": [
+            462.2362060546875,
+            612.1148681640625,
+            479.3790588378906,
+            625.2660522460938
+          ],
+          "matched_count": 3,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dua"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_113",
+          "item_idx": 113,
+          "item_type": "group",
+          "text": "node.",
+          "bbox": [
+            483.810302734375,
+            612.1148681640625,
+            509.80377197265625,
+            625.2660522460938
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "node."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_114",
+          "item_idx": 114,
+          "item_type": "group",
+          "text": "Hubungan",
+          "bbox": [
+            134.74000549316406,
+            633.02490234375,
+            184.885498046875,
+            646.1760864257812
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "hubungan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_115",
+          "item_idx": 115,
+          "item_type": "group",
+          "text": "ini",
+          "bbox": [
+            188.63958740234375,
+            633.02490234375,
+            201.2917938232422,
+            646.1760864257812
+          ],
+          "matched_count": 3,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "ini"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_116",
+          "item_idx": 116,
+          "item_type": "group",
+          "text": "bisa",
+          "bbox": [
+            204.82015991210938,
+            633.02490234375,
+            224.11328125,
+            646.1760864257812
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "bisa"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_117",
+          "item_idx": 117,
+          "item_type": "group",
+          "text": "berupa",
+          "bbox": [
+            227.81985473632812,
+            633.02490234375,
+            260.76312255859375,
+            646.1760864257812
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "berupa"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_118",
+          "item_idx": 118,
+          "item_type": "group",
+          "text": "interaksi",
+          "bbox": [
+            264.4696960449219,
+            633.02490234375,
+            305.8834228515625,
+            646.1760864257812
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "interaksi"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_119",
+          "item_idx": 119,
+          "item_type": "group",
+          "text": "dalam",
+          "bbox": [
+            309.41180419921875,
+            633.02490234375,
+            338.79107666015625,
+            646.1760864257812
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dalam"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_120",
+          "item_idx": 120,
+          "item_type": "group",
+          "text": "jejaring",
+          "bbox": [
+            342.48577880859375,
+            633.02490234375,
+            379.36138916015625,
+            646.1760864257812
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "jejaring"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_121",
+          "item_idx": 121,
+          "item_type": "group",
+          "text": "sosial,",
+          "bbox": [
+            383.115478515625,
+            633.02490234375,
+            413.40948486328125,
+            646.1760864257812
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "sosial,"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_122",
+          "item_idx": 122,
+          "item_type": "group",
+          "text": "ikatan",
+          "bbox": [
+            417.25860595703125,
+            633.02490234375,
+            446.5784912109375,
+            646.1760864257812
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "ikatan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_123",
+          "item_idx": 123,
+          "item_type": "group",
+          "text": "kimia",
+          "bbox": [
+            450.33258056640625,
+            633.02490234375,
+            477.5497131347656,
+            646.1760864257812
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "kimia"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_124",
+          "item_idx": 124,
+          "item_type": "group",
+          "text": "antar-",
+          "bbox": [
+            481.6126708984375,
+            633.02490234375,
+            510.4260559082031,
+            646.1760864257812
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "antar-"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_125",
+          "item_idx": 125,
+          "item_type": "group",
+          "text": "atom,atau",
+          "bbox": [
+            134.74000549316406,
+            653.544921875,
+            184.5528564453125,
+            666.6961059570312
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "atom,atau"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_126",
+          "item_idx": 126,
+          "item_type": "group",
+          "text": "jalurantaradualokasidalamtransportasi.",
+          "bbox": [
+            187.59413146972656,
+            653.544921875,
+            388.31878662109375,
+            666.6961059570312
+          ],
+          "matched_count": 37,
+          "score": 0.974,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "jalurantaradualokasidalamtransportasi"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        612.1148681640625,
+        510.4260559082031,
+        666.6961059570312
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97056",
+      "openxml_indices": [
+        38
+      ]
+    },
+    {
+      "element_id": 97057,
+      "element_sequence": 38,
+      "element_type": "list-item-62-0",
+      "is_table": false,
+      "element_text": "•  X adalah matriks fitur yang berisi informasi tambahan tentang setiap node. Contohnya, dalam jejaring sosial, fitur node dapat berupa profil pengguna.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_127",
+          "item_idx": 127,
+          "item_type": "group",
+          "text": "•",
+          "bbox": [
+            113.47000122070312,
+            674.8995971679688,
+            118.10680389404297,
+            687.207275390625
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "*"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_128",
+          "item_idx": 128,
+          "item_type": "group",
+          "text": "X",
+          "bbox": [
+            134.74000549316406,
+            674.4448852539062,
+            143.31736755371094,
+            687.5960693359375
+          ],
+          "matched_count": 1,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "x"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_129",
+          "item_idx": 129,
+          "item_type": "group",
+          "text": "adalah",
+          "bbox": [
+            148.03372192382812,
+            674.4448852539062,
+            179.5038604736328,
+            687.5960693359375
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "adalah"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_130",
+          "item_idx": 130,
+          "item_type": "group",
+          "text": "matriks",
+          "bbox": [
+            184.33901977539062,
+            674.4448852539062,
+            220.2522735595703,
+            687.5960693359375
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "matriks"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_131",
+          "item_idx": 131,
+          "item_type": "group",
+          "text": "fitur",
+          "bbox": [
+            224.9686279296875,
+            674.4448852539062,
+            245.4735107421875,
+            687.5960693359375
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "fitur"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_132",
+          "item_idx": 132,
+          "item_type": "group",
+          "text": "yang",
+          "bbox": [
+            250.14234924316406,
+            674.4448852539062,
+            273.33209228515625,
+            687.5960693359375
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "yang"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_133",
+          "item_idx": 133,
+          "item_type": "group",
+          "text": "berisi",
+          "bbox": [
+            278.1672668457031,
+            674.4448852539062,
+            304.837890625,
+            687.5960693359375
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "berisi"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_134",
+          "item_idx": 134,
+          "item_type": "group",
+          "text": "informasi",
+          "bbox": [
+            309.4473571777344,
+            674.4448852539062,
+            355.5299377441406,
+            687.5960693359375
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "informasi"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_135",
+          "item_idx": 135,
+          "item_type": "group",
+          "text": "tambahan",
+          "bbox": [
+            360.139404296875,
+            674.4448852539062,
+            406.364501953125,
+            687.5960693359375
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tambahan"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_136",
+          "item_idx": 136,
+          "item_type": "group",
+          "text": "tentang",
+          "bbox": [
+            411.1996765136719,
+            674.4448852539062,
+            446.2813720703125,
+            687.5960693359375
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tentang"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_137",
+          "item_idx": 137,
+          "item_type": "group",
+          "text": "setiap",
+          "bbox": [
+            451.1165466308594,
+            674.4448852539062,
+            478.9989318847656,
+            687.5960693359375
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "setiap"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_138",
+          "item_idx": 138,
+          "item_type": "group",
+          "text": "node.",
+          "bbox": [
+            483.8341064453125,
+            674.4448852539062,
+            509.82757568359375,
+            687.5960693359375
+          ],
+          "matched_count": 5,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "node."
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_139",
+          "item_idx": 139,
+          "item_type": "group",
+          "text": "Contohnya,dalamjejaring",
+          "bbox": [
+            134.74000549316406,
+            694.9649047851562,
+            262.22430419921875,
+            708.1160888671875
+          ],
+          "matched_count": 23,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "contohnya,dalamjejaring"
+          }
+        },
+        {
+          "pdf_unit_id": "pdf_140",
+          "item_idx": 140,
+          "item_type": "group",
+          "text": "sosial,fiturnodedapatberupaprofilpengguna.",
+          "bbox": [
+            265.2655944824219,
+            694.9649047851562,
+            493.239990234375,
+            708.1160888671875
+          ],
+          "matched_count": 41,
+          "score": 0.976,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "sosial,fiturnodedapatberupaprofilpengguna"
+          }
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        674.4448852539062,
+        509.82757568359375,
+        708.1160888671875
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "97057",
+      "openxml_indices": [
+        39
+      ]
+    }
+  ]
+}

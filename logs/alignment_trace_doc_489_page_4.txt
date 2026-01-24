@@ -1,0 +1,36 @@
+=== 2026-01-21T08:46:06 doc_id=489 page=4 phase=pass1 steps=34 min_openxml_idx=241 pdf_units=9 openxml_units=969 ===
+[0] Block0 Char="1" PDF[0] -> U0(pdf_0) OX[2827] -> U242(93749_r17_c0) | MATCH new_assignment cnt:1
+[1] Block0 Char="7" PDF[1] -> U0(pdf_0) OX[2828] -> U242(93749_r17_c0) | MATCH continue_existing_assignment cnt:2
+[2] Block0 Char="a" PDF[2] -> U1(pdf_1) OX[2829] -> U243(93749_r17_c1) | MATCH new_assignment cnt:1
+[3] Block0 Char="i" PDF[3] -> U1(pdf_1) OX[2830] -> U243(93749_r17_c1) | MATCH continue_existing_assignment cnt:2
+[4] Block0 Char="s" PDF[4] -> U1(pdf_1) OX[2831] -> U243(93749_r17_c1) | MATCH continue_existing_assignment cnt:3
+[5] Block0 Char="a" PDF[5] -> U1(pdf_1) OX[2832] -> U243(93749_r17_c1) | MATCH continue_existing_assignment cnt:4
+[6] Block0 Char="1" PDF[6] -> U2(pdf_2) OX[2833] -> U244(93749_r17_c2) | MATCH new_assignment cnt:1
+[7] Block0 Char="." PDF[7] -> U2(pdf_2) OX[2834] -> U244(93749_r17_c2) | MATCH continue_existing_assignment cnt:2
+[8] Block0 Char="6" PDF[8] -> U2(pdf_2) OX[2835] -> U244(93749_r17_c2) | MATCH continue_existing_assignment cnt:3
+[9] Block0 Char="2" PDF[9] -> U2(pdf_2) OX[2836] -> U244(93749_r17_c2) | MATCH continue_existing_assignment cnt:4
+[10] Block0 Char="1" PDF[10] -> U3(pdf_3) OX[2837] -> U245(93749_r17_c3) | MATCH new_assignment cnt:1
+[11] Block0 Char="." PDF[11] -> U3(pdf_3) OX[2838] -> U245(93749_r17_c3) | MATCH continue_existing_assignment cnt:2
+[12] Block0 Char="2" PDF[12] -> U3(pdf_3) OX[2839] -> U245(93749_r17_c3) | MATCH continue_existing_assignment cnt:3
+[13] Block0 Char="8" PDF[13] -> U3(pdf_3) OX[2840] -> U245(93749_r17_c3) | MATCH continue_existing_assignment cnt:4
+[14] Block0 Char="0" PDF[14] -> U4(pdf_4) OX[2841] -> U246(93749_r17_c4) | MATCH new_assignment cnt:1
+[15] Block0 Char="." PDF[15] -> U4(pdf_4) OX[2842] -> U246(93749_r17_c4) | MATCH continue_existing_assignment cnt:2
+[16] Block0 Char="0" PDF[16] -> U4(pdf_4) OX[2843] -> U246(93749_r17_c4) | MATCH continue_existing_assignment cnt:3
+[17] Block0 Char="4" PDF[17] -> U4(pdf_4) OX[2844] -> U246(93749_r17_c4) | MATCH continue_existing_assignment cnt:4
+[18] Block0 Char="0" PDF[18] -> U5(pdf_5) OX[2845] -> U247(93749_r17_c5) | MATCH new_assignment cnt:1
+[19] Block0 Char="." PDF[19] -> U5(pdf_5) OX[2846] -> U247(93749_r17_c5) | MATCH continue_existing_assignment cnt:2
+[20] Block0 Char="0" PDF[20] -> U5(pdf_5) OX[2847] -> U247(93749_r17_c5) | MATCH continue_existing_assignment cnt:3
+[21] Block0 Char="9" PDF[21] -> U5(pdf_5) OX[2848] -> U247(93749_r17_c5) | MATCH continue_existing_assignment cnt:4
+[22] Block0 Char="0" PDF[22] -> U6(pdf_6) OX[2849] -> U248(93749_r17_c6) | MATCH new_assignment cnt:1
+[23] Block0 Char="." PDF[23] -> U6(pdf_6) OX[2850] -> U248(93749_r17_c6) | MATCH continue_existing_assignment cnt:2
+[24] Block0 Char="2" PDF[24] -> U6(pdf_6) OX[2851] -> U248(93749_r17_c6) | MATCH continue_existing_assignment cnt:3
+[25] Block0 Char="1" PDF[25] -> U6(pdf_6) OX[2852] -> U248(93749_r17_c6) | MATCH continue_existing_assignment cnt:4
+[26] Block0 Char="0" PDF[26] -> U7(pdf_7) OX[2853] -> U249(93749_r17_c7) | MATCH new_assignment cnt:1
+[27] Block0 Char="." PDF[27] -> U7(pdf_7) OX[2854] -> U249(93749_r17_c7) | MATCH continue_existing_assignment cnt:2
+[28] Block0 Char="6" PDF[28] -> U7(pdf_7) OX[2855] -> U249(93749_r17_c7) | MATCH continue_existing_assignment cnt:3
+[29] Block0 Char="7" PDF[29] -> U7(pdf_7) OX[2856] -> U249(93749_r17_c7) | MATCH continue_existing_assignment cnt:4
+[30] Block0 Char="0" PDF[30] -> U8(pdf_8) OX[2857] -> U250(93749_r17_c8) | MATCH new_assignment cnt:1
+[31] Block0 Char="." PDF[31] -> U8(pdf_8) OX[2858] -> U250(93749_r17_c8) | MATCH continue_existing_assignment cnt:2
+[32] Block0 Char="0" PDF[32] -> U8(pdf_8) OX[2859] -> U250(93749_r17_c8) | MATCH continue_existing_assignment cnt:3
+[33] Block0 Char="6" PDF[33] -> U8(pdf_8) OX[2860] -> U250(93749_r17_c8) | MATCH continue_existing_assignment cnt:4
+
