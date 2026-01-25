@@ -521,14 +521,14 @@ class AlignmentPostprocessMixin:
             if alignment.get('is_table') or alignment.get('is_image_part'):
                 cleaned.append(alignment)
                 continue
-        text = alignment.get('element_text') or ''
-        if self._is_punctuation_only(text):
-            stripped = ''.join(text.split())
-            if len(stripped) <= 1:
-                continue
-            if not alignment.get('matched_pdf_units'):
-                continue
-        cleaned.append(alignment)
+            text = alignment.get('element_text') or ''
+            if self._is_punctuation_only(text):
+                stripped = ''.join(text.split())
+                if len(stripped) <= 1:
+                    continue
+                if not alignment.get('matched_pdf_units'):
+                    continue
+            cleaned.append(alignment)
         return cleaned
 
     def _recompute_alignment_bboxes(self, alignment):

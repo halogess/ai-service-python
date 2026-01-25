@@ -51,9 +51,11 @@ class AlignmentService(
                 min_openxml_idx
             )
 
-            # Update min_openxml_idx for next page
+            # Update min_openxml_idx for next page (avoid backtracking)
             if result.get('success'):
-                min_openxml_idx = result.get('max_openxml_idx', min_openxml_idx)
+                new_max_openxml_idx = result.get('max_openxml_idx')
+                if new_max_openxml_idx is not None:
+                    min_openxml_idx = max(min_openxml_idx, new_max_openxml_idx)
 
             results.append({
                 'success': result.get('success', False),

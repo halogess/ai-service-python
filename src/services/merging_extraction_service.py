@@ -25,6 +25,7 @@ class MergingExtractionService:
     FOOTNOTE_OVERLAP_THRESHOLD = 0.3
     FOOTNOTE_LOG_PATH = os.path.join("logs", "footnote_matches.txt")
     DUPLICATE_SEQUENCE_GAP_THRESHOLD = 2
+    SHORT_DUPLICATE_UNIT_LEN = 12
     BAB_TITLE_REGEX = re.compile(r'^\s*bab\b', re.IGNORECASE)
     SUBCHAPTER_TITLE_REGEX = re.compile(r'^\s*\d+(?:\.\d+)+\.?', re.IGNORECASE)
     LIST_NUMERIC_REGEX = re.compile(r'^\s*\d+(?!\.\d)(?:[.)])', re.IGNORECASE)
@@ -121,8 +122,16 @@ class MergingExtractionService:
                 )
                 
                 if alignment_result['success']:
-                    # Update cross-page tracking from alignment result
-                    max_openxml_idx = alignment_result.get('max_openxml_idx', max_openxml_idx)
+                    # Update cross-page tracking from alignment result (never allow backtracking)
+                    new_max_openxml_idx = alignment_result.get('max_openxml_idx')
+                    if new_max_openxml_idx is not None:
+                        if new_max_openxml_idx < max_openxml_idx:
+                            logger.warning(
+                                f"Page {page_num}: max_openxml_idx backtracked "
+                                f"({new_max_openxml_idx} < {max_openxml_idx}); keeping previous value."
+                            )
+                        else:
+                            max_openxml_idx = new_max_openxml_idx
                     logger.debug(f"Page {page_num}: max_openxml_idx updated to {max_openxml_idx}")
                     
                     alignments = alignment_result['final_alignments']
@@ -185,11 +194,13 @@ class MergingExtractionService:
                                 duplicate_element_ids
                             )
                             payload['alignments'] = alignments
-                            self._sync_fused_bboxes_with_alignments(
-                                payload.get('fused_results'),
-                                alignments,
-                                removed_duplicate_element_ids
-                            )
+                        self._sync_fused_bboxes_with_alignments(
+                            payload.get('fused_results'),
+                            alignments,
+                            removed_duplicate_element_ids
+                        )
+                        if payload.get('fused_results'):
+                            self._apply_structural_labels(db, payload.get('fused_results'))
 
                         if save_to_db:
                             self._replace_visual_records(
@@ -403,10 +414,42 @@ class MergingExtractionService:
             value = ' '.join(str(v) for v in value)
         return self.alignment_service._normalize_text(str(value))
 
+    def _simplify_duplicate_unit_text(self, text):
+        if not text:
+            return ''
+        return re.sub(r'[\W_]+', '', text, flags=re.UNICODE)
+
     def _get_bbox_center_y(self, bbox):
         if not bbox or len(bbox) < 4:
             return None
         return (bbox[1] + bbox[3]) / 2
+
+    def _get_caption_structural_label(self, bbox, fused_results):
+        if not bbox:
+            return 'caption'
+        best_label = None
+        best_gap = None
+        for result in fused_results or []:
+            label = str(result.get('label') or result.get('docling_label') or '').lower()
+            if label not in ('picture', 'table'):
+                continue
+            cand_bbox = result.get('bbox')
+            if not cand_bbox or len(cand_bbox) < 4:
+                continue
+            if bbox[1] >= cand_bbox[3]:
+                gap = bbox[1] - cand_bbox[3]
+            elif cand_bbox[1] >= bbox[3]:
+                gap = cand_bbox[1] - bbox[3]
+            else:
+                gap = 0
+            if best_gap is None or gap < best_gap:
+                best_gap = gap
+                best_label = label
+        if best_label == 'table':
+            return 'caption_tabel'
+        if best_label == 'picture':
+            return 'caption_gambar'
+        return 'caption'
 
     def _coerce_text(self, value):
         if value is None:
@@ -580,6 +623,21 @@ class MergingExtractionService:
                 structural_label = 'judul_subbab'
 
             if not structural_label:
+                if visual_label == 'caption':
+                    structural_label = self._get_caption_structural_label(
+                        result.get('bbox'),
+                        fused_results
+                    )
+                else:
+                    structural_label = {
+                        'picture': 'gambar',
+                        'table': 'tabel',
+                        'code': 'kode',
+                        'page_header': 'page_header',
+                        'page_footer': 'page_footer'
+                    }.get(visual_label)
+
+            if not structural_label:
                 is_list_candidate = False
                 if elem_type_norm and elem_type_norm.startswith('list-item-'):
                     is_list_candidate = True
@@ -615,6 +673,9 @@ class MergingExtractionService:
             if not structural_label:
                 if elem_type_norm == 'paragraph' and visual_label == 'text':
                     structural_label = 'paragraf'
+
+            if not structural_label and visual_label == 'section_header':
+                structural_label = 'section_header'
 
             if structural_label in ('judul_bab', 'judul_subbab') or is_subchapter_text:
                 list_marker_levels = {}
@@ -672,6 +733,17 @@ class MergingExtractionService:
                 below_text = self._normalize_text_value(below.get('element_text')) if below else ''
                 above_contains = bool(above_text) and unit_text in above_text
                 below_contains = bool(below_text) and unit_text in below_text
+                if unit_text and len(unit_text) <= self.SHORT_DUPLICATE_UNIT_LEN:
+                    simplified_unit = self._simplify_duplicate_unit_text(unit_text)
+                    if simplified_unit:
+                        if not above_contains and above_text:
+                            simplified_above = self._simplify_duplicate_unit_text(above_text)
+                            if simplified_above and simplified_unit in simplified_above:
+                                above_contains = True
+                        if not below_contains and below_text:
+                            simplified_below = self._simplify_duplicate_unit_text(below_text)
+                            if simplified_below and simplified_unit in simplified_below:
+                                below_contains = True
 
                 if above_contains and not below_contains:
                     target = above
@@ -834,7 +906,7 @@ class MergingExtractionService:
     def _replace_visual_records(self, db, doc_id, page_num, fused_results):
         if not db or doc_id is None or page_num is None:
             return
-        if fused_results and any('dev_label_struktural' not in result for result in fused_results):
+        if fused_results:
             self._apply_structural_labels(db, fused_results)
         db.query(DokumenElemenVisual).filter(
             DokumenElemenVisual.dokumen_id == doc_id,
