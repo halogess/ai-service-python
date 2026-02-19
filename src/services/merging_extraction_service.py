@@ -4,6 +4,7 @@ import json
 import logging
 import difflib
 import re
+from sqlalchemy import text
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote
@@ -33,7 +34,6 @@ class MergingExtractionService:
     LIST_BULLET_REGEX = re.compile(
         r'^\s*(?:[\u2022\u2023\u25e6\u2043\u2219\u00b7\u2024\u25aa\u25cf\*\-\u2013\u2014\.])'
     )
-    CENTER_JC_XML_REGEX = re.compile(r'<w:jc\b[^>]*\b(?:w:)?val=[\"\']center[\"\']', re.IGNORECASE)
 
     def __init__(self):
         self.alignment_service = AlignmentService()
@@ -514,7 +514,42 @@ class MergingExtractionService:
                     return normalized
             return None
         normalized = str(value).strip().lower()
-        return normalized if normalized else None
+        if not normalized:
+            return None
+        if normalized.isdigit():
+            code = int(normalized)
+            return {
+                0: 'left',
+                1: 'center',
+                2: 'right',
+                3: 'both',
+                4: 'distribute'
+            }.get(code, normalized)
+        if normalized in ('start', 'left'):
+            return 'left'
+        if normalized in ('end', 'right'):
+            return 'right'
+        if normalized in ('justify', 'both'):
+            return 'both'
+        if normalized == 'distribute':
+            return 'distribute'
+        if normalized in ('centercontinuous', 'center_continuous', 'center-continuous'):
+            return 'center'
+        return normalized
+
+    def _extract_text_run_ids(self, json_tree):
+        ids = []
+        def walk(node):
+            if isinstance(node, dict):
+                if 'dftx_id' in node:
+                    ids.append(node.get('dftx_id'))
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+        walk(json_tree)
+        return [i for i in ids if i is not None]
 
     def _extract_paragraph_alignment(self, json_tree):
         if not json_tree:
@@ -527,7 +562,8 @@ class MergingExtractionService:
             'paragraphalignment',
             'paragraph_align',
             'justification',
-            'jc'
+            'jc',
+            'dfp_jc'
         }
         def walk(node):
             if isinstance(node, dict):
@@ -548,17 +584,68 @@ class MergingExtractionService:
 
         return walk(json_tree)
 
-    def _is_paragraph_center_aligned(self, element, json_cache, align_cache):
+    def _get_paragraph_alignment_from_dfp(self, db, dfp_id, dfp_cache):
+        if not db or not dfp_id:
+            return None
+        if dfp_id in dfp_cache:
+            return dfp_cache[dfp_id]
+        alignment = None
+        try:
+            row = db.execute(
+                text("SELECT dfp_jc FROM dokumen_format_paragraf WHERE dfp_id = :dfp_id"),
+                {"dfp_id": dfp_id}
+            ).fetchone()
+            if row and row[0] is not None:
+                alignment = self._normalize_alignment_value(row[0])
+        except Exception:
+            alignment = None
+        dfp_cache[dfp_id] = alignment
+        return alignment
+
+    def _get_element_alignment(self, element, json_tree, db=None, dfp_cache=None):
+        alignment = self._extract_paragraph_alignment(json_tree)
+        if not alignment and db and dfp_cache is not None and isinstance(json_tree, dict):
+            dfp_id = json_tree.get('dfp_id')
+            if dfp_id:
+                alignment = self._get_paragraph_alignment_from_dfp(db, dfp_id, dfp_cache)
+        return alignment
+
+    def _get_element_bold_state(self, element, json_tree, db, bold_cache):
+        if not db or not element or not json_tree:
+            return None
+        dftx_ids = self._extract_text_run_ids(json_tree)
+        if not dftx_ids:
+            return None
+        missing = [dftx_id for dftx_id in dftx_ids if dftx_id not in bold_cache]
+        if missing:
+            try:
+                rows = db.execute(
+                    text(
+                        "SELECT dftx_id, dftx_bold "
+                        "FROM dokumen_format_text "
+                        "WHERE dftx_id IN :ids"
+                    ),
+                    {"ids": tuple(missing)}
+                ).fetchall()
+                for dftx_id, dftx_bold in rows:
+                    bold_cache[dftx_id] = bool(dftx_bold)
+            except Exception:
+                for dftx_id in missing:
+                    bold_cache[dftx_id] = None
+        states = [bold_cache.get(dftx_id) for dftx_id in dftx_ids if dftx_id in bold_cache]
+        states = [s for s in states if s is not None]
+        if not states:
+            return None
+        return any(states)
+
+    def _is_paragraph_center_aligned(self, element, json_cache, align_cache, db=None, dfp_cache=None):
         if not element:
             return False
         elem_id = element.delemen_id
         if elem_id in align_cache:
             return align_cache[elem_id]
         tree = self._get_element_json_tree(element, json_cache)
-        alignment = self._extract_paragraph_alignment(tree)
-        if not alignment and element.delemen_xml:
-            if self.CENTER_JC_XML_REGEX.search(element.delemen_xml):
-                alignment = 'center'
+        alignment = self._get_element_alignment(element, tree, db=db, dfp_cache=dfp_cache)
         is_center = alignment in ('center', 'centre')
         align_cache[elem_id] = is_center
         return is_center
@@ -580,6 +667,8 @@ class MergingExtractionService:
 
         json_cache = {}
         align_cache = {}
+        dfp_align_cache = {}
+        bold_cache = {}
         in_bab_block = False
         list_marker_levels = {}
         current_list_level = None
@@ -590,6 +679,9 @@ class MergingExtractionService:
             visual_label = str(
                 result.get('label') or result.get('docling_label') or ''
             ).lower()
+            if visual_label in ('page_header', 'page_footer'):
+                result['dev_label_struktural'] = visual_label
+                continue
             text = self._coerce_text(result.get('text')).strip()
             elem_id = result.get('element_id')
             element = element_map.get(elem_id)
@@ -606,7 +698,9 @@ class MergingExtractionService:
                 center_aligned = self._is_paragraph_center_aligned(
                     element,
                     json_cache,
-                    align_cache
+                    align_cache,
+                    db=db,
+                    dfp_cache=dfp_align_cache
                 )
 
             structural_label = None
@@ -632,6 +726,7 @@ class MergingExtractionService:
                     structural_label = {
                         'picture': 'gambar',
                         'table': 'tabel',
+                        'formula': 'rumus',
                         'code': 'kode',
                         'page_header': 'page_header',
                         'page_footer': 'page_footer'
@@ -639,19 +734,20 @@ class MergingExtractionService:
 
             if not structural_label:
                 is_list_candidate = False
-                if elem_type_norm and elem_type_norm.startswith('list-item-'):
+                is_list_item_type = bool(elem_type_norm and elem_type_norm.startswith('list-item-'))
+                if is_list_item_type:
                     is_list_candidate = True
                 elif visual_label in ('section_header', 'list_item'):
                     is_list_candidate = True
 
                 if is_list_candidate:
-                    if not list_context_active or non_list_streak > 1:
-                        list_marker_levels = {}
-                        current_list_level = None
-                    list_context_active = True
-                    non_list_streak = 0
                     marker = self._get_text_list_marker(text)
                     if marker:
+                        if not list_context_active or non_list_streak > 1:
+                            list_marker_levels = {}
+                            current_list_level = None
+                        list_context_active = True
+                        non_list_streak = 0
                         if marker in list_marker_levels:
                             list_level = list_marker_levels[marker]
                         else:
@@ -660,10 +756,13 @@ class MergingExtractionService:
                         current_list_level = list_level
                         structural_label = f'list_level_{list_level}'
                     else:
-                        if current_list_level:
-                            structural_label = f'list_level_{current_list_level}'
-                        else:
-                            structural_label = 'list_item'
+                        non_list_streak += 1
+                        if non_list_streak > 1:
+                            list_context_active = False
+                            list_marker_levels = {}
+                            current_list_level = None
+                        if visual_label == 'list_item' or is_list_item_type:
+                            structural_label = 'paragraf'
                 else:
                     if list_context_active:
                         non_list_streak += 1
@@ -684,6 +783,67 @@ class MergingExtractionService:
                 non_list_streak = 0
 
             result['dev_label_struktural'] = structural_label
+
+        # Expand caption labels to subsequent lines when formatting matches
+        if db:
+            for idx, result in enumerate(fused_results):
+                visual_label = str(
+                    result.get('label') or result.get('docling_label') or ''
+                ).lower()
+                if visual_label != 'caption':
+                    continue
+                caption_label = result.get('dev_label_struktural') or 'caption'
+                elem_id = result.get('element_id')
+                element = element_map.get(elem_id)
+                tree = self._get_element_json_tree(element, json_cache)
+                prev_align = self._get_element_alignment(
+                    element,
+                    tree,
+                    db=db,
+                    dfp_cache=dfp_align_cache
+                )
+                prev_bold = self._get_element_bold_state(
+                    element,
+                    tree,
+                    db,
+                    bold_cache
+                )
+                if prev_align is None or prev_bold is None:
+                    continue
+                j = idx + 1
+                while j < len(fused_results):
+                    next_result = fused_results[j]
+                    next_visual = str(
+                        next_result.get('label') or next_result.get('docling_label') or ''
+                    ).lower()
+                    if next_visual in ('page_header', 'page_footer'):
+                        j += 1
+                        continue
+                    if next_visual not in ('section_header', 'text'):
+                        break
+                    next_elem_id = next_result.get('element_id')
+                    next_element = element_map.get(next_elem_id)
+                    next_tree = self._get_element_json_tree(next_element, json_cache)
+                    next_align = self._get_element_alignment(
+                        next_element,
+                        next_tree,
+                        db=db,
+                        dfp_cache=dfp_align_cache
+                    )
+                    next_bold = self._get_element_bold_state(
+                        next_element,
+                        next_tree,
+                        db,
+                        bold_cache
+                    )
+                    if next_align is None or next_bold is None:
+                        break
+                    if next_align != prev_align or next_bold != prev_bold:
+                        break
+                    next_result['dev_label_struktural'] = caption_label
+                    prev_align = next_align
+                    prev_bold = next_bold
+                    j += 1
 
     def _merge_duplicate_units_with_neighbors(self, alignments, duplicate_element_ids):
         if not alignments or not duplicate_element_ids:

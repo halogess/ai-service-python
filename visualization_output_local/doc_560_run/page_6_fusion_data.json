@@ -1,0 +1,785 @@
+{
+  "page": 6,
+  "doc_id": 560,
+  "fused_results": [
+    {
+      "bbox": [
+        113.47000122070312,
+        112.58489990234375,
+        465.4221496582031,
+        125.7360610961914
+      ],
+      "label": "unknown",
+      "text": "5.\t Deployment Delivery and Feedback",
+      "overlap": 0,
+      "source": "alignment",
+      "element_id": 110178,
+      "element_type": "list-item-4-0",
+      "element_sequence": 81,
+      "openxml_idx": 0,
+      "zone": null,
+      "docling_label": null,
+      "is_image_part": false,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": "list_level_1"
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        154.600341796875,
+        511.206787109375,
+        191.63609313964844
+      ],
+      "label": "unknown",
+      "text": "Pada tahapan ini dilakukan proses pengujian aplikasi. Tujuan dari dilakukkannya untuk mengetahui aplikasi yang telah dibangun sudah sesuai dengan kebutuhan dan tujuan dari pengembangan sistem atau tidaknya. Pengujian ini menggunakan metode  compability testing, functional testing , dan  acceptence testing .",
+      "overlap": 0,
+      "source": "alignment",
+      "element_id": 110179,
+      "element_type": "paragraph",
+      "element_sequence": 82,
+      "openxml_idx": 1,
+      "zone": null,
+      "docling_label": null,
+      "is_image_part": false,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        149.5,
+        178.48492431640625,
+        511.206787109375,
+        191.63609313964844
+      ],
+      "label": "unknown",
+      "text": "Pada subbab ini akan dijelaskan mengenai bab-bab yang ada pada buku Tugas Akhir ini. Berikut merupakan bab yang ada pada buku Tugas Akhir ini:",
+      "overlap": 0,
+      "source": "alignment",
+      "element_id": 110182,
+      "element_type": "paragraph",
+      "element_sequence": 85,
+      "openxml_idx": 4,
+      "zone": null,
+      "docling_label": null,
+      "is_image_part": false,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": null
+    },
+    {
+      "bbox": [
+        113.47000122070312,
+        199.034912109375,
+        511.2423400878906,
+        233.0660858154297
+      ],
+      "label": "unknown",
+      "text": "Bab ini akan berisi penjabaran mengenai kesimpulan dan kritik dan atau saran dari aplikasi Tugas Akhir yang telah dikembangkan yaitu aplikasi multiplatform transaksi dan inventory distributor makanan dan minuman pada CV Yobel Jaya.",
+      "overlap": 0,
+      "source": "alignment",
+      "element_id": 110197,
+      "element_type": "paragraph",
+      "element_sequence": 100,
+      "openxml_idx": 19,
+      "zone": null,
+      "docling_label": null,
+      "is_image_part": false,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": true,
+      "dev_label_struktural": null
+    }
+  ],
+  "raw_docling": [],
+  "alignments": [
+    {
+      "element_id": 110178,
+      "element_sequence": 81,
+      "element_type": "list-item-4-0",
+      "is_table": false,
+      "element_text": "5.\t Deployment Delivery and Feedback",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_0",
+          "item_idx": 0,
+          "item_type": "group",
+          "text": "customer",
+          "bbox": [
+            113.47000122070312,
+            112.58489990234375,
+            157.62796020507812,
+            125.7360610961914
+          ],
+          "matched_count": 4,
+          "score": 0.5,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "omer"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_1",
+          "item_idx": 1,
+          "item_type": "group",
+          "text": "kotaTarakandan",
+          "bbox": [
+            160.66000366210938,
+            112.58489990234375,
+            243.2998504638672,
+            125.7360610961914
+          ],
+          "matched_count": 4,
+          "score": 0.286,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "anda"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_2",
+          "item_idx": 2,
+          "item_type": "group",
+          "text": "beberapa",
+          "bbox": [
+            246.3800048828125,
+            112.58489990234375,
+            289.4093933105469,
+            125.7360610961914
+          ],
+          "matched_count": 2,
+          "score": 0.25,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "pa"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_3",
+          "item_idx": 3,
+          "item_type": "group",
+          "text": "customer",
+          "bbox": [
+            292.8699951171875,
+            112.58489990234375,
+            337.0279541015625,
+            125.7360610961914
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "absorbed_by_overlap": true,
+          "debug": {}
+        },
+        {
+          "pdf_unit_id": "pdf_4",
+          "item_idx": 4,
+          "item_type": "group",
+          "text": "tetap",
+          "bbox": [
+            340.05999755859375,
+            112.58489990234375,
+            363.2735595703125,
+            125.7360610961914
+          ],
+          "matched_count": 1,
+          "score": 0.2,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "a"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_5",
+          "item_idx": 5,
+          "item_type": "group",
+          "text": "diluarkotaTarakan.",
+          "bbox": [
+            366.3399963378906,
+            112.58489990234375,
+            465.4221496582031,
+            125.7360610961914
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "absorbed_by_overlap": true,
+          "debug": {}
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        112.58489990234375,
+        465.4221496582031,
+        125.7360610961914
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "110178",
+      "openxml_indices": [
+        0
+      ],
+      "openxml_idx": 0,
+      "image_index": null,
+      "late_matched": true
+    },
+    {
+      "element_id": 110179,
+      "element_sequence": 82,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Pada tahapan ini dilakukan proses pengujian aplikasi. Tujuan dari dilakukkannya untuk mengetahui aplikasi yang telah dibangun sudah sesuai dengan kebutuhan dan tujuan dari pengembangan sistem atau tidaknya. Pengujian ini menggunakan metode  compability testing, functional testing , dan  acceptence testing .",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_6",
+          "item_idx": 6,
+          "item_type": "group",
+          "text": "1.4",
+          "bbox": [
+            113.47000122070312,
+            154.600341796875,
+            130.1462860107422,
+            170.1426239013672
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "absorbed_by_overlap": true,
+          "debug": {}
+        },
+        {
+          "pdf_unit_id": "pdf_7",
+          "item_idx": 7,
+          "item_type": "group",
+          "text": "TahapanPenyelesaianTugasAkhir",
+          "bbox": [
+            148.77999877929688,
+            154.600341796875,
+            359.20068359375,
+            170.1426239013672
+          ],
+          "matched_count": 22,
+          "score": 0.759,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "tahapanpenyelesaiantug"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_8",
+          "item_idx": 8,
+          "item_type": "group",
+          "text": "Pada",
+          "bbox": [
+            149.5,
+            178.48492431640625,
+            172.74917602539062,
+            191.63609313964844
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "pada"
+          },
+          "late_matched": true,
+          "merged_from_duplicate": true
+        },
+        {
+          "pdf_unit_id": "pdf_10",
+          "item_idx": 10,
+          "item_type": "group",
+          "text": "ini",
+          "bbox": [
+            214.8875732421875,
+            178.48492431640625,
+            227.53977966308594,
+            191.63609313964844
+          ],
+          "matched_count": 3,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "ini"
+          },
+          "late_matched": true,
+          "merged_from_duplicate": true
+        },
+        {
+          "pdf_unit_id": "pdf_11",
+          "item_idx": 11,
+          "item_type": "group",
+          "text": "akan",
+          "bbox": [
+            231.42454528808594,
+            178.48492431640625,
+            254.25791931152344,
+            191.63609313964844
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "akan"
+          },
+          "late_matched": true,
+          "merged_from_duplicate": true
+        },
+        {
+          "pdf_unit_id": "pdf_16",
+          "item_idx": 16,
+          "item_type": "group",
+          "text": "proses",
+          "bbox": [
+            480.6989440917969,
+            178.48492431640625,
+            511.206787109375,
+            191.63609313964844
+          ],
+          "matched_count": 1,
+          "score": 0.167,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "p"
+          },
+          "late_matched": true,
+          "merged_from_duplicate": true
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        154.600341796875,
+        511.206787109375,
+        191.63609313964844
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "110179",
+      "openxml_indices": [
+        1
+      ],
+      "openxml_idx": 1,
+      "image_index": null,
+      "late_matched": true
+    },
+    {
+      "element_id": 110182,
+      "element_sequence": 85,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Pada subbab ini akan dijelaskan mengenai bab-bab yang ada pada buku Tugas Akhir ini. Berikut merupakan bab yang ada pada buku Tugas Akhir ini:",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_9",
+          "item_idx": 9,
+          "item_type": "group",
+          "text": "subbab",
+          "bbox": [
+            176.81214904785156,
+            178.48492431640625,
+            210.77708435058594,
+            191.63609313964844
+          ],
+          "matched_count": 6,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "subbab"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_12",
+          "item_idx": 12,
+          "item_type": "group",
+          "text": "dijelaskan",
+          "bbox": [
+            258.3683776855469,
+            178.48492431640625,
+            306.7437744140625,
+            191.63609313964844
+          ],
+          "matched_count": 10,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dijelaskan"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_13",
+          "item_idx": 13,
+          "item_type": "group",
+          "text": "terkait",
+          "bbox": [
+            310.854248046875,
+            178.48492431640625,
+            341.4928283691406,
+            191.63609313964844
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "absorbed_by_overlap": true,
+          "debug": {}
+        },
+        {
+          "pdf_unit_id": "pdf_14",
+          "item_idx": 14,
+          "item_type": "group",
+          "text": "langkah-langkah",
+          "bbox": [
+            345.3775939941406,
+            178.48492431640625,
+            425.8964538574219,
+            191.63609313964844
+          ],
+          "matched_count": 0,
+          "score": 0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "absorbed": true,
+          "absorbed_by_overlap": true,
+          "debug": {}
+        },
+        {
+          "pdf_unit_id": "pdf_15",
+          "item_idx": 15,
+          "item_type": "group",
+          "text": "mengenai",
+          "bbox": [
+            430.0069274902344,
+            178.48492431640625,
+            476.8141784667969,
+            191.63609313964844
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "mengenai"
+          },
+          "late_matched": true,
+          "merged_from_duplicate": true
+        }
+      ],
+      "merged_bbox": [
+        176.81214904785156,
+        178.48492431640625,
+        476.8141784667969,
+        191.63609313964844
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "110182",
+      "openxml_indices": [
+        4
+      ],
+      "openxml_idx": 4,
+      "image_index": null,
+      "late_matched": true
+    },
+    {
+      "element_id": 110197,
+      "element_sequence": 100,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Bab ini akan berisi penjabaran mengenai kesimpulan dan kritik dan atau saran dari aplikasi Tugas Akhir yang telah dikembangkan yaitu aplikasi multiplatform transaksi dan inventory distributor makanan dan minuman pada CV Yobel Jaya.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_17",
+          "item_idx": 17,
+          "item_type": "group",
+          "text": "pengembangan",
+          "bbox": [
+            113.47000122070312,
+            199.034912109375,
+            186.2825469970703,
+            212.1860809326172
+          ],
+          "matched_count": 12,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "pengembangan"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_18",
+          "item_idx": 18,
+          "item_type": "group",
+          "text": "aplikasi",
+          "bbox": [
+            189.6802215576172,
+            199.034912109375,
+            226.78147888183594,
+            212.1860809326172
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "aplikasi"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_19",
+          "item_idx": 19,
+          "item_type": "group",
+          "text": "multiplatform",
+          "bbox": [
+            229.95343017578125,
+            199.034912109375,
+            296.386474609375,
+            212.1860809326172
+          ],
+          "matched_count": 13,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "multiplatform"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_20",
+          "item_idx": 20,
+          "item_type": "group",
+          "text": "transaksi",
+          "bbox": [
+            299.7099914550781,
+            199.034912109375,
+            342.5492858886719,
+            212.1860809326172
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "transaksi"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_21",
+          "item_idx": 21,
+          "item_type": "group",
+          "text": "dan",
+          "bbox": [
+            345.82000732421875,
+            199.034912109375,
+            363.2598571777344,
+            212.1860809326172
+          ],
+          "matched_count": 3,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "dan"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_22",
+          "item_idx": 22,
+          "item_type": "group",
+          "text": "inventory",
+          "bbox": [
+            366.3399963378906,
+            199.034912109375,
+            411.8760681152344,
+            212.1860809326172
+          ],
+          "matched_count": 9,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "inventory"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_23",
+          "item_idx": 23,
+          "item_type": "group",
+          "text": "distributor",
+          "bbox": [
+            414.9800109863281,
+            199.034912109375,
+            464.9592590332031,
+            212.1860809326172
+          ],
+          "matched_count": 11,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "distributor"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_24",
+          "item_idx": 24,
+          "item_type": "group",
+          "text": "makanan",
+          "bbox": [
+            468.19061279296875,
+            199.034912109375,
+            511.1724548339844,
+            212.1860809326172
+          ],
+          "matched_count": 7,
+          "score": 1.0,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "makanan"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_25",
+          "item_idx": 25,
+          "item_type": "group",
+          "text": "danminumanpadatugasakhirini.Langkah-langkahpenyelesaianyangmerupakan",
+          "bbox": [
+            113.47000122070312,
+            219.9149169921875,
+            511.2423400878906,
+            233.0660858154297
+          ],
+          "matched_count": 20,
+          "score": 0.294,
+          "is_cell": false,
+          "is_hline_table_unit": false,
+          "row": null,
+          "col": null,
+          "debug": {
+            "matched_str": "danminumanpadayelaya"
+          },
+          "late_matched": true
+        }
+      ],
+      "merged_bbox": [
+        113.47000122070312,
+        199.034912109375,
+        511.2423400878906,
+        233.0660858154297
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "110197",
+      "openxml_indices": [
+        19
+      ],
+      "openxml_idx": 19,
+      "image_index": null,
+      "late_matched": true
+    }
+  ]
+}

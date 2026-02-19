@@ -1,0 +1,761 @@
+{
+  "page": 12,
+  "doc_id": 537,
+  "fused_results": [
+    {
+      "bbox": [
+        277.010009765625,
+        116.05996704101562,
+        327.4643249511719,
+        142.33999633789062
+      ],
+      "label": "caption",
+      "text": "Tabel 6.3 (Lanjutan)",
+      "overlap": 0.999998745854354,
+      "source": "cell",
+      "element_id": 104914,
+      "element_type": "table",
+      "element_sequence": 168,
+      "openxml_idx": 168,
+      "zone": null,
+      "docling_label": "caption",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": true,
+      "is_text_only_item": false,
+      "dev_label_struktural": "caption_tabel"
+    },
+    {
+      "bbox": [
+        118.87000274658203,
+        143.1479236233619,
+        137.25399780273438,
+        165.3720639985183
+      ],
+      "label": "table",
+      "text": "Nilai MAPE",
+      "overlap": 1.0,
+      "source": "cell",
+      "element_id": 104914,
+      "element_type": "table",
+      "element_sequence": 168,
+      "openxml_idx": 168,
+      "zone": null,
+      "docling_label": "table",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": true,
+      "is_text_only_item": false,
+      "dev_label_struktural": "tabel"
+    },
+    {
+      "bbox": [
+        142.47979657403354,
+        143.1479236233619,
+        491.5299445842874,
+        502.6000061035156
+      ],
+      "label": "table",
+      "text": "Nilai MAPE diperoleh dari hasil membandingkan nilai PG yang sudah ada pada data dengan nilai PG prediksi hasil perhitungan menggunakan logika fuzzy metode Sugeno. Nilai MAPE sendiri merepresentasikan nilai error yang terdapat pada suatu sistem peramalan. Setelah nilai MAPE per data didapatkan maka dicari nilai rata - rata MAPE dari keseluruhan data dan mendapatkan hasil rata - rata sebesar 0.2528. Dari hasil nilai MAPE tersebut. nilai MAPE terkecil terdapat pada beberapa data seperti data ke-102 dengan nilai MAPE sebesar 0 sedangkan nilai MAPE terbesar terdapat pada data ke-16 dengan nilai MAPE sebesar 4.908. Untuk hasil nilai MAPE secara rinci akan dilampirkan pada bagian lampiran dokumen.",
+      "overlap": 0.9998704086184007,
+      "source": "alignment",
+      "element_id": 104916,
+      "element_type": "paragraph",
+      "element_sequence": 170,
+      "openxml_idx": 104,
+      "zone": null,
+      "docling_label": "table",
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "104916",
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": true,
+      "is_text_only_item": false,
+      "dev_label_struktural": "tabel"
+    },
+    {
+      "bbox": [
+        302.95001220703125,
+        786.0709228515625,
+        321.1300048828125,
+        799.2221069335938
+      ],
+      "label": "page_footer",
+      "text": "103",
+      "overlap": 0.8669524404282893,
+      "source": "header_footer",
+      "element_id": null,
+      "element_type": null,
+      "element_sequence": null,
+      "openxml_idx": null,
+      "zone": "footer",
+      "docling_label": "page_footer",
+      "is_text_part": null,
+      "is_image_part": null,
+      "unit_id": null,
+      "merged_count": 1,
+      "is_picture_area": false,
+      "has_shape_units": false,
+      "has_pdf_image": false,
+      "has_table_units": false,
+      "is_text_only_item": false,
+      "dev_label_struktural": "page_footer"
+    }
+  ],
+  "raw_docling": [
+    {
+      "text": "Tabel 6.2 (Lanjutan)",
+      "bbox": [
+        277.01,
+        116.05999999999995,
+        327.955,
+        142.33999999999992
+      ],
+      "label": "caption",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "[Table]",
+      "bbox": [
+        112.50383758544922,
+        141.03729248046875,
+        491.4847106933594,
+        750.7777709960938
+      ],
+      "label": "table",
+      "confidence": 1.0,
+      "source": "docling"
+    },
+    {
+      "text": "103",
+      "bbox": [
+        302.95,
+        788.423,
+        323.92,
+        798.6519999999999
+      ],
+      "label": "page_footer",
+      "confidence": 1.0,
+      "source": "docling"
+    }
+  ],
+  "alignments": [
+    {
+      "element_id": 104914,
+      "element_sequence": 168,
+      "element_type": "table",
+      "is_table": true,
+      "element_text": "Tabel 6.3 (Lanjutan)",
+      "matched_pdf_units": [],
+      "merged_bbox": [
+        118.87000274658203,
+        116.05996704101562,
+        327.4643249511719,
+        165.3720639985183
+      ],
+      "cells": [
+        {
+          "row": 1,
+          "col": 0,
+          "text": "Tabel 6.3 (Lanjutan)",
+          "matched_pdf_units": [
+            {
+              "pdf_unit_id": "pdf_0",
+              "item_idx": 0,
+              "item_type": "group",
+              "text": "Tabel6.2",
+              "bbox": [
+                279.8900146484375,
+                116.05996704101562,
+                324.73699951171875,
+                127.93997192382812
+              ],
+              "matched_count": 7,
+              "score": 0.875,
+              "is_cell": false,
+              "is_hline_table_unit": false,
+              "row": null,
+              "col": null,
+              "debug": {
+                "matched_str": "tabel6."
+              }
+            },
+            {
+              "pdf_unit_id": "pdf_1",
+              "item_idx": 1,
+              "item_type": "group",
+              "text": "(Lanjutan)",
+              "bbox": [
+                277.010009765625,
+                130.45999145507812,
+                327.4643249511719,
+                142.33999633789062
+              ],
+              "matched_count": 10,
+              "score": 1.0,
+              "is_cell": false,
+              "is_hline_table_unit": false,
+              "row": null,
+              "col": null,
+              "debug": {
+                "matched_str": "(lanjutan)"
+              }
+            }
+          ],
+          "merged_bbox": [
+            277.010009765625,
+            116.05996704101562,
+            327.4643249511719,
+            142.33999633789062
+          ],
+          "openxml_idx": 72
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "text": "Nilai MAPE",
+          "matched_pdf_units": [
+            {
+              "pdf_unit_id": "pdf_2",
+              "item_idx": 2,
+              "item_type": "table",
+              "text": "No.",
+              "bbox": [
+                118.87000274658203,
+                143.1479236233619,
+                137.25399780273438,
+                165.3720639985183
+              ],
+              "matched_count": 1,
+              "score": 0.333,
+              "is_cell": true,
+              "is_hline_table_unit": false,
+              "row": 0,
+              "col": 1,
+              "debug": {
+                "matched_str": "n"
+              }
+            }
+          ],
+          "merged_bbox": [
+            118.87000274658203,
+            143.1479236233619,
+            137.25399780273438,
+            165.3720639985183
+          ],
+          "openxml_idx": 74
+        }
+      ],
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "104914",
+      "openxml_indices": [
+        72,
+        74
+      ],
+      "openxml_idx": 72,
+      "late_matched": true
+    },
+    {
+      "element_id": 104916,
+      "element_sequence": 170,
+      "element_type": "paragraph",
+      "is_table": false,
+      "element_text": "Nilai MAPE diperoleh dari hasil membandingkan nilai PG yang sudah ada pada data dengan nilai PG prediksi hasil perhitungan menggunakan logika fuzzy metode Sugeno. Nilai MAPE sendiri merepresentasikan nilai error yang terdapat pada suatu sistem peramalan. Setelah nilai MAPE per data didapatkan maka dicari nilai rata - rata MAPE dari keseluruhan data dan mendapatkan hasil rata - rata sebesar 0.2528. Dari hasil nilai MAPE tersebut. nilai MAPE terkecil terdapat pada beberapa data seperti data ke-102 dengan nilai MAPE sebesar 0 sedangkan nilai MAPE terbesar terdapat pada data ke-16 dengan nilai MAPE sebesar 4.908. Untuk hasil nilai MAPE secara rinci akan dilampirkan pada bagian lampiran dokumen.",
+      "matched_pdf_units": [
+        {
+          "pdf_unit_id": "pdf_3",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "Kode",
+          "bbox": [
+            148.05999755859375,
+            143.1479236233619,
+            175.44400024414062,
+            165.3720639985183
+          ],
+          "matched_count": 3,
+          "score": 0.75,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 0,
+          "col": 4,
+          "debug": {
+            "matched_str": "kde"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_6",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "ROA",
+          "bbox": [
+            261.8900146484375,
+            143.1479236233619,
+            288.530029296875,
+            165.3720639985183
+          ],
+          "matched_count": 1,
+          "score": 0.333,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 0,
+          "col": 13,
+          "debug": {
+            "matched_str": "a"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_9",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "TAT",
+          "bbox": [
+            375.0,
+            143.1479236233619,
+            399.4800109863281,
+            165.3720639985183
+          ],
+          "matched_count": 1,
+          "score": 0.333,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 0,
+          "col": 22,
+          "debug": {
+            "matched_str": "a"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_10",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "PG",
+          "bbox": [
+            410.29998779296875,
+            143.1479236233619,
+            434.41998291015625,
+            165.3720639985183
+          ],
+          "matched_count": 2,
+          "score": 1.0,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 0,
+          "col": 25,
+          "debug": {
+            "matched_str": "pg"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_11",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "Prediksi",
+          "bbox": [
+            439.6525505329001,
+            143.1479236233619,
+            491.5299445842874,
+            165.3720639985183
+          ],
+          "matched_count": 8,
+          "score": 1.0,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 0,
+          "col": 27,
+          "debug": {
+            "matched_str": "prediksi"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_13",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "ades",
+          "bbox": [
+            142.47979657403354,
+            165.3720639985183,
+            180.66013441414668,
+            187.80999755859375
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 1,
+          "col": 1,
+          "debug": {
+            "matched_str": "ades"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_14",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "1.54",
+          "bbox": [
+            180.66013441414668,
+            165.3720639985183,
+            218.14496823014883,
+            187.80999755859375
+          ],
+          "matched_count": 1,
+          "score": 0.25,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 1,
+          "col": 2,
+          "debug": {
+            "matched_str": "."
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_15",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "0.53",
+          "bbox": [
+            218.14496823014883,
+            165.3720639985183,
+            256.33463313661775,
+            187.80999755859375
+          ],
+          "matched_count": 3,
+          "score": 0.75,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 1,
+          "col": 3,
+          "debug": {
+            "matched_str": "0.5"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_16",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "0.06",
+          "bbox": [
+            256.33463313661775,
+            165.3720639985183,
+            293.79495554956895,
+            187.80999755859375
+          ],
+          "matched_count": 1,
+          "score": 0.25,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 1,
+          "col": 4,
+          "debug": {
+            "matched_str": "."
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_17",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "0.10",
+          "bbox": [
+            293.79495554956895,
+            165.3720639985183,
+            330.5446245916959,
+            187.80999755859375
+          ],
+          "matched_count": 3,
+          "score": 0.75,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 1,
+          "col": 5,
+          "debug": {
+            "matched_str": ".10"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_18",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "0.52",
+          "bbox": [
+            330.5446245916959,
+            165.3720639985183,
+            369.43254931219695,
+            187.80999755859375
+          ],
+          "matched_count": 1,
+          "score": 0.25,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 1,
+          "col": 6,
+          "debug": {
+            "matched_str": "0"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_23",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "ades",
+          "bbox": [
+            142.47979657403354,
+            187.80999755859375,
+            180.66013441414668,
+            210.52001953125
+          ],
+          "matched_count": 4,
+          "score": 1.0,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 2,
+          "col": 1,
+          "debug": {
+            "matched_str": "ades"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_24",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "1.39",
+          "bbox": [
+            180.66013441414668,
+            187.80999755859375,
+            218.14496823014883,
+            210.52001953125
+          ],
+          "matched_count": 2,
+          "score": 0.5,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 2,
+          "col": 2,
+          "debug": {
+            "matched_str": ".9"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_25",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "0.99",
+          "bbox": [
+            218.14496823014883,
+            187.80999755859375,
+            256.33463313661775,
+            210.52001953125
+          ],
+          "matched_count": 2,
+          "score": 0.5,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 2,
+          "col": 3,
+          "debug": {
+            "matched_str": "0."
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_33",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "ades",
+          "bbox": [
+            142.47979657403354,
+            210.52001953125,
+            180.66013441414668,
+            232.84002685546875
+          ],
+          "matched_count": 2,
+          "score": 0.5,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 3,
+          "col": 1,
+          "debug": {
+            "matched_str": "ad"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_43",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "ades",
+          "bbox": [
+            142.47979657403354,
+            232.84002685546875,
+            180.66013441414668,
+            255.52001953125
+          ],
+          "matched_count": 1,
+          "score": 0.25,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 4,
+          "col": 1,
+          "debug": {
+            "matched_str": "a"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_53",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "agii",
+          "bbox": [
+            142.47979657403354,
+            255.52001953125,
+            180.66013441414668,
+            277.8599548339844
+          ],
+          "matched_count": 3,
+          "score": 0.75,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 5,
+          "col": 1,
+          "debug": {
+            "matched_str": "agi"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_63",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "agii",
+          "bbox": [
+            142.47979657403354,
+            277.8599548339844,
+            180.66013441414668,
+            300.1799621582031
+          ],
+          "matched_count": 1,
+          "score": 0.25,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 6,
+          "col": 1,
+          "debug": {
+            "matched_str": "a"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_73",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "aisa",
+          "bbox": [
+            142.47979657403354,
+            300.1799621582031,
+            180.66013441414668,
+            322.8800048828125
+          ],
+          "matched_count": 1,
+          "score": 0.25,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 7,
+          "col": 1,
+          "debug": {
+            "matched_str": "a"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_143",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "akpi",
+          "bbox": [
+            142.47979657403354,
+            457.5699920654297,
+            180.66013441414668,
+            480.24998474121094
+          ],
+          "matched_count": 2,
+          "score": 0.5,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 14,
+          "col": 1,
+          "debug": {
+            "matched_str": "pi"
+          },
+          "late_matched": true
+        },
+        {
+          "pdf_unit_id": "pdf_153",
+          "item_idx": 2,
+          "item_type": "table",
+          "text": "almi",
+          "bbox": [
+            142.47979657403354,
+            480.24998474121094,
+            180.66013441414668,
+            502.6000061035156
+          ],
+          "matched_count": 2,
+          "score": 0.5,
+          "is_cell": true,
+          "is_hline_table_unit": false,
+          "row": 15,
+          "col": 1,
+          "debug": {
+            "matched_str": "am"
+          },
+          "late_matched": true
+        }
+      ],
+      "merged_bbox": [
+        142.47979657403354,
+        143.1479236233619,
+        491.5299445842874,
+        502.6000061035156
+      ],
+      "cells": null,
+      "is_text_part": false,
+      "is_image_part": false,
+      "unit_id": "104916",
+      "openxml_indices": [
+        104
+      ],
+      "openxml_idx": 104,
+      "image_index": null,
+      "late_matched": true
+    }
+  ]
+}
