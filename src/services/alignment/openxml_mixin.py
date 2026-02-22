@@ -1,7 +1,52 @@
+import re
+
 from models import DokumenElemen, DokumenSection, DokumenPart
 
 
 class AlignmentOpenXmlMixin:
+    CODE_FONT_MARKERS = (
+        'courier',
+        'lucida',
+        'consola',
+        'monospace',
+        'menlo',
+        'monaco',
+        'fira code',
+        'source code',
+        'jetbrains mono',
+        'inconsolata',
+        'cascadia',
+        'terminal',
+    )
+    CODE_STYLE_MARKERS = (
+        'code',
+        'algoritma',
+        'algorithm',
+        'segmenprogram',
+        'segmen_program',
+        'programcontent',
+        'listing',
+        'source',
+        'monospace',
+    )
+    FONT_KEY_MARKERS = (
+        'font',
+        'rfonts',
+        'ascii',
+        'hansi',
+        'eastasia',
+        'typeface',
+    )
+    RFONTS_TAG_RE = re.compile(r'<w:rFonts\b[^>]*>', re.IGNORECASE)
+    RFONTS_ATTR_RE = re.compile(
+        r"w:(?:ascii|hAnsi|eastAsia|cs)\s*=\s*['\"]([^'\"]+)['\"]",
+        re.IGNORECASE
+    )
+    STYLE_VAL_RE = re.compile(
+        r"<w:(?:pStyle|rStyle)\b[^>]*w:val\s*=\s*['\"]([^'\"]+)['\"]",
+        re.IGNORECASE
+    )
+
     def _get_openxml_elements(self, db_session, doc_id: int):
         return db_session.query(DokumenElemen).join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id).filter(
             DokumenPart.dsec_id.in_(
@@ -58,6 +103,71 @@ class AlignmentOpenXmlMixin:
 
     def _is_table_element(self, etype):
         return etype in ['table', 'grid_table']
+
+    def _extract_openxml_style_hints(self, json_tree, element_xml):
+        font_families = set()
+        style_ids = set()
+
+        def add_font(value):
+            if not value:
+                return
+            text = str(value).strip().lower()
+            if not text:
+                return
+            text = text.replace('"', '').replace("'", '')
+            parts = re.split(r'[;,/]+', text)
+            for part in parts:
+                part = part.strip()
+                if part:
+                    font_families.add(part)
+
+        def add_style(value):
+            if not value:
+                return
+            text = str(value).strip().lower()
+            if text:
+                style_ids.add(text)
+
+        def walk(node):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    key_norm = str(key).lower()
+                    if any(marker in key_norm for marker in self.FONT_KEY_MARKERS):
+                        if isinstance(value, str):
+                            add_font(value)
+                    if 'style' in key_norm and isinstance(value, str):
+                        add_style(value)
+                    walk(value)
+            elif isinstance(node, list):
+                for child in node:
+                    walk(child)
+
+        walk(json_tree)
+
+        raw_xml = element_xml if isinstance(element_xml, str) else ''
+        if raw_xml:
+            for tag in self.RFONTS_TAG_RE.findall(raw_xml):
+                for match in self.RFONTS_ATTR_RE.findall(tag):
+                    add_font(match)
+            for match in self.STYLE_VAL_RE.findall(raw_xml):
+                add_style(match)
+
+        is_code_font = any(
+            any(marker in font_name for marker in self.CODE_FONT_MARKERS)
+            for font_name in font_families
+        )
+        is_code_style = any(
+            any(marker in style_id for marker in self.CODE_STYLE_MARKERS)
+            for style_id in style_ids
+        )
+
+        return {
+            'font_families': sorted(font_families),
+            'style_ids': sorted(style_ids),
+            'is_code_font': is_code_font,
+            'is_code_style': is_code_style,
+            'is_code_like_openxml': bool(is_code_font or is_code_style),
+        }
 
     def _extract_table_cells(self, json_tree):
         if json_tree is None:
@@ -238,6 +348,7 @@ class AlignmentOpenXmlMixin:
                 json_tree = {}
 
             elem_has_shape = self._has_shape_content(json_tree)
+            style_hints = self._extract_openxml_style_hints(json_tree, elem.delemen_xml)
 
             if self._is_table_element(elem.delemen_type):
                 cells = self._extract_table_cells(json_tree)
@@ -265,7 +376,12 @@ class AlignmentOpenXmlMixin:
                             'is_cell': True,
                             'row': cell['row'],
                             'col': cell['col'],
-                            'has_shape': elem_has_shape
+                            'has_shape': elem_has_shape,
+                            'font_families': style_hints.get('font_families', []),
+                            'style_ids': style_hints.get('style_ids', []),
+                            'is_code_font': style_hints.get('is_code_font', False),
+                            'is_code_style': style_hints.get('is_code_style', False),
+                            'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                         })
                 elif elem_has_shape:
                     table_info['action'] = 'created shape placeholder'
@@ -280,7 +396,12 @@ class AlignmentOpenXmlMixin:
                         'is_cell': False,
                         'row': None,
                         'col': None,
-                        'has_shape': True
+                        'has_shape': True,
+                        'font_families': style_hints.get('font_families', []),
+                        'style_ids': style_hints.get('style_ids', []),
+                        'is_code_font': style_hints.get('is_code_font', False),
+                        'is_code_style': style_hints.get('is_code_style', False),
+                        'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                     })
                 table_debug.append(table_info)
             else:
@@ -302,7 +423,12 @@ class AlignmentOpenXmlMixin:
                                 'image_index': global_image_counter,
                                 'is_text_part': False,
                                 'is_image_part': True,
-                                'has_shape': True
+                                'has_shape': True,
+                                'font_families': style_hints.get('font_families', []),
+                                'style_ids': style_hints.get('style_ids', []),
+                                'is_code_font': style_hints.get('is_code_font', False),
+                                'is_code_style': style_hints.get('is_code_style', False),
+                                'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                             })
                         elif item['type'] == 'text' and not text_unit_created:
                             if content['text_only']:
@@ -315,7 +441,12 @@ class AlignmentOpenXmlMixin:
                                     'text_normalized': self._normalize_text(content['text_only']).rstrip('.:'),
                                     'is_cell': False,
                                     'is_text_part': True,
-                                    'has_shape': elem_has_shape
+                                    'has_shape': elem_has_shape,
+                                    'font_families': style_hints.get('font_families', []),
+                                    'style_ids': style_hints.get('style_ids', []),
+                                    'is_code_font': style_hints.get('is_code_font', False),
+                                    'is_code_style': style_hints.get('is_code_style', False),
+                                    'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                                 })
                                 text_unit_created = True
                 else:
@@ -328,7 +459,12 @@ class AlignmentOpenXmlMixin:
                         'text': text,
                         'text_normalized': self._normalize_text(text).rstrip('.:'),
                         'is_cell': False,
-                        'has_shape': elem_has_shape
+                        'has_shape': elem_has_shape,
+                        'font_families': style_hints.get('font_families', []),
+                        'style_ids': style_hints.get('style_ids', []),
+                        'is_code_font': style_hints.get('is_code_font', False),
+                        'is_code_style': style_hints.get('is_code_style', False),
+                        'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                     })
         return units, table_debug
 
@@ -343,7 +479,12 @@ class AlignmentOpenXmlMixin:
                 'is_cell': all_units[i]['is_cell'],
                 'row': all_units[i].get('row'),
                 'col': all_units[i].get('col'),
-                'has_shape': all_units[i].get('has_shape', False)
+                'has_shape': all_units[i].get('has_shape', False),
+                'font_families': all_units[i].get('font_families', []),
+                'style_ids': all_units[i].get('style_ids', []),
+                'is_code_font': all_units[i].get('is_code_font', False),
+                'is_code_style': all_units[i].get('is_code_style', False),
+                'is_code_like_openxml': all_units[i].get('is_code_like_openxml', False),
             }
             for i in indices
         ]

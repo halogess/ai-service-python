@@ -1,4 +1,10 @@
+import os
+import re
+
+
 class AlignmentPostprocessMixin:
+    MARKER_ONLY_TEXT_RE = re.compile(r'^\s*\d+(?:\.\d+)*\s*[:.)]?\s*$')
+
     def _matched_unit_key(self, unit):
         if unit.get('pdf_unit_id') is not None:
             return ('pdf_unit_id', unit['pdf_unit_id'])
@@ -128,6 +134,9 @@ class AlignmentPostprocessMixin:
         for idx, alignment in enumerate(alignments):
             if alignment.get('is_table'):
                 continue
+            element_text = alignment.get('element_text') or ''
+            if self.MARKER_ONLY_TEXT_RE.match(element_text):
+                continue
             units = [
                 u for u in alignment.get('matched_pdf_units', [])
                 if u.get('bbox') and self._is_line_text_unit(u)
@@ -178,7 +187,7 @@ class AlignmentPostprocessMixin:
             )
             winner_alignment = alignments[winner['alignment_idx']]
             winner_units = winner_alignment.get('matched_pdf_units', [])
-            existing = {
+            winner_keys = {
                 self._matched_unit_key(u)
                 for u in winner_units
                 if self._matched_unit_key(u) is not None
@@ -202,11 +211,11 @@ class AlignmentPostprocessMixin:
                     ]
                 for unit in item['units']:
                     key = self._matched_unit_key(unit)
-                    if key is not None and key in existing:
+                    if key is not None and key in winner_keys:
                         continue
                     winner_units.append(unit)
                     if key is not None:
-                        existing.add(key)
+                        winner_keys.add(key)
                 touched.add(loser_idx)
                 touched.add(winner['alignment_idx'])
 
@@ -314,6 +323,79 @@ class AlignmentPostprocessMixin:
                     self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, removed)
                 alignment['matched_pdf_units'] = kept
                 self._recompute_alignment_bboxes(alignment)
+                filtered.append(alignment)
+
+        return filtered, sorted(unaligned_set)
+
+    def _filter_low_match_alignments(self, alignments, unaligned_pdf_indices, pdf_units):
+        min_chars_raw = os.getenv("ALIGNMENT_MIN_MATCH_CHARS", "").strip()
+        min_ratio_raw = os.getenv("ALIGNMENT_MIN_MATCH_RATIO", "").strip()
+
+        min_chars = int(min_chars_raw) if min_chars_raw.isdigit() else 6
+        try:
+            min_ratio = float(min_ratio_raw) if min_ratio_raw else 0.15
+        except ValueError:
+            min_ratio = 0.15
+
+        if min_chars <= 0 and min_ratio <= 0:
+            return alignments, unaligned_pdf_indices
+
+        if not alignments:
+            return alignments, unaligned_pdf_indices
+
+        pdf_idx_by_unit_id = {
+            u.get('unit_id'): idx
+            for idx, u in enumerate(pdf_units or [])
+            if u.get('unit_id')
+        }
+        unaligned_set = set(unaligned_pdf_indices or [])
+
+        def should_skip_threshold(units):
+            for u in units or []:
+                if u.get('item_type') in ('image', 'shape', 'table', 'hline_table'):
+                    return True
+            return False
+
+        def match_stats(text, units):
+            matched_chars = sum(u.get('matched_count') or 0 for u in units or [])
+            norm_len = len(self._normalize_text(text or ''))
+            ratio = (matched_chars / norm_len) if norm_len > 0 else 0.0
+            return matched_chars, ratio, norm_len
+
+        filtered = []
+        for alignment in alignments:
+            if alignment.get('is_table') and alignment.get('cells'):
+                new_cells = []
+                for cell in alignment.get('cells') or []:
+                    units = cell.get('matched_pdf_units', [])
+                    if should_skip_threshold(units):
+                        new_cells.append(cell)
+                        continue
+                    matched_chars, ratio, norm_len = match_stats(cell.get('text', ''), units)
+                    if norm_len == 0:
+                        new_cells.append(cell)
+                        continue
+                    if matched_chars < min_chars and ratio < min_ratio:
+                        self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
+                        continue
+                    new_cells.append(cell)
+                alignment['cells'] = new_cells
+                if not new_cells:
+                    continue
+                self._recompute_alignment_bboxes(alignment)
+                filtered.append(alignment)
+            else:
+                units = alignment.get('matched_pdf_units', [])
+                if should_skip_threshold(units):
+                    filtered.append(alignment)
+                    continue
+                matched_chars, ratio, norm_len = match_stats(alignment.get('element_text', ''), units)
+                if norm_len == 0:
+                    filtered.append(alignment)
+                    continue
+                if matched_chars < min_chars and ratio < min_ratio:
+                    self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
+                    continue
                 filtered.append(alignment)
 
         return filtered, sorted(unaligned_set)

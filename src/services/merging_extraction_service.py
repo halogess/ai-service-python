@@ -28,11 +28,31 @@ class MergingExtractionService:
     DUPLICATE_SEQUENCE_GAP_THRESHOLD = 2
     SHORT_DUPLICATE_UNIT_LEN = 12
     BAB_TITLE_REGEX = re.compile(r'^\s*bab\b', re.IGNORECASE)
-    SUBCHAPTER_TITLE_REGEX = re.compile(r'^\s*\d+(?:\.\d+)+\.?', re.IGNORECASE)
-    LIST_NUMERIC_REGEX = re.compile(r'^\s*\d+(?!\.\d)(?:[.)])', re.IGNORECASE)
+    # Support heading numbering with optional spaces around dots:
+    # e.g. "3.1 Judul", "3. 1 Judul", "3 . 1 Judul"
+    SUBCHAPTER_TITLE_REGEX = re.compile(r'^\s*\d+(?:\s*\.\s*\d+)+\.?(?:\s+.+)?$', re.IGNORECASE)
+    CODE_TITLE_HEADER_REGEX = re.compile(
+        r'\b(?:segmen\s*program|listing|algoritma|algorithm|kode\s*program|script)\b',
+        re.IGNORECASE
+    )
+    CODE_LINE_NUMBER_REGEX = re.compile(r'^\s*\d{1,3}\s*[:.)]\s*')
+    CODE_TEXT_HINT_REGEX = re.compile(
+        r'\b(?:def|class|return|if|else|elif|for|while|import|from|public|private|protected|'
+        r'static|void|int|float|double|string|bool|yield|await|select|insert|update|delete|'
+        r'create|join|where)\b',
+        re.IGNORECASE
+    )
+    # Keep numeric list marker strict, and avoid treating "3. 1 ..." as list.
+    LIST_NUMERIC_REGEX = re.compile(r'^\s*\d+(?!\s*\.\s*\d)(?:[.)])', re.IGNORECASE)
     LIST_ALPHA_REGEX = re.compile(r'^\s*[a-z](?:[.)])', re.IGNORECASE)
+    # OCR sering mengubah bullet menjadi "o " / "O " / "0 " di awal baris.
+    LIST_TEXTUAL_BULLET_REGEX = re.compile(r'^\s*[oO0](?=\s+)')
+    # Tangkap simbol bullet umum, plus fallback "simbol apa pun" sebagai token awal.
     LIST_BULLET_REGEX = re.compile(
-        r'^\s*(?:[\u2022\u2023\u25e6\u2043\u2219\u00b7\u2024\u25aa\u25cf\*\-\u2013\u2014\.])'
+        r'^\s*(?:'
+        r'[\u2022\u2023\u25e6\u2043\u2219\u00b7\u2024\u25aa\u25cf\u25cb\u25ef\u25c9\u25a0\u25a1\u25c6\u25c7\u2713\u2714\u2717\u2718\u2610\u2611\u2612\u2794\u27a4\*\-\u2013\u2014\.\+]'
+        r'|[^\w\s](?=\s|$)'
+        r')'
     )
 
     def __init__(self):
@@ -83,6 +103,7 @@ class MergingExtractionService:
             # Track max_openxml_idx across pages to prevent backward matching
             max_openxml_idx = 0
             page_vis_payload = {}
+            structural_state = self._new_structural_label_state()
             
             for page_num in range(1, total_pages + 1):
                 # Extract PDF data
@@ -150,7 +171,8 @@ class MergingExtractionService:
                         header_footer_units=header_footer_units,
                         section_data=section_data,
                         doc_id=doc_id,
-                        page_num=page_num
+                        page_num=page_num,
+                        structural_state=structural_state
                     )
 
                     if save_to_db and not generate_visualizations:
@@ -158,7 +180,8 @@ class MergingExtractionService:
                             db,
                             doc_id,
                             page_num,
-                            fused_results
+                            fused_results,
+                            structural_state=structural_state
                         )
                     
                     # Generate visualizations if enabled
@@ -199,15 +222,14 @@ class MergingExtractionService:
                             alignments,
                             removed_duplicate_element_ids
                         )
-                        if payload.get('fused_results'):
-                            self._apply_structural_labels(db, payload.get('fused_results'))
 
                         if save_to_db:
                             self._replace_visual_records(
                                 db,
                                 doc_id,
                                 page_num,
-                                payload.get('fused_results')
+                                payload.get('fused_results'),
+                                structural_state=structural_state
                             )
 
                         duplicate_units = self._collect_duplicate_units_for_page(
@@ -471,13 +493,47 @@ class MergingExtractionService:
     def _get_text_list_marker(self, text):
         if not text:
             return None
+        if self._is_subchapter_title(text):
+            return None
         if self.LIST_NUMERIC_REGEX.match(text):
             return 'numeric'
         if self.LIST_ALPHA_REGEX.match(text):
             return 'alpha'
+        if self.LIST_TEXTUAL_BULLET_REGEX.match(text):
+            return 'bullet_textual'
         if self.LIST_BULLET_REGEX.match(text):
-            return 'bullet'
+            return 'bullet_symbol'
         return None
+
+    def _get_visual_label(self, result):
+        return str(result.get('label') or result.get('docling_label') or '').lower()
+
+    def _looks_like_code_line_text(self, text):
+        text = self._coerce_text(text).strip()
+        if not text:
+            return False
+        if self.CODE_LINE_NUMBER_REGEX.match(text):
+            return True
+        if self.CODE_TEXT_HINT_REGEX.search(text):
+            return True
+        symbol_count = sum(1 for ch in text if ch in '{}[]();=<>:+-*/%#\\')
+        return symbol_count >= 3
+
+    def _count_following_code_like_lines(self, fused_results, start_idx):
+        count = 0
+        for i in range(start_idx + 1, len(fused_results)):
+            candidate = fused_results[i]
+            visual_label = self._get_visual_label(candidate)
+            if visual_label in ('page_header', 'page_footer'):
+                continue
+            if visual_label == 'code':
+                count += 1
+                continue
+            if visual_label == 'text' and self._looks_like_code_line_text(candidate.get('text')):
+                count += 1
+                continue
+            break
+        return count
 
     def _load_json_tree(self, raw_tree):
         if raw_tree is None:
@@ -650,9 +706,25 @@ class MergingExtractionService:
         align_cache[elem_id] = is_center
         return is_center
 
-    def _apply_structural_labels(self, db, fused_results):
+    def _new_structural_label_state(self):
+        return {
+            'in_bab_block': False,
+            'list_marker_levels': {},
+            'current_list_level': None,
+            'list_context_active': False,
+            'non_list_streak': 0
+        }
+
+    def _apply_structural_labels(self, db, fused_results, structural_state=None, skip_if_labeled=False):
         if not fused_results:
             return
+        if skip_if_labeled:
+            all_labeled = all(
+                result.get('dev_label_struktural') not in (None, '')
+                for result in fused_results
+            )
+            if all_labeled:
+                return
         element_ids = {
             result.get('element_id')
             for result in fused_results
@@ -669,16 +741,16 @@ class MergingExtractionService:
         align_cache = {}
         dfp_align_cache = {}
         bold_cache = {}
-        in_bab_block = False
-        list_marker_levels = {}
-        current_list_level = None
-        list_context_active = False
-        non_list_streak = 0
+        if structural_state is None:
+            structural_state = self._new_structural_label_state()
+        in_bab_block = bool(structural_state.get('in_bab_block', False))
+        list_marker_levels = dict(structural_state.get('list_marker_levels') or {})
+        current_list_level = structural_state.get('current_list_level')
+        list_context_active = bool(structural_state.get('list_context_active', False))
+        non_list_streak = int(structural_state.get('non_list_streak', 0) or 0)
 
-        for result in fused_results:
-            visual_label = str(
-                result.get('label') or result.get('docling_label') or ''
-            ).lower()
+        for idx, result in enumerate(fused_results):
+            visual_label = self._get_visual_label(result)
             if visual_label in ('page_header', 'page_footer'):
                 result['dev_label_struktural'] = visual_label
                 continue
@@ -713,8 +785,21 @@ class MergingExtractionService:
             else:
                 in_bab_block = False
 
-            if not structural_label and is_section_header and is_subchapter_text:
+            if not structural_label and is_subchapter_text and visual_label in ('section_header', 'list_item'):
                 structural_label = 'judul_subbab'
+
+            is_bab_heading_text = self._text_starts_with_bab(text)
+            if (
+                not structural_label
+                and is_section_header
+                and not is_subchapter_text
+                and not is_bab_heading_text
+            ):
+                code_like_lines = self._count_following_code_like_lines(fused_results, idx)
+                if code_like_lines >= 2:
+                    structural_label = 'judul_kode'
+                elif code_like_lines >= 1 and self.CODE_TITLE_HEADER_REGEX.search(text):
+                    structural_label = 'judul_kode'
 
             if not structural_label:
                 if visual_label == 'caption':
@@ -776,13 +861,19 @@ class MergingExtractionService:
             if not structural_label and visual_label == 'section_header':
                 structural_label = 'section_header'
 
-            if structural_label in ('judul_bab', 'judul_subbab') or is_subchapter_text:
+            if structural_label in ('judul_bab', 'judul_subbab', 'judul_kode') or is_subchapter_text:
                 list_marker_levels = {}
                 current_list_level = None
                 list_context_active = False
                 non_list_streak = 0
 
             result['dev_label_struktural'] = structural_label
+
+        structural_state['in_bab_block'] = in_bab_block
+        structural_state['list_marker_levels'] = dict(list_marker_levels)
+        structural_state['current_list_level'] = current_list_level
+        structural_state['list_context_active'] = list_context_active
+        structural_state['non_list_streak'] = non_list_streak
 
         # Expand caption labels to subsequent lines when formatting matches
         if db:
@@ -1063,11 +1154,16 @@ class MergingExtractionService:
 
         fused_results[:] = updated_results
 
-    def _replace_visual_records(self, db, doc_id, page_num, fused_results):
+    def _replace_visual_records(self, db, doc_id, page_num, fused_results, structural_state=None):
         if not db or doc_id is None or page_num is None:
             return
         if fused_results:
-            self._apply_structural_labels(db, fused_results)
+            self._apply_structural_labels(
+                db,
+                fused_results,
+                structural_state=structural_state,
+                skip_if_labeled=True
+            )
         db.query(DokumenElemenVisual).filter(
             DokumenElemenVisual.dokumen_id == doc_id,
             DokumenElemenVisual.dev_page == page_num
@@ -1477,7 +1573,7 @@ class MergingExtractionService:
         with open(self.FOOTNOTE_LOG_PATH, "a", encoding="utf-8") as log_file:
             log_file.write(line)
 
-    def _save_alignment_results(self, db, alignments, docling_predictions, footnote_entries=None, header_footer_units=None, section_data=None, doc_id=None, page_num=None):
+    def _save_alignment_results(self, db, alignments, docling_predictions, footnote_entries=None, header_footer_units=None, section_data=None, doc_id=None, page_num=None, structural_state=None):
         """
         Build fused results for visualization and downstream persistence.
         
@@ -1517,7 +1613,7 @@ class MergingExtractionService:
 
             fused_results.sort(key=cmp_to_key(compare))
 
-        self._apply_structural_labels(db, fused_results)
+        self._apply_structural_labels(db, fused_results, structural_state=structural_state)
 
         # Return fused results for visualization
         return fused_results

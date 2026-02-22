@@ -1,14 +1,28 @@
 import difflib
 import os
+import re
 from datetime import datetime
 
 
 class AlignmentMatchingMixin:
-    def _perform_two_pass_alignment(self, pdf_units, openxml_units, min_openxml_idx, trace_context=None):
+    MARKER_ONLY_TEXT_RE = re.compile(r'^\s*\d+(?:\.\d+)*\s*[:.)]?\s*$')
+
+    def _perform_two_pass_alignment(
+        self,
+        pdf_units,
+        openxml_units,
+        min_openxml_idx,
+        trace_context=None,
+        page_sequence_range=None
+    ):
         trace_pass1 = dict(trace_context or {})
         trace_pass1['phase'] = 'pass1'
         p1_align, p1_un_pdf, _, p1_debug = self._perform_char_alignment(
-            pdf_units, openxml_units, min_openxml_idx, trace_context=trace_pass1
+            pdf_units,
+            openxml_units,
+            min_openxml_idx,
+            trace_context=trace_pass1,
+            page_sequence_range=page_sequence_range
         )
 
         final_align = list(p1_align)
@@ -25,7 +39,8 @@ class AlignmentMatchingMixin:
             pdf_units,
             openxml_units,
             min_openxml_idx=min_openxml_idx,
-            trace_context=trace_context
+            trace_context=trace_context,
+            page_sequence_range=page_sequence_range
         )
 
         pre_cleanup_keys = self._collect_alignment_unit_keys(final_align)
@@ -34,7 +49,9 @@ class AlignmentMatchingMixin:
         final_align, shape_conflict_debug = self._resolve_shape_alignment_conflicts(final_align, pdf_units)
         final_align, final_un_pdf, shape_attach_debug = self._attach_shape_clusters_to_next_alignment(final_align, final_un_pdf, pdf_units)
         final_align = self._merge_line_overlap_alignments(final_align)
+        final_align = self._repair_marker_only_alignment_gaps(final_align, openxml_units)
         final_align, final_un_pdf = self._filter_sparse_matched_units(final_align, final_un_pdf, pdf_units)
+        final_align, final_un_pdf = self._filter_low_match_alignments(final_align, final_un_pdf, pdf_units)
         final_un_pdf = self._restore_dropped_alignment_units(
             pre_cleanup_keys,
             final_align,
@@ -102,12 +119,158 @@ class AlignmentMatchingMixin:
             return min_openxml_idx
         return max_idx
 
-    def _perform_char_alignment(self, pdf_units, openxml_units, min_openxml_idx=0, trace_context=None):
+    def _is_marker_only_text(self, text):
+        if not text:
+            return False
+        return bool(self.MARKER_ONLY_TEXT_RE.match(str(text).strip()))
+
+    def _repair_marker_only_alignment_gaps(self, alignments, openxml_units):
+        if not alignments or not openxml_units:
+            return alignments
+
+        seq_to_alignment = {}
+        for alignment in alignments:
+            seq = alignment.get('element_sequence')
+            if seq is None:
+                continue
+            seq_to_alignment[seq] = alignment
+
+        if not seq_to_alignment:
+            return alignments
+
+        seq_to_openxml = {}
+        for openxml_idx, unit in enumerate(openxml_units):
+            seq = unit.get('elem_seq')
+            if seq is None or seq in seq_to_openxml:
+                continue
+            seq_to_openxml[seq] = (openxml_idx, unit)
+
+        if not seq_to_openxml:
+            return alignments
+
+        min_seq = min(seq_to_alignment.keys())
+        max_seq = max(seq_to_alignment.keys())
+        missing_marker_seqs = [
+            seq for seq in range(min_seq, max_seq + 1)
+            if seq not in seq_to_alignment
+            and seq in seq_to_openxml
+            and self._is_marker_only_text(seq_to_openxml[seq][1].get('text', ''))
+        ]
+        if not missing_marker_seqs:
+            return alignments
+
+        created = []
+        for missing_seq in missing_marker_seqs:
+            next_candidates = sorted(
+                [
+                    a for a in alignments
+                    if a.get('element_sequence') is not None
+                    and a.get('element_sequence') > missing_seq
+                    and (a.get('element_sequence') - missing_seq) <= 3
+                    and not a.get('is_table')
+                    and not a.get('is_image_part')
+                ],
+                key=lambda a: a.get('element_sequence')
+            )
+            if not next_candidates:
+                continue
+
+            donor_alignment = None
+            donor_unit = None
+
+            for candidate in next_candidates:
+                units = sorted(
+                    candidate.get('matched_pdf_units', []),
+                    key=lambda u: u.get('item_idx', -1)
+                )
+                if len(units) < 2:
+                    continue
+
+                leading_markers = []
+                for unit in units:
+                    if self._is_marker_only_text(unit.get('text', '')):
+                        leading_markers.append(unit)
+                        continue
+                    break
+
+                if len(leading_markers) >= 2:
+                    donor_alignment = candidate
+                    donor_unit = leading_markers[0]
+                    break
+
+            if donor_alignment is None or donor_unit is None:
+                continue
+
+            donor_key = self._matched_unit_key(donor_unit)
+            donor_units = donor_alignment.get('matched_pdf_units', [])
+            consumed = False
+            kept_units = []
+            for unit in donor_units:
+                unit_key = self._matched_unit_key(unit)
+                if not consumed and donor_key is not None and unit_key == donor_key:
+                    consumed = True
+                    continue
+                kept_units.append(unit)
+
+            if not consumed:
+                continue
+
+            donor_alignment['matched_pdf_units'] = kept_units
+            self._recompute_alignment_bboxes(donor_alignment)
+
+            openxml_idx, openxml_unit = seq_to_openxml[missing_seq]
+            restored = {
+                'element_id': openxml_unit['elem_id'],
+                'element_sequence': openxml_unit['elem_seq'],
+                'element_type': openxml_unit['elem_type'],
+                'is_table': False,
+                'element_text': openxml_unit.get('text', ''),
+                'matched_pdf_units': [donor_unit],
+                'merged_bbox': list(donor_unit.get('bbox')) if donor_unit.get('bbox') else None,
+                'cells': None,
+                'is_text_part': openxml_unit.get('is_text_part', False),
+                'is_image_part': False,
+                'unit_id': str(openxml_unit['elem_id']),
+                'openxml_indices': [openxml_idx],
+                'openxml_idx': openxml_idx,
+                'image_index': openxml_unit.get('image_index'),
+                'font_families': openxml_unit.get('font_families', []),
+                'style_ids': openxml_unit.get('style_ids', []),
+                'is_code_font': openxml_unit.get('is_code_font', False),
+                'is_code_style': openxml_unit.get('is_code_style', False),
+                'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+            }
+            created.append(restored)
+            seq_to_alignment[missing_seq] = restored
+
+        if created:
+            alignments.extend(created)
+            alignments[:] = [
+                a for a in alignments
+                if a.get('is_table') or a.get('matched_pdf_units')
+            ]
+            alignments.sort(key=lambda x: x.get('element_sequence') or 0)
+
+        return alignments
+
+    def _perform_char_alignment(
+        self,
+        pdf_units,
+        openxml_units,
+        min_openxml_idx=0,
+        trace_context=None,
+        page_sequence_range=None
+    ):
         if not pdf_units or not openxml_units:
             return [], list(range(len(pdf_units))), list(range(len(openxml_units))), {
                 'max_openxml_idx': min_openxml_idx,
                 'unaligned_openxml_indices': list(range(len(openxml_units)))
             }
+
+        filter_by_seq_range = os.getenv("ALIGNMENT_FILTER_BY_SEQ_RANGE", "").lower() in ("1", "true", "yes", "on")
+        seq_min = seq_max = None
+        if filter_by_seq_range and page_sequence_range and len(page_sequence_range) == 2:
+            seq_min, seq_max = page_sequence_range
 
         pdf_concat = ''
         pdf_char_map = []
@@ -249,6 +412,14 @@ class AlignmentMatchingMixin:
                             traversal_log.append(log_entry)
                             continue
 
+                        if filter_by_seq_range and seq_min is not None and seq_max is not None:
+                            openxml_seq = openxml_units[openxml_idx].get('elem_seq')
+                            if openxml_seq is None or openxml_seq < seq_min or openxml_seq > seq_max:
+                                log_entry['action'] = 'SKIP'
+                                log_entry['reason'] = f'seq_out_of_range: seq={openxml_seq} not in [{seq_min}, {seq_max}]'
+                                traversal_log.append(log_entry)
+                                continue
+
                         if not is_shape_pdf:
                             backward_violation = False
                             violation_reason = None
@@ -334,6 +505,13 @@ class AlignmentMatchingMixin:
             i for i in range(len(openxml_units))
             if i not in openxml_to_pdf
         ]
+
+        if filter_by_seq_range and seq_min is not None and seq_max is not None:
+            unaligned_openxml_indices = [
+                i for i in unaligned_openxml_indices
+                if openxml_units[i].get('elem_seq') is not None
+                and seq_min <= openxml_units[i].get('elem_seq') <= seq_max
+            ]
 
         debug_info = {
             'pdf_concat_len': len(pdf_concat),
@@ -437,7 +615,12 @@ class AlignmentMatchingMixin:
                         'is_image_part': True,
                         'unit_id': individual_unit_id,
                         'openxml_indices': [openxml_idx],
-                        'image_index': openxml_unit.get('image_index')
+                        'image_index': openxml_unit.get('image_index'),
+                        'font_families': openxml_unit.get('font_families', []),
+                        'style_ids': openxml_unit.get('style_ids', []),
+                        'is_code_font': openxml_unit.get('is_code_font', False),
+                        'is_code_style': openxml_unit.get('is_code_style', False),
+                        'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                     }
                 continue
 
@@ -458,7 +641,12 @@ class AlignmentMatchingMixin:
                         'is_image_part': False,
                         'unit_id': str(elem_id),
                         'openxml_indices': [],
-                        'openxml_idx': openxml_idx
+                        'openxml_idx': openxml_idx,
+                        'font_families': openxml_unit.get('font_families', []),
+                        'style_ids': openxml_unit.get('style_ids', []),
+                        'is_code_font': openxml_unit.get('is_code_font', False),
+                        'is_code_style': openxml_unit.get('is_code_style', False),
+                        'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                     }
 
                 cell = {
@@ -467,7 +655,12 @@ class AlignmentMatchingMixin:
                     'text': openxml_unit.get('text', ''),
                     'matched_pdf_units': matched_pdf,
                     'merged_bbox': merged_bbox,
-                    'openxml_idx': openxml_idx
+                    'openxml_idx': openxml_idx,
+                    'font_families': openxml_unit.get('font_families', []),
+                    'style_ids': openxml_unit.get('style_ids', []),
+                    'is_code_font': openxml_unit.get('is_code_font', False),
+                    'is_code_style': openxml_unit.get('is_code_style', False),
+                    'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                 }
                 elem_alignments[elem_id]['cells'].append(cell)
                 elem_alignments[elem_id]['openxml_indices'].append(openxml_idx)
@@ -486,7 +679,12 @@ class AlignmentMatchingMixin:
                     'unit_id': str(elem_id),
                     'openxml_indices': [openxml_idx],
                     'openxml_idx': openxml_idx,
-                    'image_index': openxml_unit.get('image_index')
+                    'image_index': openxml_unit.get('image_index'),
+                    'font_families': openxml_unit.get('font_families', []),
+                    'style_ids': openxml_unit.get('style_ids', []),
+                    'is_code_font': openxml_unit.get('is_code_font', False),
+                    'is_code_style': openxml_unit.get('is_code_style', False),
+                    'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                 }
 
         alignments = list(elem_alignments.values()) + list(non_table_units.values())
@@ -510,10 +708,25 @@ class AlignmentMatchingMixin:
         pdf_units,
         openxml_units,
         min_openxml_idx=None,
-        trace_context=None
+        trace_context=None,
+        page_sequence_range=None
     ):
         if not un_pdf_idx or not un_ox_idx:
             return alignments, un_pdf_idx, un_ox_idx
+
+        filter_by_seq_range = os.getenv("ALIGNMENT_FILTER_BY_SEQ_RANGE", "").lower() in ("1", "true", "yes", "on")
+        seq_min = seq_max = None
+        if filter_by_seq_range and page_sequence_range and len(page_sequence_range) == 2:
+            seq_min, seq_max = page_sequence_range
+
+        if filter_by_seq_range and seq_min is not None and seq_max is not None:
+            un_ox_idx = [
+                idx for idx in un_ox_idx
+                if openxml_units[idx].get('elem_seq') is not None
+                and seq_min <= openxml_units[idx].get('elem_seq') <= seq_max
+            ]
+            if not un_ox_idx:
+                return alignments, un_pdf_idx, un_ox_idx
 
         if min_openxml_idx is not None and min_openxml_idx > 0:
             filtered_un_ox_idx = [idx for idx in un_ox_idx if idx >= min_openxml_idx]
@@ -527,8 +740,31 @@ class AlignmentMatchingMixin:
         trace_pass2 = dict(trace_context or {})
         trace_pass2['phase'] = 'pass2'
         late_align, l_un_pdf_local, l_un_ox_local, _ = self._perform_char_alignment(
-            sub_pdf, sub_ox, trace_context=trace_pass2
+            sub_pdf,
+            sub_ox,
+            trace_context=trace_pass2,
+            page_sequence_range=page_sequence_range
         )
+
+        remap_pass2 = os.getenv("ALIGNMENT_FIX_PASS2_REMAP", "").lower() in ("1", "true", "yes", "on")
+        if remap_pass2 and un_ox_idx:
+            def remap_idx(local_idx):
+                if local_idx is None:
+                    return None
+                if 0 <= local_idx < len(un_ox_idx):
+                    return un_ox_idx[local_idx]
+                return local_idx
+
+            for la in late_align:
+                if la.get('openxml_idx') is not None:
+                    la['openxml_idx'] = remap_idx(la.get('openxml_idx'))
+                if la.get('openxml_indices'):
+                    mapped = [remap_idx(i) for i in la.get('openxml_indices') if i is not None]
+                    la['openxml_indices'] = sorted({i for i in mapped if i is not None})
+                if la.get('is_table') and la.get('cells'):
+                    for cell in la.get('cells') or []:
+                        if cell.get('openxml_idx') is not None:
+                            cell['openxml_idx'] = remap_idx(cell.get('openxml_idx'))
 
         ex_map = {a['element_id']: a for a in alignments}
         for la in late_align:
@@ -540,6 +776,22 @@ class AlignmentMatchingMixin:
                 ex = ex_map[eid]
                 ex['matched_pdf_units'].extend(la['matched_pdf_units'])
                 ex['matched_pdf_units'].sort(key=lambda x: x['item_idx'])
+                ex_fonts = set(ex.get('font_families') or [])
+                ex_fonts.update(la.get('font_families') or [])
+                ex['font_families'] = sorted(ex_fonts)
+
+                ex_styles = set(ex.get('style_ids') or [])
+                ex_styles.update(la.get('style_ids') or [])
+                ex['style_ids'] = sorted(ex_styles)
+
+                ex['is_code_font'] = bool(ex.get('is_code_font')) or bool(la.get('is_code_font'))
+                ex['is_code_style'] = bool(ex.get('is_code_style')) or bool(la.get('is_code_style'))
+                ex['is_code_like_openxml'] = (
+                    bool(ex.get('is_code_like_openxml')) or
+                    bool(la.get('is_code_like_openxml')) or
+                    bool(ex.get('is_code_font')) or
+                    bool(ex.get('is_code_style'))
+                )
                 la_indices = la.get('openxml_indices') or []
                 if la_indices:
                     ex_indices = ex.setdefault('openxml_indices', [])

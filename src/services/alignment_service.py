@@ -1,4 +1,4 @@
-﻿from typing import List, Dict, Any
+from typing import List, Dict, Any
 
 from database import SessionLocal
 from services.alignment import (
@@ -133,8 +133,36 @@ class AlignmentService(
             # 6. Perform Two-Pass Alignment (Feature Complete)
             trace_context = {'doc_id': doc_id, 'page_num': page_num}
             alignment_result = self._perform_two_pass_alignment(
-                pdf_units, openxml_units, min_openxml_idx, trace_context=trace_context
+                pdf_units,
+                openxml_units,
+                min_openxml_idx,
+                trace_context=trace_context,
+                page_sequence_range=page_sequence_range
             )
+
+            seq_min = seq_max = None
+            if page_sequence_range and len(page_sequence_range) == 2:
+                seq_min, seq_max = page_sequence_range
+
+            if seq_min is not None and seq_max is not None:
+                guarded_max = None
+                for alignment in alignment_result.get('final_alignments') or []:
+                    elem_seq = alignment.get('element_sequence')
+                    if elem_seq is None or elem_seq < seq_min or elem_seq > seq_max:
+                        continue
+                    indices = []
+                    if alignment.get('openxml_indices'):
+                        indices.extend(alignment.get('openxml_indices'))
+                    if alignment.get('openxml_idx') is not None:
+                        indices.append(alignment.get('openxml_idx'))
+                    for idx in indices:
+                        if idx is None:
+                            continue
+                        guarded_max = idx if guarded_max is None else max(guarded_max, idx)
+
+                if guarded_max is None:
+                    guarded_max = min_openxml_idx
+                alignment_result['max_openxml_idx'] = max(min_openxml_idx, guarded_max)
 
             # Add table debug info to page debug
             alignment_result['debug_info']['table_processing'] = table_debug

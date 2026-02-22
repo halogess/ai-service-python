@@ -23,6 +23,42 @@ class DoclingFusionService:
     CAPTION_LINE_MAX_HEIGHT = 24
     CAPTION_VERTICAL_GAP_MAX = 60
     CAPTION_X_OVERLAP_MIN = 0.3
+    TABLE_HEADER_FRAGMENT_MAX_CELLS = 6
+    TABLE_FRAGMENT_MAX_CELLS = 8
+    TABLE_DOMINANCE_MIN_RATIO = 3.0
+    CODE_FONT_MARKERS = (
+        'courier',
+        'lucida',
+        'consola',
+        'monospace',
+        'menlo',
+        'monaco',
+        'fira code',
+        'source code',
+        'jetbrains mono',
+        'inconsolata',
+        'cascadia',
+        'terminal',
+    )
+    CODE_STYLE_MARKERS = (
+        'code',
+        'algoritma',
+        'algorithm',
+        'segmenprogram',
+        'segmen_program',
+        'programcontent',
+        'listing',
+        'source',
+        'monospace',
+    )
+    CODE_KEYWORD_REGEX = re.compile(
+        r'\b(?:'
+        r'def|class|return|if|else|elif|for|while|import|from|try|except|finally|with|'
+        r'function|const|let|var|public|private|protected|static|void|int|float|double|'
+        r'string|select|insert|update|delete|create|join|where|group by|order by'
+        r')\b',
+        re.IGNORECASE
+    )
     CAPTION_TEXT_REGEX = re.compile(
         r'^\s*(?:gambar|figure|fig\.?|tabel|table)\s*\d',
         re.IGNORECASE
@@ -202,6 +238,178 @@ class DoclingFusionService:
         if not text:
             return False
         return bool(self.CAPTION_TEXT_REGEX.match(text.strip()))
+
+    @staticmethod
+    def _bbox_area(bbox: Optional[List[float]]) -> float:
+        if not bbox or len(bbox) < 4:
+            return 0.0
+        width = max(0.0, bbox[2] - bbox[0])
+        height = max(0.0, bbox[3] - bbox[1])
+        return width * height
+
+    def _canonicalize_table_matches(self, matching_items: List[Dict]) -> List[Dict]:
+        """
+        Resolve table split where one Docling table overlaps multiple OpenXML table elements.
+        Keep per-cell output, but rewrite small/header-only fragments to dominant element.
+        """
+        groups: Dict[Any, List[Dict]] = {}
+        for matched in matching_items or []:
+            item = matched.get('item') or {}
+            elem_id = item.get('element_id')
+            if elem_id is None or not item.get('has_table_units'):
+                continue
+            groups.setdefault(elem_id, []).append(matched)
+
+        if len(groups) <= 1:
+            return matching_items
+
+        group_stats: Dict[Any, Dict[str, float]] = {}
+        for elem_id, matches in groups.items():
+            rows = [m.get('item', {}).get('row') for m in matches]
+            row_ints = [r for r in rows if isinstance(r, int)]
+            header_cells = sum(1 for r in rows if r == 0)
+            non_header_cells = sum(1 for r in row_ints if r > 0)
+            count = len(matches)
+            overlap_sum = sum(float(m.get('overlap') or 0.0) for m in matches)
+            area_sum = sum(self._bbox_area((m.get('item') or {}).get('bbox')) for m in matches)
+            group_stats[elem_id] = {
+                'count': count,
+                'header_cells': header_cells,
+                'non_header_cells': non_header_cells,
+                'overlap_sum': overlap_sum,
+                'area_sum': area_sum
+            }
+
+        canonical_elem_id = max(
+            group_stats.items(),
+            key=lambda kv: (
+                kv[1]['non_header_cells'],
+                kv[1]['count'],
+                kv[1]['overlap_sum'],
+                kv[1]['area_sum']
+            )
+        )[0]
+        canonical_matches = groups.get(canonical_elem_id) or []
+        if not canonical_matches:
+            return matching_items
+
+        canonical_item = None
+        for matched in canonical_matches:
+            item = matched.get('item') or {}
+            row = item.get('row')
+            if isinstance(row, int) and row > 0:
+                canonical_item = item
+                break
+        if canonical_item is None:
+            canonical_item = canonical_matches[0].get('item')
+        if not canonical_item:
+            return matching_items
+
+        canonical_count = group_stats[canonical_elem_id]['count']
+        canonical_non_header = group_stats[canonical_elem_id]['non_header_cells']
+
+        for elem_id, matches in groups.items():
+            if elem_id == canonical_elem_id:
+                continue
+            stats = group_stats.get(elem_id) or {}
+            count = int(stats.get('count') or 0)
+            non_header = int(stats.get('non_header_cells') or 0)
+            ratio = (canonical_count / count) if count > 0 else float('inf')
+
+            is_header_only_fragment = (
+                non_header == 0 and
+                count <= self.TABLE_HEADER_FRAGMENT_MAX_CELLS
+            )
+            is_small_dominated_fragment = (
+                count <= self.TABLE_FRAGMENT_MAX_CELLS and
+                canonical_non_header > 0 and
+                ratio >= self.TABLE_DOMINANCE_MIN_RATIO
+            )
+            if not (is_header_only_fragment or is_small_dominated_fragment):
+                continue
+
+            for matched in matches:
+                item = matched.get('item')
+                if not isinstance(item, dict):
+                    continue
+                if item.get('element_id') == canonical_item.get('element_id'):
+                    continue
+                item['table_canonical_from_element_id'] = item.get('element_id')
+                item['table_canonical_from_sequence'] = item.get('element_sequence')
+                item['element_id'] = canonical_item.get('element_id')
+                item['element_sequence'] = canonical_item.get('element_sequence')
+                item['element_type'] = canonical_item.get('element_type')
+                item['openxml_idx'] = canonical_item.get('openxml_idx')
+
+        return matching_items
+
+    def _has_code_font_hint(self, item: Dict) -> bool:
+        if not item:
+            return False
+        if item.get('is_code_like_openxml') or item.get('is_code_font') or item.get('is_code_style'):
+            return True
+
+        for font_name in item.get('font_families') or []:
+            font_norm = str(font_name).strip().lower()
+            if any(marker in font_norm for marker in self.CODE_FONT_MARKERS):
+                return True
+
+        for style_id in item.get('style_ids') or []:
+            style_norm = str(style_id).strip().lower().replace(' ', '')
+            if any(marker in style_norm for marker in self.CODE_STYLE_MARKERS):
+                return True
+
+        return False
+
+    def _looks_like_code_text(self, text: Optional[str]) -> bool:
+        if not text:
+            return False
+        text = str(text).strip()
+        if len(text) < 4:
+            return False
+        if self.CODE_KEYWORD_REGEX.search(text):
+            return True
+        if '\t' in text and any(ch in text for ch in '{}[]();='):
+            return True
+
+        symbol_count = sum(1 for ch in text if ch in '{}[]();=<>:+-*/%#@\\')
+        symbol_ratio = symbol_count / max(1, len(text))
+        if symbol_count >= 3 and symbol_ratio >= 0.08 and any(ch in text for ch in '{}[]();='):
+            return True
+
+        lowered = text.lower()
+        if text.endswith(':') and re.match(r'^(if|for|while|def|class)\b', lowered):
+            return True
+
+        return False
+
+    def _should_relabel_table_to_code(self, matching_items: List[Dict]) -> bool:
+        """
+        Detect Docling false-positive table labels over code blocks.
+        Trigger only when matched OpenXML items are non-table, and code-style hints exist.
+        """
+        if not matching_items:
+            return False
+
+        items = [m.get('item') or {} for m in matching_items]
+
+        # Never override real table alignments.
+        for item in items:
+            element_type = str(item.get('element_type', '')).lower()
+            if item.get('source') == 'cell':
+                return False
+            if item.get('has_table_units'):
+                return False
+            if 'table' in element_type:
+                return False
+
+        code_font_hits = sum(1 for item in items if self._has_code_font_hint(item))
+        if code_font_hits > 0:
+            return True
+
+        # Fallback when font metadata is unavailable but text is strongly code-like.
+        code_text_hits = sum(1 for item in items if self._looks_like_code_text(item.get('text')))
+        return code_text_hits == len(items) and len(items) <= 3
     
     @staticmethod
     def merge_bboxes(bbox1: Optional[List[float]], bbox2: Optional[List[float]]) -> Optional[List[float]]:
@@ -319,11 +527,18 @@ class DoclingFusionService:
                             'element_id': alignment.get('element_id'),
                             'element_sequence': alignment.get('element_sequence'),
                             'element_type': alignment.get('element_type'),
+                            'row': cell.get('row'),
+                            'col': cell.get('col'),
                             'openxml_idx': parent_openxml_idx,
                             'has_pdf_image': has_image,
                             'has_shape_units': has_shape,
                             'has_table_units': True,
-                            'is_picture_area': has_image or has_shape
+                            'is_picture_area': has_image or has_shape,
+                            'font_families': cell.get('font_families', []),
+                            'style_ids': cell.get('style_ids', []),
+                            'is_code_font': cell.get('is_code_font', False),
+                            'is_code_style': cell.get('is_code_style', False),
+                            'is_code_like_openxml': cell.get('is_code_like_openxml', False),
                         })
             elif alignment.get('merged_bbox'):
                 # Non-table elements
@@ -349,7 +564,12 @@ class DoclingFusionService:
                     'has_pdf_image': has_image,
                     'has_table_units': has_table_units,
                     'unit_id': alignment.get('unit_id'),
-                    'is_picture_area': is_picture_area
+                    'is_picture_area': is_picture_area,
+                    'font_families': alignment.get('font_families', []),
+                    'style_ids': alignment.get('style_ids', []),
+                    'is_code_font': alignment.get('is_code_font', False),
+                    'is_code_style': alignment.get('is_code_style', False),
+                    'is_code_like_openxml': alignment.get('is_code_like_openxml', False),
                 })
         
         # Add header/footer units
@@ -377,6 +597,7 @@ class DoclingFusionService:
                     continue
                     
                 is_picture_label = doc_item.get('label') == 'picture'
+                is_table_label = doc_item.get('label') == 'table'
                 
                 # Find ALL aligned items that overlap with this Docling element
                 matching_items = []
@@ -390,6 +611,9 @@ class DoclingFusionService:
                         matching_items.append({'item': item, 'idx': idx, 'overlap': overlap})
                 
                 if matching_items:
+                    if is_table_label:
+                        matching_items = self._canonicalize_table_matches(matching_items)
+
                     # Mark all matching items as used
                     for m in matching_items:
                         used_indices.add(m['idx'])
@@ -408,6 +632,7 @@ class DoclingFusionService:
                     has_pdf_image = any(m['item'].get('has_pdf_image') for m in matching_items)
                     has_table_units = any(m['item'].get('has_table_units') for m in matching_items)
                     all_text_only = all(self._is_text_only_item(m['item']) for m in matching_items)
+                    force_table_to_code = is_table_label and self._should_relabel_table_to_code(matching_items)
                     
                     # Special case: Docling 'picture' with multiple shapes
                     should_merge_picture = is_picture_label and len(matching_items) > 1 and has_shape_units
@@ -417,6 +642,9 @@ class DoclingFusionService:
                     should_merge = (len(matching_items) > 1 and all_same_element and not has_mixed_parts and not has_image_part) or should_merge_picture
                     if is_picture_label and (has_table_units or has_image_part or has_pdf_image):
                         # Keep picture parts split by cell/image to avoid oversized bboxes.
+                        should_merge = False
+                    if is_table_label:
+                        # Preserve per-cell output for tables while using canonical element mapping.
                         should_merge = False
                     
                     if should_merge:
@@ -457,6 +685,8 @@ class DoclingFusionService:
                             ):
                                 if all_text_only:
                                     merged_label = 'caption'
+                        if merged_label == 'table' and force_table_to_code:
+                            merged_label = 'code'
                         
                         # Correct header/footer labels
                         merged_label = self.correct_header_footer_label(merged_label, merged_bbox)
@@ -506,6 +736,8 @@ class DoclingFusionService:
                                 elif not item.get('is_picture_area') and not item.get('has_shape_units'):
                                     if self._is_text_only_item(item):
                                         final_label = 'caption'
+                            if final_label == 'table' and force_table_to_code:
+                                final_label = 'code'
                             
                             final_label = self.correct_header_footer_label(final_label, item['bbox'])
                             
@@ -529,7 +761,9 @@ class DoclingFusionService:
                                 'has_shape_units': item.get('has_shape_units'),
                                 'has_pdf_image': item.get('has_pdf_image'),
                                 'has_table_units': item.get('has_table_units'),
-                                'is_text_only_item': self._is_text_only_item(item)
+                                'is_text_only_item': self._is_text_only_item(item),
+                                'table_canonical_from_element_id': item.get('table_canonical_from_element_id'),
+                                'table_canonical_from_sequence': item.get('table_canonical_from_sequence')
                             })
         
         # Add remaining unmatched aligned items (no Docling match)

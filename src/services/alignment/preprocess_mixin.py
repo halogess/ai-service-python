@@ -1,3 +1,7 @@
+import os
+import re
+
+
 class AlignmentPreprocessMixin:
     def _flatten_extraction_items(self, extraction_items):
         collected = []
@@ -60,6 +64,9 @@ class AlignmentPreprocessMixin:
             elif itype == 'image':
                 collected.append({'item_idx': item_idx, 'item_type': itype, 'text': None, 'bbox': ibbox, 'is_cell': False, 'is_image': True})
 
+        collected = self._merge_list_markers_with_following_text(collected)
+        collected = self._merge_code_like_lines(collected)
+
         # Merge consecutive shapes
         collected = self._merge_consecutive_shape_items(collected)
 
@@ -95,6 +102,142 @@ class AlignmentPreprocessMixin:
                 })
             unit_counter += 1
         return pdf_units
+
+    def _merge_list_markers_with_following_text(self, items):
+        if not items:
+            return items
+        enabled = os.getenv("ALIGNMENT_MERGE_LIST_MARKERS", "").lower() in ("1", "true", "yes", "on")
+        if not enabled:
+            return items
+
+        marker_re = re.compile(
+            r'^\s*(?:\d+(?:\.\d+)*[.)]?|[•\u2022\u2023\u25e6\u2043\u2219\u00b7\u2024\u25aa\u25cf\-–—\*])\s*$'
+        )
+
+        def y_overlap(a, b):
+            if not a or not b or len(a) < 4 or len(b) < 4:
+                return 0.0
+            y0 = max(a[1], b[1])
+            y1 = min(a[3], b[3])
+            overlap = max(0.0, y1 - y0)
+            ha = a[3] - a[1]
+            hb = b[3] - b[1]
+            denom = min(ha, hb) if min(ha, hb) > 0 else 1.0
+            return overlap / denom
+
+        merged = []
+        idx = 0
+        while idx < len(items):
+            cur = items[idx]
+            text = (cur.get('text') or '').strip()
+            if text and marker_re.match(text) and idx + 1 < len(items):
+                nxt = items[idx + 1]
+                nxt_text = (nxt.get('text') or '').strip()
+                if nxt_text and nxt.get('bbox') and cur.get('bbox'):
+                    if y_overlap(cur.get('bbox'), nxt.get('bbox')) >= 0.3:
+                        merged_text = f"{text} {nxt_text}".strip()
+                        merged_bbox = self._merge_bboxes([cur.get('bbox'), nxt.get('bbox')])
+                        merged.append({
+                            'item_idx': cur.get('item_idx', nxt.get('item_idx')),
+                            'item_type': nxt.get('item_type', cur.get('item_type')),
+                            'text': merged_text,
+                            'bbox': merged_bbox,
+                            'is_cell': nxt.get('is_cell', False),
+                            'row': nxt.get('row'),
+                            'col': nxt.get('col'),
+                            'table_bbox': nxt.get('table_bbox'),
+                            'is_hline_table_unit': nxt.get('is_hline_table_unit', False)
+                        })
+                        idx += 2
+                        continue
+            merged.append(cur)
+            idx += 1
+
+        return merged
+
+    def _merge_code_like_lines(self, items):
+        if not items:
+            return items
+        enabled = os.getenv("ALIGNMENT_GROUP_CODE_LINES", "").lower() in ("1", "true", "yes", "on")
+        if not enabled:
+            return items
+
+        code_kw = re.compile(r'\b(def|class|return|if|else|for|while|import|from|yield|try|except|with)\b')
+        code_symbols = set("{}();=<>[]_/.")
+
+        def is_code_like(text):
+            if not text:
+                return False
+            t = text.strip()
+            if code_kw.search(t):
+                return True
+            if t in {"=", "==", "!=", "<=", ">=", "->", ":="}:
+                return True
+            sym_count = sum(1 for ch in t if ch in code_symbols)
+            return sym_count >= 2
+
+        def y_overlap(a, b):
+            if not a or not b or len(a) < 4 or len(b) < 4:
+                return 0.0
+            y0 = max(a[1], b[1])
+            y1 = min(a[3], b[3])
+            overlap = max(0.0, y1 - y0)
+            ha = a[3] - a[1]
+            hb = b[3] - b[1]
+            denom = min(ha, hb) if min(ha, hb) > 0 else 1.0
+            return overlap / denom
+
+        def x_gap(a, b):
+            if not a or not b or len(a) < 4 or len(b) < 4:
+                return 0.0
+            return b[0] - a[2]
+
+        merged = []
+        idx = 0
+        while idx < len(items):
+            cur = items[idx]
+            if cur.get('item_type') in {'image', 'shape', 'table', 'hline_table'} or not cur.get('bbox'):
+                merged.append(cur)
+                idx += 1
+                continue
+
+            group = [cur]
+            j = idx + 1
+            while j < len(items):
+                nxt = items[j]
+                if nxt.get('item_type') in {'image', 'shape', 'table', 'hline_table'} or not nxt.get('bbox'):
+                    break
+                if y_overlap(group[-1].get('bbox'), nxt.get('bbox')) < 0.5:
+                    break
+                if x_gap(group[-1].get('bbox'), nxt.get('bbox')) > 120:
+                    break
+                group.append(nxt)
+                j += 1
+
+            if len(group) == 1:
+                merged.append(cur)
+                idx += 1
+                continue
+
+            if any(is_code_like(g.get('text') or '') for g in group):
+                merged_text = ' '.join((g.get('text') or '').strip() for g in group if g.get('text')).strip()
+                merged_bbox = self._merge_bboxes([g.get('bbox') for g in group])
+                merged.append({
+                    'item_idx': group[0].get('item_idx'),
+                    'item_type': group[0].get('item_type'),
+                    'text': merged_text,
+                    'bbox': merged_bbox,
+                    'is_cell': group[0].get('is_cell', False),
+                    'row': group[0].get('row'),
+                    'col': group[0].get('col'),
+                    'table_bbox': group[0].get('table_bbox'),
+                    'is_hline_table_unit': group[0].get('is_hline_table_unit', False)
+                })
+            else:
+                merged.extend(group)
+            idx = j
+
+        return merged
 
     def _extract_cell_content_text(self, cell):
         texts = []
