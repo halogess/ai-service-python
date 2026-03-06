@@ -239,6 +239,7 @@ class AlignmentMatchingMixin:
                 'is_code_font': openxml_unit.get('is_code_font', False),
                 'is_code_style': openxml_unit.get('is_code_style', False),
                 'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
             }
             created.append(restored)
             seq_to_alignment[missing_seq] = restored
@@ -621,6 +622,7 @@ class AlignmentMatchingMixin:
                         'is_code_font': openxml_unit.get('is_code_font', False),
                         'is_code_style': openxml_unit.get('is_code_style', False),
                         'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                        'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                     }
                 continue
 
@@ -647,6 +649,7 @@ class AlignmentMatchingMixin:
                         'is_code_font': openxml_unit.get('is_code_font', False),
                         'is_code_style': openxml_unit.get('is_code_style', False),
                         'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                        'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                     }
 
                 cell = {
@@ -661,6 +664,7 @@ class AlignmentMatchingMixin:
                     'is_code_font': openxml_unit.get('is_code_font', False),
                     'is_code_style': openxml_unit.get('is_code_style', False),
                     'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                    'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                 }
                 elem_alignments[elem_id]['cells'].append(cell)
                 elem_alignments[elem_id]['openxml_indices'].append(openxml_idx)
@@ -685,6 +689,7 @@ class AlignmentMatchingMixin:
                     'is_code_font': openxml_unit.get('is_code_font', False),
                     'is_code_style': openxml_unit.get('is_code_style', False),
                     'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                    'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                 }
 
         alignments = list(elem_alignments.values()) + list(non_table_units.values())
@@ -792,6 +797,7 @@ class AlignmentMatchingMixin:
                     bool(ex.get('is_code_font')) or
                     bool(ex.get('is_code_style'))
                 )
+                ex['is_openxml_chart'] = bool(ex.get('is_openxml_chart')) or bool(la.get('is_openxml_chart'))
                 la_indices = la.get('openxml_indices') or []
                 if la_indices:
                     ex_indices = ex.setdefault('openxml_indices', [])

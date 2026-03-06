@@ -6,7 +6,7 @@ Handles processing tasks from the antrian table
 import os
 import json
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from models import Antrian, Dokumen, Bab
@@ -92,6 +92,27 @@ class AntrianService:
             task.antrian_error_message = None
         self.db.commit()
         logger.info(f"Task {task.antrian_id} validation status updated to: {status}")
+
+    def get_task_reference(self, task: Antrian) -> Tuple[str, int]:
+        """
+        Resolve logical reference target for the task.
+
+        Returns:
+            (ref_tipe, ref_id)
+            - dokumen -> (dokumen, dokumen_id)
+            - buku (task type) -> (bab, bab_id)
+        """
+        if task.antrian_tipe == 'dokumen':
+            if not task.dokumen_id:
+                raise ValueError(f"Task {task.antrian_id} has no dokumen_id")
+            return 'dokumen', task.dokumen_id
+
+        if task.antrian_tipe == 'buku':
+            if not task.bab_id:
+                raise ValueError(f"Task {task.antrian_id} has no bab_id")
+            return 'bab', task.bab_id
+
+        raise ValueError(f"Unknown antrian_tipe: {task.antrian_tipe}")
 
         
     def get_pdf_path(self, task: Antrian) -> str:

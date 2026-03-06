@@ -24,13 +24,14 @@ class AlignmentService(
     def __init__(self):
         pass
 
-    def align_document(self, extraction_results: List[Dict], doc_id: int) -> List[Dict]:
+    def align_document(self, extraction_results: List[Dict], doc_id: int, ref_tipe: str = 'dokumen') -> List[Dict]:
         """
         Align all pages of a document.
 
         Args:
             extraction_results: List of extraction results per page
-            doc_id: Document ID
+            doc_id: Reference ID (dokumen_id or bab_id)
+            ref_tipe: Reference type ('dokumen' or 'bab'; legacy 'buku' is also supported)
 
         Returns:
             List of alignment results per page
@@ -48,7 +49,8 @@ class AlignmentService(
             result = self.align(
                 doc_id, page_num, items,
                 page_width, page_height, total_pages,
-                min_openxml_idx
+                min_openxml_idx,
+                ref_tipe=ref_tipe
             )
 
             # Update min_openxml_idx for next page (avoid backtracking)
@@ -74,7 +76,7 @@ class AlignmentService(
 
     def align(self, doc_id: int, page_num: int, extraction_items: List[Dict],
               page_width: float, page_height: float, total_pages: int,
-              min_openxml_idx: int = 0) -> Dict[str, Any]:
+              min_openxml_idx: int = 0, ref_tipe: str = 'dokumen') -> Dict[str, Any]:
         """
         Main entry point for alignment.
         Orchestrates extraction flattening, OpenXML retrieval, alignment, and full post-processing.
@@ -83,7 +85,7 @@ class AlignmentService(
         db = SessionLocal()
         try:
             # 1. Get Section Data for margin logic
-            sections = self._get_doc_sections(db, doc_id)
+            sections = self._get_doc_sections(db, doc_id, ref_tipe=ref_tipe)
             current_section = self._get_section_for_page(sections, page_width, page_height)
             if not current_section and sections:
                 current_section = sections[0]
@@ -123,15 +125,19 @@ class AlignmentService(
             pdf_units, header_footer_units = self._filter_header_footer_items(all_pdf_units, current_section, page_height)
 
             # 4. Get OpenXML elements (body parts only)
-            elements = self._get_openxml_elements(db, doc_id)
+            elements = self._get_openxml_elements(db, doc_id, ref_tipe=ref_tipe)
 
             # 5. Build OpenXML Units (with image numbering logic)
             # Estimate sequence range for page to number images correctly
             page_sequence_range = self._estimate_page_sequence_range(elements, page_num, total_pages)
-            openxml_units, table_debug = self._build_openxml_units(elements, page_sequence_range)
+            openxml_units, table_debug = self._build_openxml_units(
+                elements,
+                page_sequence_range,
+                db_session=db
+            )
 
             # 6. Perform Two-Pass Alignment (Feature Complete)
-            trace_context = {'doc_id': doc_id, 'page_num': page_num}
+            trace_context = {'doc_id': doc_id, 'ref_tipe': ref_tipe, 'page_num': page_num}
             alignment_result = self._perform_two_pass_alignment(
                 pdf_units,
                 openxml_units,

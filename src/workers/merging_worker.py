@@ -46,14 +46,12 @@ def process_struktur_task():
             # Update status to processing
             antrian_service.update_struktur_status(task, 'processing')
             
-            logger.info(f"Processing structure task ID: {task.antrian_id}, DocID: {task.dokumen_id}")
-            
-            if not task.dokumen_id:
-                 raise ValueError(f"Task {task.antrian_id} has no dokumen_id")
+            ref_tipe, ref_id = antrian_service.get_task_reference(task)
+            logger.info(f"Processing structure task ID: {task.antrian_id}, Ref: {ref_tipe}:{ref_id}")
 
             # Run Merging Process
             service = MergingExtractionService()
-            success = service.process_document(task.dokumen_id)
+            success = service.process_document(ref_id, ref_tipe=ref_tipe)
             
             if success:
                 logger.info(f"Structure task {task.antrian_id} completed successfully")

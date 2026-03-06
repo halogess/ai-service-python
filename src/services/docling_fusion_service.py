@@ -410,6 +410,62 @@ class DoclingFusionService:
         # Fallback when font metadata is unavailable but text is strongly code-like.
         code_text_hits = sum(1 for item in items if self._looks_like_code_text(item.get('text')))
         return code_text_hits == len(items) and len(items) <= 3
+
+    @staticmethod
+    def _normalized_element_type(item: Optional[Dict]) -> str:
+        if not item:
+            return ''
+        return str(item.get('element_type') or '').strip().lower()
+
+    def _is_table_element_item(self, item: Optional[Dict]) -> bool:
+        if not item:
+            return False
+        if item.get('source') == 'cell' or item.get('has_table_units'):
+            return True
+        element_type = self._normalized_element_type(item)
+        return 'table' in element_type
+
+    def _is_picture_element_item(self, item: Optional[Dict]) -> bool:
+        if not item:
+            return False
+        if item.get('is_image_part') or item.get('has_pdf_image'):
+            return True
+        if item.get('has_shape_units') and item.get('is_openxml_chart'):
+            return True
+        element_type = self._normalized_element_type(item)
+        return any(marker in element_type for marker in ('image', 'picture', 'figure', 'gambar'))
+
+    def _is_list_element_item(self, item: Optional[Dict]) -> bool:
+        element_type = self._normalized_element_type(item)
+        return 'list' in element_type
+
+    def _resolve_table_prediction_label(self, matching_items: List[Dict]) -> str:
+        """
+        Resolve Docling `table` prediction using dokumen_elemen metadata.
+
+        Priority:
+        1) real table element -> table
+        2) image/picture element -> picture
+        3) list element -> list_item
+        4) otherwise -> paragraph
+        """
+        items = []
+        for matched in (matching_items or []):
+            if isinstance(matched, dict) and 'item' in matched:
+                items.append(matched.get('item') or {})
+            elif isinstance(matched, dict):
+                items.append(matched)
+
+        if not items:
+            return 'paragraph'
+
+        if any(self._is_table_element_item(item) for item in items):
+            return 'table'
+        if any(self._is_picture_element_item(item) for item in items):
+            return 'picture'
+        if any(self._is_list_element_item(item) for item in items):
+            return 'list_item'
+        return 'paragraph'
     
     @staticmethod
     def merge_bboxes(bbox1: Optional[List[float]], bbox2: Optional[List[float]]) -> Optional[List[float]]:
@@ -539,6 +595,10 @@ class DoclingFusionService:
                             'is_code_font': cell.get('is_code_font', False),
                             'is_code_style': cell.get('is_code_style', False),
                             'is_code_like_openxml': cell.get('is_code_like_openxml', False),
+                            'is_openxml_chart': cell.get(
+                                'is_openxml_chart',
+                                alignment.get('is_openxml_chart', False)
+                            ),
                         })
             elif alignment.get('merged_bbox'):
                 # Non-table elements
@@ -570,6 +630,7 @@ class DoclingFusionService:
                     'is_code_font': alignment.get('is_code_font', False),
                     'is_code_style': alignment.get('is_code_style', False),
                     'is_code_like_openxml': alignment.get('is_code_like_openxml', False),
+                    'is_openxml_chart': alignment.get('is_openxml_chart', False),
                 })
         
         # Add header/footer units
@@ -583,7 +644,8 @@ class DoclingFusionService:
                     'has_pdf_image': False,
                     'has_shape_units': False,
                     'has_table_units': False,
-                    'is_picture_area': False
+                    'is_picture_area': False,
+                    'is_openxml_chart': False
                 })
         
         # Track which aligned items have been used
@@ -631,8 +693,8 @@ class DoclingFusionService:
                     has_shape_units = any(m['item'].get('has_shape_units') for m in matching_items)
                     has_pdf_image = any(m['item'].get('has_pdf_image') for m in matching_items)
                     has_table_units = any(m['item'].get('has_table_units') for m in matching_items)
+                    has_openxml_chart = any(m['item'].get('is_openxml_chart') for m in matching_items)
                     all_text_only = all(self._is_text_only_item(m['item']) for m in matching_items)
-                    force_table_to_code = is_table_label and self._should_relabel_table_to_code(matching_items)
                     
                     # Special case: Docling 'picture' with multiple shapes
                     should_merge_picture = is_picture_label and len(matching_items) > 1 and has_shape_units
@@ -676,7 +738,7 @@ class DoclingFusionService:
                         # Determine label
                         merged_label = doc_item.get('label')
                         if merged_label == 'picture':
-                            if not has_pdf_image:
+                            if not has_pdf_image and not has_openxml_chart:
                                 merged_label = 'text'
                             elif not any(
                                 m['item'].get('is_picture_area') for m in matching_items
@@ -685,8 +747,8 @@ class DoclingFusionService:
                             ):
                                 if all_text_only:
                                     merged_label = 'caption'
-                        if merged_label == 'table' and force_table_to_code:
-                            merged_label = 'code'
+                        if merged_label == 'table':
+                            merged_label = self._resolve_table_prediction_label(matching_items)
                         
                         # Correct header/footer labels
                         merged_label = self.correct_header_footer_label(merged_label, merged_bbox)
@@ -722,7 +784,8 @@ class DoclingFusionService:
                             'has_shape_units': has_shape_units,
                             'has_pdf_image': has_pdf_image,
                             'has_table_units': has_table_units,
-                            'is_text_only_item': all_text_only
+                            'is_text_only_item': all_text_only,
+                            'is_openxml_chart': has_openxml_chart
                         })
                     else:
                         # Don't merge - add each item separately
@@ -731,13 +794,13 @@ class DoclingFusionService:
                             
                             final_label = doc_item.get('label')
                             if final_label == 'picture':
-                                if not item.get('has_pdf_image'):
+                                if not item.get('has_pdf_image') and not item.get('is_openxml_chart'):
                                     final_label = 'text'
                                 elif not item.get('is_picture_area') and not item.get('has_shape_units'):
                                     if self._is_text_only_item(item):
                                         final_label = 'caption'
-                            if final_label == 'table' and force_table_to_code:
-                                final_label = 'code'
+                            if final_label == 'table':
+                                final_label = self._resolve_table_prediction_label([item])
                             
                             final_label = self.correct_header_footer_label(final_label, item['bbox'])
                             
@@ -762,6 +825,7 @@ class DoclingFusionService:
                                 'has_pdf_image': item.get('has_pdf_image'),
                                 'has_table_units': item.get('has_table_units'),
                                 'is_text_only_item': self._is_text_only_item(item),
+                                'is_openxml_chart': item.get('is_openxml_chart', False),
                                 'table_canonical_from_element_id': item.get('table_canonical_from_element_id'),
                                 'table_canonical_from_sequence': item.get('table_canonical_from_sequence')
                             })
@@ -774,7 +838,9 @@ class DoclingFusionService:
             label = 'unknown'
             if item.get('source') == 'header_footer' and item.get('zone'):
                 label = 'page_header' if item['zone'] == 'header' else 'page_footer'
-            elif item.get('is_image_part') and item.get('has_pdf_image'):
+            elif item.get('is_image_part') and (
+                item.get('has_pdf_image') or item.get('is_openxml_chart')
+            ):
                 label = 'picture'
             elif item.get('is_image_part'):
                 label = self.fallback_label(item)
@@ -800,7 +866,8 @@ class DoclingFusionService:
                 'has_shape_units': item.get('has_shape_units'),
                 'has_pdf_image': item.get('has_pdf_image'),
                 'has_table_units': item.get('has_table_units'),
-                'is_text_only_item': self._is_text_only_item(item)
+                'is_text_only_item': self._is_text_only_item(item),
+                'is_openxml_chart': item.get('is_openxml_chart', False)
             })
         
         # Post-pass: force picture label for image/shape areas that overlap any picture prediction
@@ -811,7 +878,9 @@ class DoclingFusionService:
             ]
             if picture_preds:
                 for result in fused_results:
-                    if result.get('label') == 'picture' or not result.get('has_pdf_image'):
+                    if result.get('label') == 'picture':
+                        continue
+                    if not result.get('has_pdf_image') and not result.get('is_openxml_chart'):
                         continue
                     bbox = result.get('bbox')
                     if not bbox:

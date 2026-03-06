@@ -46,7 +46,8 @@ def debug_alignment_data(doc_id: int = 332):
         ).join(
             DokumenSection, DokumenPart.dsec_id == DokumenSection.dsec_id
         ).filter(
-            DokumenSection.dokumen_id == doc_id,
+            DokumenSection.dsec_ref_tipe == 'dokumen',
+            DokumenSection.dsec_ref_id == doc_id,
             DokumenPart.dpart_type == 'body'
         ).order_by(DokumenElemen.delemen_sequence).limit(20).all()
         

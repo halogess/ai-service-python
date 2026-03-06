@@ -7,7 +7,7 @@ import re
 from sqlalchemy import text
 from datetime import datetime
 from sqlalchemy.orm import Session
-from models import Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote
+from models import Bab, Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote
 from services.pdf_extraction_service import PDFExtractor
 from services.alignment_service import AlignmentService
 from services.docling_service import DoclingService
@@ -54,6 +54,7 @@ class MergingExtractionService:
         r'|[^\w\s](?=\s|$)'
         r')'
     )
+    FIGURE_PANEL_MARKER_REGEX = re.compile(r'^\s*\([a-z]\)\s*$', re.IGNORECASE)
 
     def __init__(self):
         self.alignment_service = AlignmentService()
@@ -61,9 +62,22 @@ class MergingExtractionService:
         self.fusion_service = DoclingFusionService()
         self.visualization_service = VisualizationService(output_dir=VISUALIZATION_OUTPUT)
 
-    def process_document(self, doc_id: int, generate_visualizations: bool = False, save_to_db: bool = True, output_dir: str = None):
+    @staticmethod
+    def _canonical_ref_tipe(ref_tipe: str) -> str:
+        if ref_tipe == 'buku':
+            return 'bab'
+        return ref_tipe
+
+    def process_document(
+        self,
+        doc_id: int,
+        generate_visualizations: bool = False,
+        save_to_db: bool = True,
+        output_dir: str = None,
+        ref_tipe: str = 'dokumen'
+    ):
         """
-        Process a document:
+        Process a reference target (dokumen or bab).
         1. Extract PDF content page by page
         2. Validate/Align with OpenXML elements
         3. Run Docling classification
@@ -71,26 +85,52 @@ class MergingExtractionService:
         5. Optionally generate visualization images
         
         Args:
-            doc_id: Document ID to process
+            doc_id: Reference ID to process (dokumen_id for dokumen, bab_id for bab/buku)
             generate_visualizations: If True, generate PNG visualizations of alignment and fusion
             save_to_db: If True, commit changes to database. If False, run pipeline but don't save.
             output_dir: If provided, save visualizations to this directory.
+            ref_tipe: Reference type ('dokumen', 'bab', or legacy alias 'buku')
         """
         db = SessionLocal()
         try:
-            doc = db.query(Dokumen).get(doc_id)
-            if not doc:
-                logger.error(f"Document {doc_id} not found")
+            ref_id = doc_id
+            if ref_id is None:
+                logger.error("process_document called without ref_id")
                 return False
-            
-            pdf_path = os.path.join(STORAGE_BASE, doc.dokumen_pdf_path)
-            if not pdf_path:
-                logger.error(f"Document {doc_id} has no PDF path")
+
+            canonical_ref_tipe = self._canonical_ref_tipe(ref_tipe)
+
+            if canonical_ref_tipe == 'dokumen':
+                doc = db.query(Dokumen).get(ref_id)
+                if not doc:
+                    logger.error(f"Document {ref_id} not found")
+                    return False
+                relative_pdf_path = doc.dokumen_pdf_path
+            elif canonical_ref_tipe == 'bab':
+                bab = db.query(Bab).get(ref_id)
+                if not bab:
+                    logger.error(f"Bab {ref_id} not found")
+                    return False
+                relative_pdf_path = bab.bab_pdf_path
+            else:
+                logger.error(f"Unknown ref_tipe: {ref_tipe}")
+                return False
+
+            pdf_path = os.path.join(STORAGE_BASE, relative_pdf_path or "")
+            if not relative_pdf_path:
+                logger.error(f"{canonical_ref_tipe}:{ref_id} has no PDF path")
                 return False
 
             # 1. Run Docling (Document-level)
-            logger.info(f"Running Docling for doc {doc_id}")
-            docling_results = self.docling_service.classify_document(doc_id)
+            logger.info(f"Running Docling for {canonical_ref_tipe}:{ref_id}")
+            if canonical_ref_tipe == 'dokumen':
+                docling_results = self.docling_service.classify_document(ref_id)
+            else:
+                docling_results = self.docling_service.classify_pdf(
+                    pdf_path=pdf_path,
+                    ref_tipe=canonical_ref_tipe,
+                    ref_id=ref_id
+                )
             docling_predictions = docling_results.get('predictions_by_page', {}) if docling_results.get('success') else {}
 
             # 2. Open PDF and iterate pages
@@ -98,7 +138,7 @@ class MergingExtractionService:
             extractor.open()
             total_pages = extractor.page_count
             
-            logger.info(f"Processing {total_pages} pages for doc {doc_id}")
+            logger.info(f"Processing {total_pages} pages for {canonical_ref_tipe}:{ref_id}")
 
             # Track max_openxml_idx across pages to prevent backward matching
             max_openxml_idx = 0
@@ -126,20 +166,23 @@ class MergingExtractionService:
                 extraction_items = self._transform_extraction_data_to_items(extraction_data)
 
                 page_docling_preds = docling_predictions.get(str(page_num), [])
-                footnote_groups, footnote_item_idxs = self._build_footnote_groups(
-                    extraction_items, page_docling_preds, doc_id, page_num
-                )
-                if footnote_item_idxs:
-                    extraction_items = [
-                        item for idx, item in enumerate(extraction_items)
-                        if idx not in footnote_item_idxs
-                    ]
+                footnote_groups = []
+                if canonical_ref_tipe == 'dokumen':
+                    footnote_groups, footnote_item_idxs = self._build_footnote_groups(
+                        extraction_items, page_docling_preds, ref_id, page_num
+                    )
+                    if footnote_item_idxs:
+                        extraction_items = [
+                            item for idx, item in enumerate(extraction_items)
+                            if idx not in footnote_item_idxs
+                        ]
                 
                 # Perform Alignment with cross-page tracking
                 alignment_result = self.alignment_service.align(
-                    doc_id, page_num, extraction_items, 
+                    ref_id, page_num, extraction_items,
                     page_width, page_height, total_pages, 
-                    min_openxml_idx=max_openxml_idx  # Use previous page's max
+                    min_openxml_idx=max_openxml_idx,  # Use previous page's max
+                    ref_tipe=canonical_ref_tipe
                 )
                 
                 if alignment_result['success']:
@@ -158,9 +201,12 @@ class MergingExtractionService:
                     alignments = alignment_result['final_alignments']
                     header_footer_units = alignment_result.get('header_footer_units', [])
                     section_data = alignment_result.get('page_debug', {}).get('section_data')
-                    page_docling_preds, footnote_entries = self._assign_docling_footnotes(
-                        db, doc_id, page_num, page_docling_preds, footnote_groups
-                    )
+                    if canonical_ref_tipe == 'dokumen':
+                        page_docling_preds, footnote_entries = self._assign_docling_footnotes(
+                            db, ref_id, page_num, page_docling_preds, footnote_groups
+                        )
+                    else:
+                        footnote_entries = []
                     
                     # Save alignment results with header_footer_units for proper Docling fusion
                     fused_results = self._save_alignment_results(
@@ -170,7 +216,7 @@ class MergingExtractionService:
                         footnote_entries=footnote_entries,
                         header_footer_units=header_footer_units,
                         section_data=section_data,
-                        doc_id=doc_id,
+                        doc_id=ref_id,
                         page_num=page_num,
                         structural_state=structural_state
                     )
@@ -178,7 +224,8 @@ class MergingExtractionService:
                     if save_to_db and not generate_visualizations:
                         self._replace_visual_records(
                             db,
-                            doc_id,
+                            canonical_ref_tipe,
+                            ref_id,
                             page_num,
                             fused_results,
                             structural_state=structural_state
@@ -226,7 +273,8 @@ class MergingExtractionService:
                         if save_to_db:
                             self._replace_visual_records(
                                 db,
-                                doc_id,
+                                canonical_ref_tipe,
+                                ref_id,
                                 page_num,
                                 payload.get('fused_results'),
                                 structural_state=structural_state
@@ -245,7 +293,7 @@ class MergingExtractionService:
                             header_footer_units=payload.get('header_footer_units'),
                             unaligned_pdf_units=payload.get('unaligned_pdf_units'),
                             duplicate_mapping_units=duplicate_units,
-                            doc_id=doc_id,
+                            doc_id=ref_id,
                             output_dir_override=output_dir
                         )
                         logger.info(f"Page {page_num}: Generated visualizations - {list(vis_paths.keys())}")
@@ -258,7 +306,9 @@ class MergingExtractionService:
                             with open(json_path, 'w', encoding='utf-8') as f:
                                 json.dump({
                                     'page': page_num,
-                                    'doc_id': doc_id,
+                                    'doc_id': ref_id if canonical_ref_tipe == 'dokumen' else None,
+                                    'ref_tipe': canonical_ref_tipe,
+                                    'ref_id': ref_id,
                                     'fused_results': payload.get('fused_results'),
                                     'raw_docling': payload.get('raw_docling'),
                                     'alignments': payload.get('alignments')
@@ -268,14 +318,14 @@ class MergingExtractionService:
             
             if save_to_db:
                 db.commit()
-                logger.info(f"Committed changes to database for doc {doc_id}")
+                logger.info(f"Committed changes to database for {canonical_ref_tipe}:{ref_id}")
             else:
-                logger.info(f"Skipping database commit for doc {doc_id} (save_to_db=False)")
+                logger.info(f"Skipping database commit for {canonical_ref_tipe}:{ref_id} (save_to_db=False)")
                 
             return True
             
         except Exception as e:
-            logger.error(f"Error processing doc {doc_id}: {e}", exc_info=True)
+            logger.error(f"Error processing {canonical_ref_tipe}:{ref_id}: {e}", exc_info=True)
             db.rollback()
             raise e  # Re-raise to let caller handle/report
         finally:
@@ -507,6 +557,41 @@ class MergingExtractionService:
 
     def _get_visual_label(self, result):
         return str(result.get('label') or result.get('docling_label') or '').lower()
+
+    def _is_picture_result(self, result):
+        if not result:
+            return False
+        label = str(result.get('label') or '').lower()
+        docling_label = str(result.get('docling_label') or '').lower()
+        return label == 'picture' or docling_label == 'picture'
+
+    def _is_figure_panel_marker_text(self, text):
+        if not text:
+            return False
+        return bool(self.FIGURE_PANEL_MARKER_REGEX.match(text.strip()))
+
+    def _has_adjacent_picture_result(self, fused_results, idx):
+        if not fused_results or idx < 0 or idx >= len(fused_results):
+            return False
+
+        prev_idx = idx - 1
+        while prev_idx >= 0:
+            prev_label = self._get_visual_label(fused_results[prev_idx])
+            if prev_label not in ('page_header', 'page_footer'):
+                break
+            prev_idx -= 1
+
+        if prev_idx >= 0 and self._is_picture_result(fused_results[prev_idx]):
+            return True
+
+        next_idx = idx + 1
+        while next_idx < len(fused_results):
+            next_label = self._get_visual_label(fused_results[next_idx])
+            if next_label not in ('page_header', 'page_footer'):
+                break
+            next_idx += 1
+
+        return next_idx < len(fused_results) and self._is_picture_result(fused_results[next_idx])
 
     def _looks_like_code_line_text(self, text):
         text = self._coerce_text(text).strip()
@@ -751,6 +836,7 @@ class MergingExtractionService:
 
         for idx, result in enumerate(fused_results):
             visual_label = self._get_visual_label(result)
+            docling_label = str(result.get('docling_label') or '').lower()
             if visual_label in ('page_header', 'page_footer'):
                 result['dev_label_struktural'] = visual_label
                 continue
@@ -800,6 +886,20 @@ class MergingExtractionService:
                     structural_label = 'judul_kode'
                 elif code_like_lines >= 1 and self.CODE_TITLE_HEADER_REGEX.search(text):
                     structural_label = 'judul_kode'
+
+            if not structural_label:
+                if (
+                    visual_label not in ('picture', 'table', 'formula', 'code')
+                    and self._is_figure_panel_marker_text(text)
+                    and self._has_adjacent_picture_result(
+                        fused_results,
+                        idx
+                    )
+                ):
+                    structural_label = 'caption_gambar'
+
+            if not structural_label and (visual_label == 'footnote' or docling_label == 'footnote'):
+                structural_label = 'footnote'
 
             if not structural_label:
                 if visual_label == 'caption':
@@ -1154,9 +1254,10 @@ class MergingExtractionService:
 
         fused_results[:] = updated_results
 
-    def _replace_visual_records(self, db, doc_id, page_num, fused_results, structural_state=None):
-        if not db or doc_id is None or page_num is None:
+    def _replace_visual_records(self, db, ref_tipe, ref_id, page_num, fused_results, structural_state=None):
+        if not db or ref_id is None or page_num is None:
             return
+        canonical_ref_tipe = self._canonical_ref_tipe(ref_tipe)
         if fused_results:
             self._apply_structural_labels(
                 db,
@@ -1164,10 +1265,15 @@ class MergingExtractionService:
                 structural_state=structural_state,
                 skip_if_labeled=True
             )
-        db.query(DokumenElemenVisual).filter(
-            DokumenElemenVisual.dokumen_id == doc_id,
+        delete_query = db.query(DokumenElemenVisual).filter(
+            DokumenElemenVisual.dev_ref_id == ref_id,
             DokumenElemenVisual.dev_page == page_num
-        ).delete(synchronize_session=False)
+        )
+        if canonical_ref_tipe == 'bab':
+            delete_query = delete_query.filter(DokumenElemenVisual.dev_ref_tipe.in_(('bab', 'buku')))
+        else:
+            delete_query = delete_query.filter(DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe)
+        delete_query.delete(synchronize_session=False)
 
         for result in fused_results or []:
             text_content = result.get('text', '')
@@ -1182,7 +1288,8 @@ class MergingExtractionService:
                 x0, y0, x1, y1 = bbox
 
             dev = DokumenElemenVisual(
-                dokumen_id=doc_id,
+                dev_ref_tipe=canonical_ref_tipe,
+                dev_ref_id=ref_id,
                 dev_page=page_num,
                 dokumen_elemen_id=result.get('element_id'),
                 dev_bbox_x0=float(x0),

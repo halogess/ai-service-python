@@ -87,42 +87,77 @@ def test_fusion_service():
     assert len(fused) >= 2, f"Expected at least 2 fused results, got {len(fused)}"
     print("    [OK] Full fusion works")
 
-    print("\n[5] Testing table-to-code relabel for monospace non-table...")
-    code_alignments = [
+    print("\n[5] Testing table prediction maps list element to list_item...")
+    list_alignments = [
         {
             'element_id': 10,
             'element_sequence': 10,
-            'element_type': 'paragraph',
-            'merged_bbox': [100, 350, 520, 470],
+            'element_type': 'list-item-1-1',
+            'merged_bbox': [100, 350, 520, 390],
             'matched_pdf_units': [
-                {
-                    'item_type': 'group',
-                    'text': 'for i in range(10): print(i)',
-                    'bbox': [100, 350, 520, 370]
-                }
+                {'item_type': 'group', 'text': '1. langkah pertama', 'bbox': [100, 350, 520, 390]}
             ],
-            'is_code_font': True,
-            'is_code_style': True,
-            'is_code_like_openxml': True,
-            'font_families': ['courier new'],
-            'style_ids': ['sttssegmenprogramcontent'],
             'is_text_part': False,
             'is_image_part': False
         }
     ]
-    code_docling_predictions = [
-        {'label': 'table', 'bbox': [95, 345, 525, 475], 'confidence': 0.9}
+    list_docling_predictions = [
+        {'label': 'table', 'bbox': [95, 345, 525, 395], 'confidence': 0.9}
     ]
-    code_fused = service.fuse_alignments_with_docling(code_alignments, [], code_docling_predictions)
-    assert code_fused, "Expected fused output for code relabel test"
-    assert code_fused[0].get('label') == 'code', f"Expected 'code', got {code_fused[0].get('label')}"
-    print("    [OK] Table-to-code relabel works for monospace non-table")
+    list_fused = service.fuse_alignments_with_docling(list_alignments, [], list_docling_predictions)
+    assert list_fused, "Expected fused output for list relabel test"
+    assert list_fused[0].get('label') == 'list_item', f"Expected 'list_item', got {list_fused[0].get('label')}"
+    print("    [OK] Table prediction correctly relabeled to list_item")
 
-    print("\n[6] Testing real table stays table...")
-    real_table_alignments = [
+    print("\n[6] Testing table prediction maps non-table to paragraph...")
+    paragraph_alignments = [
         {
             'element_id': 11,
             'element_sequence': 11,
+            'element_type': 'paragraph',
+            'merged_bbox': [100, 400, 520, 460],
+            'matched_pdf_units': [
+                {'item_type': 'group', 'text': 'Ini paragraf biasa.', 'bbox': [100, 400, 520, 460]}
+            ],
+            'is_text_part': False,
+            'is_image_part': False
+        }
+    ]
+    paragraph_docling_predictions = [
+        {'label': 'table', 'bbox': [95, 395, 525, 465], 'confidence': 0.9}
+    ]
+    paragraph_fused = service.fuse_alignments_with_docling(paragraph_alignments, [], paragraph_docling_predictions)
+    assert paragraph_fused, "Expected fused output for paragraph relabel test"
+    assert paragraph_fused[0].get('label') == 'paragraph', f"Expected 'paragraph', got {paragraph_fused[0].get('label')}"
+    print("    [OK] Table prediction correctly relabeled to paragraph")
+
+    print("\n[7] Testing table prediction maps image element to picture...")
+    image_alignments = [
+        {
+            'element_id': 12,
+            'element_sequence': 12,
+            'element_type': 'figure',
+            'merged_bbox': [100, 470, 320, 620],
+            'matched_pdf_units': [
+                {'item_type': 'image', 'text': '', 'bbox': [100, 470, 320, 620]}
+            ],
+            'is_text_part': False,
+            'is_image_part': True
+        }
+    ]
+    image_docling_predictions = [
+        {'label': 'table', 'bbox': [95, 465, 325, 625], 'confidence': 0.95}
+    ]
+    image_fused = service.fuse_alignments_with_docling(image_alignments, [], image_docling_predictions)
+    assert image_fused, "Expected fused output for image relabel test"
+    assert image_fused[0].get('label') == 'picture', f"Expected 'picture', got {image_fused[0].get('label')}"
+    print("    [OK] Table prediction correctly relabeled to picture")
+
+    print("\n[8] Testing real table stays table...")
+    real_table_alignments = [
+        {
+            'element_id': 13,
+            'element_sequence': 13,
             'element_type': 'table',
             'is_table': True,
             'cells': [
@@ -143,6 +178,56 @@ def test_fusion_service():
     assert table_fused, "Expected fused output for real table test"
     assert table_fused[0].get('label') == 'table', f"Expected 'table', got {table_fused[0].get('label')}"
     print("    [OK] Real table remains table")
+
+    print("\n[9] Testing chart shape keeps picture label without pdf image...")
+    chart_shape_alignments = [
+        {
+            'element_id': 14,
+            'element_sequence': 14,
+            'element_type': 'paragraph',
+            'merged_bbox': [120, 540, 420, 700],
+            'matched_pdf_units': [
+                {'item_type': 'shape', 'text': '[IMG]', 'bbox': [120, 540, 420, 700]}
+            ],
+            'is_text_part': False,
+            'is_image_part': False,
+            'is_openxml_chart': True
+        }
+    ]
+    chart_shape_preds = [{'label': 'picture', 'bbox': [115, 535, 425, 705], 'confidence': 0.95}]
+    chart_shape_fused = service.fuse_alignments_with_docling(chart_shape_alignments, [], chart_shape_preds)
+    assert chart_shape_fused, "Expected fused output for chart shape picture test"
+    assert chart_shape_fused[0].get('label') == 'picture', (
+        f"Expected 'picture', got {chart_shape_fused[0].get('label')}"
+    )
+    print("    [OK] Chart shape stays picture without has_pdf_image")
+
+    print("\n[10] Testing non-chart shape still downgrades to text without pdf image...")
+    non_chart_shape_alignments = [
+        {
+            'element_id': 15,
+            'element_sequence': 15,
+            'element_type': 'paragraph',
+            'merged_bbox': [120, 710, 420, 780],
+            'matched_pdf_units': [
+                {'item_type': 'shape', 'text': '[IMG]', 'bbox': [120, 710, 420, 780]}
+            ],
+            'is_text_part': False,
+            'is_image_part': False,
+            'is_openxml_chart': False
+        }
+    ]
+    non_chart_shape_preds = [{'label': 'picture', 'bbox': [115, 705, 425, 785], 'confidence': 0.95}]
+    non_chart_shape_fused = service.fuse_alignments_with_docling(
+        non_chart_shape_alignments,
+        [],
+        non_chart_shape_preds
+    )
+    assert non_chart_shape_fused, "Expected fused output for non-chart shape picture test"
+    assert non_chart_shape_fused[0].get('label') == 'text', (
+        f"Expected 'text', got {non_chart_shape_fused[0].get('label')}"
+    )
+    print("    [OK] Non-chart shape remains text without has_pdf_image")
 
     print("\n" + "=" * 60)
     print("ALL TESTS PASSED")

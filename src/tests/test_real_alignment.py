@@ -127,7 +127,8 @@ try:
             ).join(
                 DokumenSection, DokumenPart.dsec_id == DokumenSection.dsec_id
             ).filter(
-                DokumenSection.dokumen_id == task.dokumen_id,
+                DokumenSection.dsec_ref_tipe == 'dokumen',
+                DokumenSection.dsec_ref_id == task.dokumen_id,
                 DokumenPart.dpart_type == 'body'
             ).order_by(DokumenElemen.delemen_sequence).limit(5).all()
             

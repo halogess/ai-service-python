@@ -85,7 +85,10 @@ def debug_alignment():
         print(f"    Name: {doc.dokumen_nama}")
         
         # Check sections
-        sections = db.query(DokumenSection).filter_by(dokumen_id=doc_id).all()
+        sections = db.query(DokumenSection).filter(
+            DokumenSection.dsec_ref_tipe == 'dokumen',
+            DokumenSection.dsec_ref_id == doc_id
+        ).all()
         print(f"[*] Sections: {len(sections)}")
         
         if not sections:

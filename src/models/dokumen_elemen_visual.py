@@ -1,11 +1,12 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Float, Text
+from sqlalchemy import Column, Integer, String, BigInteger, Float, Text, Enum
 from database import Base
 
 class DokumenElemenVisual(Base):
     __tablename__ = "dokumen_elemen_visual"
 
     dev_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    dokumen_id = Column(Integer)
+    dev_ref_tipe = Column(Enum('dokumen', 'buku', 'bab'))
+    dev_ref_id = Column(Integer)
     dev_page = Column(Integer)
     dokumen_elemen_id = Column(BigInteger)
     dev_bbox_x0 = Column(Float)
@@ -17,4 +18,4 @@ class DokumenElemenVisual(Base):
     dev_text = Column(Text)
 
     def __repr__(self):
-        return f"<DokumenElemenVisual(id={self.dev_id}, doc={self.dokumen_id}, page={self.dev_page})>"
+        return f"<DokumenElemenVisual(id={self.dev_id}, ref={self.dev_ref_tipe}:{self.dev_ref_id}, page={self.dev_page})>"

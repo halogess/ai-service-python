@@ -1,6 +1,11 @@
+import json
+import logging
 import re
 
+from sqlalchemy import text
 from models import DokumenElemen, DokumenSection, DokumenPart
+
+logger = logging.getLogger(__name__)
 
 
 class AlignmentOpenXmlMixin:
@@ -37,26 +42,31 @@ class AlignmentOpenXmlMixin:
         'eastasia',
         'typeface',
     )
-    RFONTS_TAG_RE = re.compile(r'<w:rFonts\b[^>]*>', re.IGNORECASE)
-    RFONTS_ATTR_RE = re.compile(
-        r"w:(?:ascii|hAnsi|eastAsia|cs)\s*=\s*['\"]([^'\"]+)['\"]",
-        re.IGNORECASE
-    )
-    STYLE_VAL_RE = re.compile(
-        r"<w:(?:pStyle|rStyle)\b[^>]*w:val\s*=\s*['\"]([^'\"]+)['\"]",
-        re.IGNORECASE
-    )
 
-    def _get_openxml_elements(self, db_session, doc_id: int):
+    @staticmethod
+    def _resolve_ref_tipe_for_read(ref_tipe: str):
+        if ref_tipe in ('bab', 'buku'):
+            return ('bab', 'buku')
+        return (ref_tipe,)
+
+    def _get_openxml_elements(self, db_session, ref_id: int, ref_tipe: str = 'dokumen'):
+        ref_tipes = self._resolve_ref_tipe_for_read(ref_tipe)
         return db_session.query(DokumenElemen).join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id).filter(
             DokumenPart.dsec_id.in_(
-                db_session.query(DokumenSection.dsec_id).filter(DokumenSection.dokumen_id == doc_id)
+                db_session.query(DokumenSection.dsec_id).filter(
+                    DokumenSection.dsec_ref_tipe.in_(ref_tipes),
+                    DokumenSection.dsec_ref_id == ref_id
+                )
             ),
             DokumenPart.dpart_type == 'body'
         ).order_by(DokumenElemen.delemen_sequence).all()
 
-    def _get_doc_sections(self, db_session, doc_id: int):
-        return db_session.query(DokumenSection).filter_by(dokumen_id=doc_id).order_by(DokumenSection.dsec_index).all()
+    def _get_doc_sections(self, db_session, ref_id: int, ref_tipe: str = 'dokumen'):
+        ref_tipes = self._resolve_ref_tipe_for_read(ref_tipe)
+        return db_session.query(DokumenSection).filter(
+            DokumenSection.dsec_ref_tipe.in_(ref_tipes),
+            DokumenSection.dsec_ref_id == ref_id
+        ).order_by(DokumenSection.dsec_index).all()
 
     def _get_section_for_page(self, sections, page_width, page_height):
         if not sections or not page_width or not page_height:
@@ -101,32 +111,94 @@ class AlignmentOpenXmlMixin:
                     return True
         return False
 
+    def _is_openxml_chart_element(self, json_tree):
+        def walk(node):
+            if isinstance(node, dict):
+                node_type = str(node.get('type') or '').strip().lower()
+                if node_type == 'chart':
+                    return True
+                for value in node.values():
+                    if walk(value):
+                        return True
+                return False
+            if isinstance(node, list):
+                for child in node:
+                    if walk(child):
+                        return True
+            return False
+
+        return walk(json_tree)
+
     def _is_table_element(self, etype):
         return etype in ['table', 'grid_table']
 
-    def _extract_openxml_style_hints(self, json_tree, element_xml):
+    @staticmethod
+    def _safe_int(value):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_json_tree(self, raw_tree):
+        if isinstance(raw_tree, str):
+            try:
+                return json.loads(raw_tree)
+            except Exception:
+                return {}
+        if raw_tree is None:
+            return {}
+        return raw_tree
+
+    def _collect_format_ids(self, json_tree):
+        dftx_ids = set()
+        dfp_ids = set()
+
+        def walk(node):
+            if isinstance(node, dict):
+                if 'dftx_id' in node:
+                    parsed = self._safe_int(node.get('dftx_id'))
+                    if parsed is not None:
+                        dftx_ids.add(parsed)
+                if 'dfp_id' in node:
+                    parsed = self._safe_int(node.get('dfp_id'))
+                    if parsed is not None:
+                        dfp_ids.add(parsed)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for child in node:
+                    walk(child)
+
+        walk(json_tree)
+        return dftx_ids, dfp_ids
+
+    @staticmethod
+    def _normalize_hint_token(value):
+        if value is None:
+            return ''
+        text = str(value).strip().lower()
+        if not text:
+            return ''
+        return text.replace('"', '').replace("'", '')
+
+    def _extract_style_hints_from_json_tree(self, json_tree):
         font_families = set()
         style_ids = set()
 
         def add_font(value):
-            if not value:
+            normalized = self._normalize_hint_token(value)
+            if not normalized:
                 return
-            text = str(value).strip().lower()
-            if not text:
-                return
-            text = text.replace('"', '').replace("'", '')
-            parts = re.split(r'[;,/]+', text)
+            parts = re.split(r'[;,/]+', normalized)
             for part in parts:
                 part = part.strip()
                 if part:
                     font_families.add(part)
 
         def add_style(value):
-            if not value:
-                return
-            text = str(value).strip().lower()
-            if text:
-                style_ids.add(text)
+            normalized = self._normalize_hint_token(value)
+            if normalized:
+                style_ids.add(normalized)
 
         def walk(node):
             if isinstance(node, dict):
@@ -143,14 +215,130 @@ class AlignmentOpenXmlMixin:
                     walk(child)
 
         walk(json_tree)
+        return font_families, style_ids
 
-        raw_xml = element_xml if isinstance(element_xml, str) else ''
-        if raw_xml:
-            for tag in self.RFONTS_TAG_RE.findall(raw_xml):
-                for match in self.RFONTS_ATTR_RE.findall(tag):
-                    add_font(match)
-            for match in self.STYLE_VAL_RE.findall(raw_xml):
-                add_style(match)
+    def _extract_style_hints_from_format_ids(
+        self,
+        dftx_ids,
+        dfp_ids,
+        text_format_cache=None,
+        paragraph_format_cache=None
+    ):
+        font_families = set()
+        style_ids = set()
+        text_cache = text_format_cache or {}
+        paragraph_cache = paragraph_format_cache or {}
+
+        for dftx_id in dftx_ids or []:
+            text_fmt = text_cache.get(dftx_id) or {}
+            font_ascii = text_fmt.get('dftx_font_ascii')
+            normalized = self._normalize_hint_token(font_ascii)
+            if normalized:
+                font_families.add(normalized)
+
+        for dfp_id in dfp_ids or []:
+            para_fmt = paragraph_cache.get(dfp_id) or {}
+            style_id = para_fmt.get('dfp_p_style_id')
+            normalized = self._normalize_hint_token(style_id)
+            if normalized:
+                style_ids.add(normalized)
+
+        return font_families, style_ids
+
+    @staticmethod
+    def _row_to_mapping(row):
+        if row is None:
+            return {}
+        if isinstance(row, dict):
+            return row
+        if hasattr(row, '_mapping'):
+            return dict(row._mapping)
+        return {}
+
+    def _prefetch_format_cache(self, db_session, elements, page_seq_range=None):
+        cache = {'text': {}, 'paragraph': {}}
+        if not db_session or not elements:
+            return cache
+
+        seq_min = seq_max = None
+        if page_seq_range and len(page_seq_range) == 2:
+            seq_min, seq_max = page_seq_range
+
+        dftx_ids = set()
+        dfp_ids = set()
+
+        for elem in elements:
+            elem_seq = getattr(elem, 'delemen_sequence', None)
+            if seq_min is not None and seq_max is not None:
+                if elem_seq is None or elem_seq < seq_min or elem_seq > seq_max:
+                    continue
+            tree = self._parse_json_tree(getattr(elem, 'delemen_json_tree', None))
+            text_ids, para_ids = self._collect_format_ids(tree)
+            dftx_ids.update(text_ids)
+            dfp_ids.update(para_ids)
+
+        if dftx_ids:
+            try:
+                rows = db_session.execute(
+                    text(
+                        "SELECT dftx_id, dftx_font_ascii, dftx_bold, dftx_italic, dftx_underline "
+                        "FROM dokumen_format_text WHERE dftx_id IN :ids"
+                    ),
+                    {'ids': tuple(dftx_ids)}
+                ).fetchall()
+                for row in rows:
+                    mapped = self._row_to_mapping(row)
+                    row_id = self._safe_int(mapped.get('dftx_id'))
+                    if row_id is None:
+                        continue
+                    cache['text'][row_id] = {
+                        'dftx_font_ascii': mapped.get('dftx_font_ascii'),
+                        'dftx_bold': mapped.get('dftx_bold'),
+                        'dftx_italic': mapped.get('dftx_italic'),
+                        'dftx_underline': mapped.get('dftx_underline'),
+                    }
+            except Exception as exc:
+                logger.warning("Failed prefetch dokumen_format_text: %s", exc)
+
+        if dfp_ids:
+            try:
+                rows = db_session.execute(
+                    text(
+                        "SELECT dfp_id, dfp_p_style_id FROM dokumen_format_paragraf "
+                        "WHERE dfp_id IN :ids"
+                    ),
+                    {'ids': tuple(dfp_ids)}
+                ).fetchall()
+                for row in rows:
+                    mapped = self._row_to_mapping(row)
+                    row_id = self._safe_int(mapped.get('dfp_id'))
+                    if row_id is None:
+                        continue
+                    cache['paragraph'][row_id] = {
+                        'dfp_p_style_id': mapped.get('dfp_p_style_id'),
+                    }
+            except Exception as exc:
+                logger.warning("Failed prefetch dokumen_format_paragraf: %s", exc)
+
+        return cache
+
+    def _extract_openxml_style_hints(
+        self,
+        json_tree,
+        text_format_cache=None,
+        paragraph_format_cache=None
+    ):
+        json_fonts, json_styles = self._extract_style_hints_from_json_tree(json_tree)
+        dftx_ids, dfp_ids = self._collect_format_ids(json_tree)
+        format_fonts, format_styles = self._extract_style_hints_from_format_ids(
+            dftx_ids,
+            dfp_ids,
+            text_format_cache=text_format_cache,
+            paragraph_format_cache=paragraph_format_cache
+        )
+
+        font_families = sorted(json_fonts | format_fonts)
+        style_ids = sorted(json_styles | format_styles)
 
         is_code_font = any(
             any(marker in font_name for marker in self.CODE_FONT_MARKERS)
@@ -162,8 +350,8 @@ class AlignmentOpenXmlMixin:
         )
 
         return {
-            'font_families': sorted(font_families),
-            'style_ids': sorted(style_ids),
+            'font_families': font_families,
+            'style_ids': style_ids,
             'is_code_font': is_code_font,
             'is_code_style': is_code_style,
             'is_code_like_openxml': bool(is_code_font or is_code_style),
@@ -330,25 +518,30 @@ class AlignmentOpenXmlMixin:
             'ordered_items': ordered_items
         }
 
-    def _build_openxml_units(self, elements, page_seq_range=None):
+    def _build_openxml_units(self, elements, page_seq_range=None, db_session=None, format_cache=None):
         units = []
         table_debug = []
         global_image_counter = 0
+        active_format_cache = format_cache
+        if active_format_cache is None:
+            active_format_cache = self._prefetch_format_cache(
+                db_session,
+                elements,
+                page_seq_range=page_seq_range
+            )
+        text_format_cache = active_format_cache.get('text', {})
+        paragraph_format_cache = active_format_cache.get('paragraph', {})
 
         for elem in elements:
-            # CRITICAL: Parse JSON tree from string (stored as TEXT in database)
-            json_tree = elem.delemen_json_tree
-            if isinstance(json_tree, str):
-                try:
-                    import json
-                    json_tree = json.loads(json_tree)
-                except:
-                    json_tree = {}
-            elif json_tree is None:
-                json_tree = {}
+            json_tree = self._parse_json_tree(elem.delemen_json_tree)
 
             elem_has_shape = self._has_shape_content(json_tree)
-            style_hints = self._extract_openxml_style_hints(json_tree, elem.delemen_xml)
+            style_hints = self._extract_openxml_style_hints(
+                json_tree,
+                text_format_cache=text_format_cache,
+                paragraph_format_cache=paragraph_format_cache
+            )
+            is_openxml_chart = self._is_openxml_chart_element(json_tree)
 
             if self._is_table_element(elem.delemen_type):
                 cells = self._extract_table_cells(json_tree)
@@ -382,6 +575,7 @@ class AlignmentOpenXmlMixin:
                             'is_code_font': style_hints.get('is_code_font', False),
                             'is_code_style': style_hints.get('is_code_style', False),
                             'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                            'is_openxml_chart': is_openxml_chart,
                         })
                 elif elem_has_shape:
                     table_info['action'] = 'created shape placeholder'
@@ -402,6 +596,7 @@ class AlignmentOpenXmlMixin:
                         'is_code_font': style_hints.get('is_code_font', False),
                         'is_code_style': style_hints.get('is_code_style', False),
                         'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                        'is_openxml_chart': is_openxml_chart,
                     })
                 table_debug.append(table_info)
             else:
@@ -429,6 +624,7 @@ class AlignmentOpenXmlMixin:
                                 'is_code_font': style_hints.get('is_code_font', False),
                                 'is_code_style': style_hints.get('is_code_style', False),
                                 'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                                'is_openxml_chart': is_openxml_chart,
                             })
                         elif item['type'] == 'text' and not text_unit_created:
                             if content['text_only']:
@@ -447,6 +643,7 @@ class AlignmentOpenXmlMixin:
                                     'is_code_font': style_hints.get('is_code_font', False),
                                     'is_code_style': style_hints.get('is_code_style', False),
                                     'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                                    'is_openxml_chart': is_openxml_chart,
                                 })
                                 text_unit_created = True
                 else:
@@ -465,6 +662,7 @@ class AlignmentOpenXmlMixin:
                         'is_code_font': style_hints.get('is_code_font', False),
                         'is_code_style': style_hints.get('is_code_style', False),
                         'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                        'is_openxml_chart': is_openxml_chart,
                     })
         return units, table_debug
 
@@ -485,6 +683,7 @@ class AlignmentOpenXmlMixin:
                 'is_code_font': all_units[i].get('is_code_font', False),
                 'is_code_style': all_units[i].get('is_code_style', False),
                 'is_code_like_openxml': all_units[i].get('is_code_like_openxml', False),
+                'is_openxml_chart': all_units[i].get('is_openxml_chart', False),
             }
             for i in indices
         ]
