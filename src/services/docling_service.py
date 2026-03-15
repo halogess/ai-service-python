@@ -60,39 +60,47 @@ class DoclingService:
 
             # Helper to process items
             def process_item(item, label_override=None):
-                if hasattr(item, 'prov') and item.prov:
-                    prov = item.prov[0] if isinstance(item.prov, list) else item.prov
-                    if hasattr(prov, 'page_no') and hasattr(prov, 'bbox') and prov.bbox:
-                        page = prov.page_no
-                        if page < 1 or page > total_pages:
-                            return
+                provs = getattr(item, 'prov', None)
+                if not provs:
+                    return
 
-                        bbox = prov.bbox
-                        ph = page_heights.get(page, 842)
-                        y_top = ph - bbox.t
-                        y_bottom = ph - bbox.b
+                if not isinstance(provs, list):
+                    provs = [provs]
 
-                        label = label_override
-                        if not label:
-                            label = str(item.label).split('.')[-1].lower() if hasattr(item, 'label') else 'text'
+                label = label_override
+                if not label:
+                    label = str(item.label).split('.')[-1].lower() if hasattr(item, 'label') else 'text'
 
-                        text_content = ''
-                        if label == 'table':
-                            text_content = '[Table]'
-                        elif label == 'picture':
-                            text_content = '[Picture]'
-                        elif label == 'formula':
-                            text_content = item.text if hasattr(item, 'text') else '[Formula]'
-                        else:
-                            text_content = item.text if hasattr(item, 'text') else ''
+                text_content = ''
+                if label == 'table':
+                    text_content = '[Table]'
+                elif label == 'picture':
+                    text_content = '[Picture]'
+                elif label == 'formula':
+                    text_content = item.text if hasattr(item, 'text') else '[Formula]'
+                else:
+                    text_content = item.text if hasattr(item, 'text') else ''
 
-                        predictions_by_page[str(page)].append({
-                            'text': text_content,
-                            'bbox': [bbox.l, y_top, bbox.r, y_bottom],
-                            'label': label,
-                            'confidence': 1.0,
-                            'source': 'docling'
-                        })
+                for prov in provs:
+                    if not (hasattr(prov, 'page_no') and hasattr(prov, 'bbox') and prov.bbox):
+                        continue
+
+                    page = prov.page_no
+                    if page < 1 or page > total_pages:
+                        continue
+
+                    bbox = prov.bbox
+                    ph = page_heights.get(page, 842)
+                    y_top = ph - bbox.t
+                    y_bottom = ph - bbox.b
+
+                    predictions_by_page[str(page)].append({
+                        'text': text_content,
+                        'bbox': [bbox.l, y_top, bbox.r, y_bottom],
+                        'label': label,
+                        'confidence': 1.0,
+                        'source': 'docling'
+                    })
 
             # Extract from texts
             for text in docling_doc.texts:

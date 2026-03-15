@@ -1,9 +1,270 @@
+from copy import deepcopy
 import os
 import re
 
 
 class AlignmentPostprocessMixin:
     MARKER_ONLY_TEXT_RE = re.compile(r'^\s*\d+(?:\.\d+)*\s*[:.)]?\s*$')
+
+    @staticmethod
+    def _read_positive_int_env(env_name, default_value):
+        value = os.getenv(env_name)
+        if value is None:
+            return default_value
+        try:
+            parsed = int(str(value).strip())
+            return parsed if parsed > 0 else default_value
+        except (TypeError, ValueError):
+            return default_value
+
+    @staticmethod
+    def _read_float_env(env_name, default_value, min_value=None, max_value=None):
+        value = os.getenv(env_name)
+        if value is None:
+            return default_value
+        try:
+            parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            return default_value
+        if min_value is not None:
+            parsed = max(min_value, parsed)
+        if max_value is not None:
+            parsed = min(max_value, parsed)
+        return parsed
+
+    def _is_paragraph_like_alignment(self, alignment):
+        if not alignment or alignment.get('is_table'):
+            return False
+        element_type = str(alignment.get('element_type') or '').strip().lower()
+        if not element_type:
+            return False
+        if any(marker in element_type for marker in ('table', 'image', 'picture', 'caption', 'chart')):
+            return False
+        if 'paragraph' in element_type:
+            return True
+        return element_type in {
+            'text',
+            'p',
+            'list_item',
+            'listitem',
+            'title',
+            'subtitle',
+            'heading',
+            'section_header',
+        }
+
+    def _paragraph_text_len(self, alignment):
+        if not alignment:
+            return 0
+        return len(self._normalize_text(alignment.get('element_text') or ''))
+
+    def _paragraph_gap_threshold(self, alignment, units):
+        threshold = self.MATCHED_UNIT_MAX_ITEM_GAP
+        if not self._is_paragraph_like_alignment(alignment):
+            return threshold
+
+        threshold = max(
+            threshold,
+            self._read_positive_int_env('ALIGNMENT_PARAGRAPH_MAX_ITEM_GAP', 24)
+        )
+        text_len = self._paragraph_text_len(alignment)
+        if text_len >= self._read_positive_int_env('ALIGNMENT_PARAGRAPH_LONG_TEXT_LEN', 160) or len(units or []) >= 6:
+            threshold = max(
+                threshold,
+                self._read_positive_int_env('ALIGNMENT_PARAGRAPH_LONG_MAX_ITEM_GAP', 36)
+            )
+        return threshold
+
+    def _should_relax_gap_filter(self, alignment, units):
+        if not self._is_paragraph_like_alignment(alignment):
+            return False
+        text_len = self._paragraph_text_len(alignment)
+        min_units = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_RELAX_MIN_UNITS', 5)
+        min_text_len = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_RELAX_TEXT_LEN', 100)
+        return len(units or []) >= min_units or text_len >= min_text_len
+
+    def _build_pdf_lookup_maps(self, pdf_units):
+        pdf_idx_by_unit_id = {
+            unit.get('unit_id'): idx
+            for idx, unit in enumerate(pdf_units or [])
+            if unit.get('unit_id')
+        }
+        pdf_idx_by_item_idx = {}
+        pdf_idx_by_bbox = {}
+        for idx, unit in enumerate(pdf_units or []):
+            item_idx = unit.get('item_idx')
+            if item_idx is not None:
+                pdf_idx_by_item_idx.setdefault(item_idx, []).append(idx)
+            bbox = unit.get('bbox')
+            if bbox and len(bbox) >= 4:
+                pdf_idx_by_bbox.setdefault(tuple(bbox), []).append(idx)
+        return pdf_idx_by_unit_id, pdf_idx_by_item_idx, pdf_idx_by_bbox
+
+    def _resolve_unit_pdf_index(self, unit, pdf_idx_by_unit_id, pdf_idx_by_item_idx, pdf_idx_by_bbox):
+        unit_id = unit.get('pdf_unit_id') or unit.get('unit_id')
+        if unit_id and unit_id in pdf_idx_by_unit_id:
+            return pdf_idx_by_unit_id[unit_id]
+
+        item_idx = unit.get('item_idx')
+        if item_idx is not None:
+            matches = pdf_idx_by_item_idx.get(item_idx) or []
+            if len(matches) == 1:
+                return matches[0]
+
+        bbox = unit.get('bbox')
+        if bbox and len(bbox) >= 4:
+            matches = pdf_idx_by_bbox.get(tuple(bbox)) or []
+            if len(matches) == 1:
+                return matches[0]
+        return None
+
+    def _paragraph_match_stats(self, alignment, units):
+        matched_chars = sum(unit.get('matched_count') or 0 for unit in units or [])
+        norm_len = len(self._normalize_text((alignment or {}).get('element_text') or ''))
+        ratio = (matched_chars / norm_len) if norm_len > 0 else 0.0
+        return matched_chars, ratio, norm_len
+
+    def _paragraph_rescue_conflicts(self, candidate_alignment, alignments):
+        candidate_bbox = candidate_alignment.get('merged_bbox')
+        if not candidate_bbox or len(candidate_bbox) < 4:
+            return True
+
+        candidate_element_id = candidate_alignment.get('element_id')
+        candidate_sequence = self._get_alignment_sequence(candidate_alignment)
+        for alignment in alignments or []:
+            if alignment.get('is_table') or alignment.get('is_image_part'):
+                continue
+            if (
+                candidate_element_id is not None and
+                alignment.get('element_id') is not None and
+                alignment.get('element_id') == candidate_element_id
+            ):
+                return True
+
+            bbox = alignment.get('merged_bbox')
+            if not bbox or len(bbox) < 4:
+                continue
+            overlap = self._bbox_y_overlap_ratio(candidate_bbox, bbox)
+            if overlap < 0.8:
+                continue
+
+            sequence_delta = abs(self._get_alignment_sequence(alignment) - candidate_sequence)
+            if sequence_delta <= 1:
+                if self._is_bbox_fully_contained(candidate_bbox, bbox, tolerance=4):
+                    return True
+                if self._is_bbox_fully_contained(bbox, candidate_bbox, tolerance=4):
+                    return True
+        return False
+
+    def _rescue_paragraph_alignments(self, rescue_candidates, alignments, unaligned_pdf_indices, pdf_units):
+        if not rescue_candidates or not unaligned_pdf_indices:
+            return alignments, unaligned_pdf_indices, []
+
+        pdf_idx_by_unit_id, pdf_idx_by_item_idx, pdf_idx_by_bbox = self._build_pdf_lookup_maps(pdf_units)
+        unaligned_set = set(unaligned_pdf_indices or [])
+        existing_element_ids = {
+            alignment.get('element_id')
+            for alignment in alignments or []
+            if alignment.get('element_id') is not None
+        }
+
+        min_units = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_RESCUE_MIN_UNITS', 2)
+        min_chars = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_RESCUE_MIN_MATCH_CHARS', 18)
+        min_ratio = self._read_float_env(
+            'ALIGNMENT_PARAGRAPH_RESCUE_MIN_MATCH_RATIO',
+            0.05,
+            min_value=0.0,
+            max_value=1.0
+        )
+        min_availability_ratio = self._read_float_env(
+            'ALIGNMENT_PARAGRAPH_RESCUE_MIN_AVAILABILITY_RATIO',
+            0.6,
+            min_value=0.0,
+            max_value=1.0
+        )
+        long_text_len = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_LONG_TEXT_LEN', 160)
+
+        rescue_debug = []
+        ordered_candidates = sorted(
+            rescue_candidates,
+            key=lambda alignment: (
+                self._get_alignment_sequence(alignment),
+                self._get_alignment_min_item_idx(alignment) or 2**31 - 1
+            )
+        )
+
+        for candidate in ordered_candidates:
+            if not self._is_paragraph_like_alignment(candidate):
+                continue
+
+            element_id = candidate.get('element_id')
+            if element_id is not None and element_id in existing_element_ids:
+                continue
+
+            candidate_units = candidate.get('matched_pdf_units', []) or []
+            if len(candidate_units) < min_units:
+                continue
+
+            rescued_units = []
+            rescued_indices = []
+            seen_indices = set()
+            for unit in candidate_units:
+                pdf_idx = self._resolve_unit_pdf_index(
+                    unit,
+                    pdf_idx_by_unit_id,
+                    pdf_idx_by_item_idx,
+                    pdf_idx_by_bbox
+                )
+                if pdf_idx is None or pdf_idx not in unaligned_set or pdf_idx in seen_indices:
+                    continue
+                rescued_units.append(deepcopy(unit))
+                rescued_indices.append(pdf_idx)
+                seen_indices.add(pdf_idx)
+
+            if len(rescued_units) < min_units:
+                continue
+
+            availability_ratio = len(rescued_units) / max(1, len(candidate_units))
+            if (
+                availability_ratio < min_availability_ratio and
+                self._paragraph_text_len(candidate) < long_text_len
+            ):
+                continue
+
+            rescued_alignment = deepcopy(candidate)
+            rescued_alignment['matched_pdf_units'] = sorted(
+                rescued_units,
+                key=lambda unit: unit.get('item_idx', -1)
+            )
+            self._recompute_alignment_bboxes(rescued_alignment)
+            if self._paragraph_rescue_conflicts(rescued_alignment, alignments):
+                continue
+
+            matched_chars, ratio, norm_len = self._paragraph_match_stats(
+                rescued_alignment,
+                rescued_alignment.get('matched_pdf_units', [])
+            )
+            if norm_len > 0 and matched_chars < min_chars and ratio < min_ratio:
+                continue
+
+            alignments.append(rescued_alignment)
+            if element_id is not None:
+                existing_element_ids.add(element_id)
+            for pdf_idx in rescued_indices:
+                unaligned_set.discard(pdf_idx)
+
+            rescue_debug.append({
+                'element_id': element_id,
+                'element_sequence': rescued_alignment.get('element_sequence'),
+                'rescued_units': len(rescued_indices),
+                'availability_ratio': availability_ratio,
+                'matched_chars': matched_chars,
+                'match_ratio': ratio,
+            })
+
+        if rescue_debug:
+            alignments.sort(key=lambda alignment: alignment.get('element_sequence') or 0)
+        return alignments, sorted(unaligned_set), rescue_debug
 
     def _matched_unit_key(self, unit):
         if unit.get('pdf_unit_id') is not None:
@@ -239,7 +500,7 @@ class AlignmentPostprocessMixin:
             if unit_id and unit_id in pdf_idx_by_unit_id:
                 unaligned_set.add(pdf_idx_by_unit_id[unit_id])
 
-    def _filter_units_by_item_gap(self, units):
+    def _filter_units_by_item_gap(self, units, alignment=None):
         if not units or len(units) < 2:
             return units, [], False
 
@@ -248,6 +509,7 @@ class AlignmentPostprocessMixin:
         if len(item_indices) < 2:
             return units_sorted, [], False
 
+        max_item_gap = self._paragraph_gap_threshold(alignment, units_sorted)
         clusters = []
         cluster = [units_sorted[0]]
         prev_idx = units_sorted[0].get('item_idx')
@@ -255,7 +517,7 @@ class AlignmentPostprocessMixin:
             idx = unit.get('item_idx')
             if idx is None or prev_idx is None:
                 cluster.append(unit)
-            elif (idx - prev_idx) <= self.MATCHED_UNIT_MAX_ITEM_GAP:
+            elif (idx - prev_idx) <= max_item_gap:
                 cluster.append(unit)
             else:
                 clusters.append(cluster)
@@ -276,6 +538,38 @@ class AlignmentPostprocessMixin:
             return (score, len(items))
 
         best_cluster = max(clusters, key=cluster_score)
+        if self._is_paragraph_like_alignment(alignment):
+            keep_ratio = self._read_float_env(
+                'ALIGNMENT_PARAGRAPH_SECONDARY_CLUSTER_RATIO',
+                0.35,
+                min_value=0.0,
+                max_value=1.0
+            )
+            max_clusters = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_MAX_CLUSTERS_TO_KEEP', 4)
+            if len(clusters) <= max_clusters:
+                best_score_value = cluster_score(best_cluster)[0] or 1
+                min_cluster_size = self._read_positive_int_env(
+                    'ALIGNMENT_PARAGRAPH_SECONDARY_CLUSTER_MIN_SIZE',
+                    2
+                )
+                kept_clusters = []
+                for cluster_items in clusters:
+                    cluster_value, cluster_len = cluster_score(cluster_items)
+                    if cluster_items is best_cluster:
+                        kept_clusters.append(cluster_items)
+                        continue
+                    if cluster_len < min_cluster_size:
+                        continue
+                    if cluster_value >= (best_score_value * keep_ratio):
+                        kept_clusters.append(cluster_items)
+                if len(kept_clusters) > 1:
+                    kept_units = sorted(
+                        [unit for cluster_items in kept_clusters for unit in cluster_items],
+                        key=lambda u: u.get('item_idx', -1)
+                    )
+                    removed = [u for u in units_sorted if u not in kept_units]
+                    return kept_units, removed, False
+
         removed = [u for u in units_sorted if u not in best_cluster]
 
         if len(best_cluster) < self.MATCHED_UNIT_MIN_CLUSTER_SIZE:
@@ -315,7 +609,12 @@ class AlignmentPostprocessMixin:
                 filtered.append(alignment)
             else:
                 units = alignment.get('matched_pdf_units', [])
-                kept, removed, drop = self._filter_units_by_item_gap(units)
+                if self._should_relax_gap_filter(alignment, units):
+                    alignment['matched_pdf_units'] = sorted(units, key=lambda u: u.get('item_idx', -1))
+                    self._recompute_alignment_bboxes(alignment)
+                    filtered.append(alignment)
+                    continue
+                kept, removed, drop = self._filter_units_by_item_gap(units, alignment=alignment)
                 if drop:
                     self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
                     continue
@@ -393,7 +692,24 @@ class AlignmentPostprocessMixin:
                 if norm_len == 0:
                     filtered.append(alignment)
                     continue
-                if matched_chars < min_chars and ratio < min_ratio:
+                local_min_chars = min_chars
+                local_min_ratio = min_ratio
+                if self._is_paragraph_like_alignment(alignment) and len(units) >= 2:
+                    if norm_len >= self._read_positive_int_env('ALIGNMENT_PARAGRAPH_RELAX_TEXT_LEN', 100):
+                        local_min_chars = min(
+                            min_chars,
+                            self._read_positive_int_env('ALIGNMENT_PARAGRAPH_MIN_MATCH_CHARS', 4)
+                        )
+                        local_min_ratio = min(
+                            min_ratio,
+                            self._read_float_env(
+                                'ALIGNMENT_PARAGRAPH_MIN_MATCH_RATIO',
+                                0.08,
+                                min_value=0.0,
+                                max_value=1.0
+                            )
+                        )
+                if matched_chars < local_min_chars and ratio < local_min_ratio:
                     self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
                     continue
                 filtered.append(alignment)

@@ -1,24 +1,11 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
 venv/
-env/
-ENV/
-*.egg-info/
-dist/
-build/
 
 # Environment
 .env
 .env.local
-
-# Models (root level only, not src/models)
-/models/
-*.safetensors
-before/src/models/layoutlmv3/
 
 # IDE
 .vscode/
@@ -26,13 +13,26 @@ before/src/models/layoutlmv3/
 *.swp
 *.swo
 
-# Logs
-#*.log
-# logs/
-
 # OS
 .DS_Store
 Thumbs.db
 
-# Docker
-*.pid
+# Runtime artifacts
+.pytest_cache/
+/logs/
+/result/
+/test_output_bab2/
+/visualization_output_local/
+/gap_analysis.log
+/page_*_fusion_data*.json
+/test_alignment_output.png
+/test_local_output.txt
+/test_output*.txt
+/trace.txt
+
+# Generated src artifacts
+/src/logs/
+/src/reports/
+/src/benchmark/
+/src/visualization_output/
+/src/gap_analysis.log

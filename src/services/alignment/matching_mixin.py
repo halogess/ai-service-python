@@ -1,11 +1,928 @@
 import difflib
 import os
 import re
+from copy import deepcopy
 from datetime import datetime
 
 
 class AlignmentMatchingMixin:
     MARKER_ONLY_TEXT_RE = re.compile(r'^\s*\d+(?:\.\d+)*\s*[:.)]?\s*$')
+
+    @staticmethod
+    def _is_env_enabled_default_true(env_name):
+        value = os.getenv(env_name)
+        if value is None:
+            return True
+        return str(value).strip().lower() not in ("0", "false", "no", "off")
+
+    @staticmethod
+    def _read_positive_int_env(env_name, default_value):
+        value = os.getenv(env_name)
+        if value is None:
+            return default_value
+        try:
+            parsed = int(str(value).strip())
+            return parsed if parsed > 0 else default_value
+        except (TypeError, ValueError):
+            return default_value
+
+    @staticmethod
+    def _read_float_env(env_name, default_value, min_value=None, max_value=None):
+        value = os.getenv(env_name)
+        if value is None:
+            return default_value
+        try:
+            parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            return default_value
+        if min_value is not None:
+            parsed = max(min_value, parsed)
+        if max_value is not None:
+            parsed = min(max_value, parsed)
+        return parsed
+
+    @staticmethod
+    def _collect_matched_pdf_unit_keys(alignments):
+        keys = set()
+
+        def add_unit(unit):
+            if not isinstance(unit, dict):
+                return
+            item_idx = unit.get('item_idx')
+            if item_idx is not None:
+                keys.add(('item_idx', item_idx))
+                return
+            pdf_unit_id = unit.get('pdf_unit_id') or unit.get('unit_id')
+            if pdf_unit_id:
+                keys.add(('pdf_unit_id', str(pdf_unit_id)))
+
+        for alignment in alignments or []:
+            if alignment.get('is_table') and alignment.get('cells'):
+                for cell in alignment.get('cells') or []:
+                    for matched_unit in cell.get('matched_pdf_units') or []:
+                        add_unit(matched_unit)
+            else:
+                for matched_unit in alignment.get('matched_pdf_units') or []:
+                    add_unit(matched_unit)
+        return keys
+
+    @classmethod
+    def _count_matched_pdf_units(cls, alignments):
+        return len(cls._collect_matched_pdf_unit_keys(alignments))
+
+    @staticmethod
+    def _collect_matched_openxml_indices(alignments):
+        indices = set()
+
+        def add_index(value):
+            if value is None:
+                return
+            try:
+                indices.add(int(value))
+            except (TypeError, ValueError):
+                return
+
+        for alignment in alignments or []:
+            add_index(alignment.get('openxml_idx'))
+            for openxml_idx in alignment.get('openxml_indices') or []:
+                add_index(openxml_idx)
+            if alignment.get('is_table') and alignment.get('cells'):
+                for cell in alignment.get('cells') or []:
+                    add_index(cell.get('openxml_idx'))
+        return indices
+
+    @classmethod
+    def _count_matched_openxml_units(cls, alignments):
+        return len(cls._collect_matched_openxml_indices(alignments))
+
+    @classmethod
+    def _compute_match_coverage(cls, alignments, total_pdf_units):
+        if total_pdf_units <= 0:
+            return 0.0
+        matched = cls._count_matched_pdf_units(alignments)
+        return min(1.0, matched / total_pdf_units)
+
+    @classmethod
+    def _compute_openxml_diversity(cls, alignments):
+        matched_pdf_units = cls._count_matched_pdf_units(alignments)
+        if matched_pdf_units <= 0:
+            return 0.0
+        matched_openxml_units = cls._count_matched_openxml_units(alignments)
+        return matched_openxml_units / matched_pdf_units
+
+    @staticmethod
+    def _try_parse_int(value):
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _normalize_pointer_text(text):
+        if not text:
+            return ''
+        return re.sub(r'\s+', '', str(text).strip().lower())
+
+    @classmethod
+    def _estimate_unit_match_chars(cls, unit):
+        if not isinstance(unit, dict):
+            return 0
+        matched_count = cls._try_parse_int(unit.get('matched_count'))
+        if matched_count is not None and matched_count > 0:
+            return matched_count
+        normalized_text = cls._normalize_pointer_text(
+            unit.get('text') or unit.get('text_normalized') or unit.get('normalized_text')
+        )
+        if normalized_text:
+            return len(normalized_text)
+        return 1
+
+    @classmethod
+    def _collect_alignment_openxml_indices(cls, alignment, include_table_cells=True):
+        indices = []
+        if not isinstance(alignment, dict):
+            return indices
+
+        openxml_idx = cls._try_parse_int(alignment.get('openxml_idx'))
+        if openxml_idx is not None:
+            indices.append(openxml_idx)
+
+        for value in alignment.get('openxml_indices') or []:
+            parsed = cls._try_parse_int(value)
+            if parsed is not None:
+                indices.append(parsed)
+
+        if include_table_cells and alignment.get('is_table') and alignment.get('cells'):
+            for cell in alignment.get('cells') or []:
+                parsed = cls._try_parse_int((cell or {}).get('openxml_idx'))
+                if parsed is not None:
+                    indices.append(parsed)
+
+        return sorted(set(indices))
+
+    @classmethod
+    def _compute_alignment_support_metrics(cls, alignment):
+        if not isinstance(alignment, dict):
+            return {
+                'matched_chars': 0,
+                'match_ratio': 0.0,
+                'unit_count': 0,
+            }
+
+        matched_units = []
+        if alignment.get('is_table') and alignment.get('cells'):
+            for cell in alignment.get('cells') or []:
+                matched_units.extend((cell or {}).get('matched_pdf_units') or [])
+        else:
+            matched_units = list(alignment.get('matched_pdf_units') or [])
+
+        matched_chars = sum(cls._estimate_unit_match_chars(unit) for unit in matched_units)
+        element_text = cls._normalize_pointer_text(alignment.get('element_text') or alignment.get('text'))
+        if not element_text:
+            element_text = ''.join(
+                cls._normalize_pointer_text((unit or {}).get('text'))
+                for unit in matched_units
+                if isinstance(unit, dict)
+            )
+        norm_len = len(element_text)
+        match_ratio = (matched_chars / norm_len) if norm_len > 0 else 0.0
+        return {
+            'matched_chars': matched_chars,
+            'match_ratio': match_ratio,
+            'unit_count': len(matched_units),
+        }
+
+    @classmethod
+    def _compute_alignment_max_openxml_idx(cls, alignments):
+        max_idx = None
+        for alignment in alignments or []:
+            for idx in cls._collect_alignment_openxml_indices(alignment, include_table_cells=True):
+                max_idx = idx if max_idx is None else max(max_idx, idx)
+        return max_idx
+
+    @classmethod
+    def _extract_cross_page_skip_metrics(cls, traversal_log, total_skip_count=None):
+        skip_entries = []
+        early_cross_page_skip_count = 0
+        for step_idx, entry in enumerate(traversal_log or []):
+            if entry.get('action') != 'SKIP':
+                continue
+            if not str(entry.get('reason') or '').startswith('cross_page_backward'):
+                continue
+            openxml_idx = cls._try_parse_int(entry.get('openxml_unit'))
+            if openxml_idx is None or openxml_idx < 0:
+                continue
+            skip_entries.append(openxml_idx)
+            if step_idx < 128:
+                early_cross_page_skip_count += 1
+
+        if not skip_entries:
+            return {
+                'cross_page_backward_skip_count': 0,
+                'cross_page_backward_skip_ratio': 0.0,
+                'first_cross_page_skip_openxml_idx': None,
+                'min_cross_page_skip_openxml_idx': None,
+                'median_cross_page_skip_openxml_idx': None,
+                'early_cross_page_skip_count': 0,
+                'early_cross_page_skip_ratio': 0.0,
+            }
+
+        ordered = sorted(skip_entries)
+        midpoint = len(ordered) // 2
+        if len(ordered) % 2 == 1:
+            median_skip = ordered[midpoint]
+        else:
+            median_skip = int(round((ordered[midpoint - 1] + ordered[midpoint]) / 2))
+
+        total_skips = len(skip_entries)
+        ratio_denominator = total_skip_count if total_skip_count is not None else total_skips
+        return {
+            'cross_page_backward_skip_count': total_skips,
+            'cross_page_backward_skip_ratio': (
+                total_skips / ratio_denominator if ratio_denominator else 0.0
+            ),
+            'first_cross_page_skip_openxml_idx': skip_entries[0],
+            'min_cross_page_skip_openxml_idx': ordered[0],
+            'median_cross_page_skip_openxml_idx': median_skip,
+            'early_cross_page_skip_count': early_cross_page_skip_count,
+            'early_cross_page_skip_ratio': (
+                early_cross_page_skip_count / total_skips if total_skips > 0 else 0.0
+            ),
+        }
+
+    def _compute_stable_pass1_pointer(self, alignments, min_openxml_idx):
+        raw_max_openxml_idx = self._compute_alignment_max_openxml_idx(alignments)
+        cluster_gap = self._read_positive_int_env('ALIGNMENT_STABLE_POINTER_CLUSTER_GAP', 40)
+        min_match_chars = self._read_positive_int_env('ALIGNMENT_STABLE_POINTER_MIN_MATCH_CHARS', 12)
+        min_match_ratio = self._read_float_env(
+            'ALIGNMENT_STABLE_POINTER_MIN_MATCH_RATIO',
+            0.10,
+            min_value=0.0,
+            max_value=1.0
+        )
+
+        index_support = {}
+        for alignment in alignments or []:
+            if not isinstance(alignment, dict):
+                continue
+            if alignment.get('late_matched'):
+                continue
+            if alignment.get('is_synthetic_marker_repair'):
+                continue
+            if alignment.get('is_table') and alignment.get('cells'):
+                continue
+
+            support = self._compute_alignment_support_metrics(alignment)
+            if (
+                support['matched_chars'] < min_match_chars and
+                support['match_ratio'] < min_match_ratio
+            ):
+                continue
+
+            for idx in self._collect_alignment_openxml_indices(alignment, include_table_cells=False):
+                existing = index_support.get(idx)
+                candidate_support = (
+                    support['matched_chars'],
+                    support['unit_count'],
+                    support['match_ratio'],
+                )
+                if existing is None or candidate_support > existing['score']:
+                    index_support[idx] = {
+                        'score': candidate_support,
+                        'matched_chars': support['matched_chars'],
+                    }
+
+        if not index_support:
+            frozen_pointer = max(0, int(min_openxml_idx or 0))
+            return {
+                'source': 'frozen',
+                'cluster_min': None,
+                'cluster_max': frozen_pointer,
+                'cluster_size': 0,
+                'cluster_total_matched_chars': 0,
+                'raw_max_openxml_idx': raw_max_openxml_idx,
+                'max_openxml_idx': frozen_pointer,
+            }
+
+        sorted_indices = sorted(index_support)
+        clusters = []
+        current_cluster = [sorted_indices[0]]
+        for idx in sorted_indices[1:]:
+            if (idx - current_cluster[-1]) > cluster_gap:
+                clusters.append(current_cluster)
+                current_cluster = [idx]
+            else:
+                current_cluster.append(idx)
+        if current_cluster:
+            clusters.append(current_cluster)
+
+        def cluster_score(cluster_items):
+            cluster_min = min(cluster_items)
+            total_chars = sum(index_support[idx]['matched_chars'] for idx in cluster_items)
+            distance = abs(cluster_min - int(min_openxml_idx or 0))
+            return (
+                len(cluster_items),
+                total_chars,
+                -distance,
+            )
+
+        winner_cluster = max(clusters, key=cluster_score)
+        cluster_min = min(winner_cluster)
+        cluster_max = max(winner_cluster)
+        return {
+            'source': 'stable_cluster',
+            'cluster_min': cluster_min,
+            'cluster_max': cluster_max,
+            'cluster_size': len(winner_cluster),
+            'cluster_total_matched_chars': sum(index_support[idx]['matched_chars'] for idx in winner_cluster),
+            'raw_max_openxml_idx': raw_max_openxml_idx,
+            'max_openxml_idx': max(cluster_max, int(min_openxml_idx or 0)),
+        }
+
+    def _build_pass1_retry_candidates(
+        self,
+        base_min_openxml_idx,
+        initial_debug_info,
+        max_retries
+    ):
+        if max_retries <= 0:
+            return []
+
+        median_skip_idx = self._try_parse_int((initial_debug_info or {}).get('median_cross_page_skip_openxml_idx'))
+        min_skip_idx = self._try_parse_int((initial_debug_info or {}).get('min_cross_page_skip_openxml_idx'))
+        retry_values = []
+
+        for raw_candidate in (
+            median_skip_idx - 8 if median_skip_idx is not None else None,
+            min_skip_idx - 8 if min_skip_idx is not None else None,
+            base_min_openxml_idx - 120,
+            base_min_openxml_idx - 240,
+            0,
+        ):
+            candidate = self._try_parse_int(raw_candidate)
+            if candidate is None:
+                continue
+            candidate = max(0, candidate)
+            if candidate >= base_min_openxml_idx:
+                continue
+            if candidate in retry_values:
+                continue
+            retry_values.append(candidate)
+            if len(retry_values) >= max_retries:
+                break
+
+        return retry_values
+
+    @staticmethod
+    def _extract_anchor_tokens(text):
+        if not text:
+            return []
+        return [
+            token for token in re.findall(r'[a-z0-9]+', str(text).lower())
+            if len(token) >= 3
+        ]
+
+    def _is_pdf_anchor_candidate(self, unit):
+        if not isinstance(unit, dict):
+            return False
+        if unit.get('is_cell'):
+            return False
+        if unit.get('item_type') in {'table', 'hline_table', 'shape', 'image'}:
+            return False
+        text = self._normalize_pointer_text(unit.get('text_normalized') or unit.get('text'))
+        min_len = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MIN_ANCHOR_TEXT_LEN', 12)
+        return len(text) >= min_len
+
+    def _is_openxml_anchor_candidate(self, unit):
+        if not isinstance(unit, dict):
+            return False
+        if unit.get('is_cell'):
+            return False
+        if unit.get('elem_type') in {'table', 'grid_table'}:
+            return False
+        if unit.get('is_image_part'):
+            return False
+        text = self._normalize_pointer_text(unit.get('text_normalized') or unit.get('text'))
+        min_len = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MIN_ANCHOR_TEXT_LEN', 12)
+        if len(text) < min_len:
+            return False
+        return text != '[img]'
+
+    def _collect_pdf_anchor_blocks(self, pdf_units):
+        if not pdf_units:
+            return []
+
+        max_anchors = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MAX_ANCHORS', 8)
+        early_anchors = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_EARLY_ANCHORS', 3)
+        candidates = []
+        for local_idx, unit in enumerate(pdf_units):
+            if not self._is_pdf_anchor_candidate(unit):
+                continue
+            normalized_text = self._normalize_pointer_text(unit.get('text_normalized') or unit.get('text'))
+            candidates.append({
+                'local_idx': local_idx,
+                'item_idx': unit.get('item_idx'),
+                'item_type': unit.get('item_type'),
+                'text': unit.get('text') or '',
+                'text_normalized': normalized_text,
+                'tokens': self._extract_anchor_tokens(normalized_text),
+                'bbox': unit.get('bbox'),
+                'text_len': len(normalized_text),
+            })
+
+        if not candidates:
+            return []
+
+        selected = []
+        seen_local_idx = set()
+
+        for candidate in candidates[:early_anchors]:
+            selected.append(candidate)
+            seen_local_idx.add(candidate['local_idx'])
+            if len(selected) >= max_anchors:
+                return selected
+
+        for candidate in sorted(candidates, key=lambda item: (-item['text_len'], item['local_idx'])):
+            if candidate['local_idx'] in seen_local_idx:
+                continue
+            selected.append(candidate)
+            seen_local_idx.add(candidate['local_idx'])
+            if len(selected) >= max_anchors:
+                break
+
+        block_max_units = min(
+            3,
+            self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MAX_BLOCK_UNITS', 2)
+        )
+        block_candidates = []
+        block_seen = set()
+        for candidate in selected:
+            base_local_idx = candidate['local_idx']
+            for block_size in range(1, block_max_units + 1):
+                block_units = []
+                for offset in range(block_size):
+                    next_local_idx = base_local_idx + offset
+                    if next_local_idx >= len(pdf_units):
+                        break
+                    next_unit = pdf_units[next_local_idx]
+                    if not self._is_pdf_anchor_candidate(next_unit):
+                        break
+                    block_units.append(next_unit)
+
+                if len(block_units) != block_size:
+                    continue
+
+                key = (base_local_idx, block_size)
+                if key in block_seen:
+                    continue
+                block_seen.add(key)
+
+                block_text_parts = [str(unit.get('text') or '').strip() for unit in block_units if unit.get('text')]
+                block_text = ' '.join(part for part in block_text_parts if part).strip()
+                block_norm = self._normalize_pointer_text(block_text)
+                if not block_norm:
+                    continue
+
+                block_candidates.append({
+                    'local_idx': base_local_idx,
+                    'item_idx': block_units[0].get('item_idx'),
+                    'item_type': block_units[0].get('item_type'),
+                    'text': block_text,
+                    'text_normalized': block_norm,
+                    'tokens': self._extract_anchor_tokens(block_norm),
+                    'bbox': candidate.get('bbox'),
+                    'text_len': len(block_norm),
+                    'block_size': block_size,
+                })
+
+        block_candidates.sort(key=lambda item: (-item['block_size'], -item['text_len'], item['local_idx']))
+        return block_candidates[:max_anchors]
+
+    def _compose_openxml_anchor_block(self, openxml_units, start_idx, max_units=2, max_chars=400):
+        if not openxml_units or start_idx is None or start_idx < 0 or start_idx >= len(openxml_units):
+            return {'text': '', 'text_normalized': '', 'end_idx': start_idx}
+
+        text_parts = []
+        end_idx = start_idx
+        added_units = 0
+        for idx in range(start_idx, len(openxml_units)):
+            unit = openxml_units[idx]
+            if not self._is_openxml_anchor_candidate(unit):
+                if added_units > 0:
+                    break
+                continue
+            text = str(unit.get('text') or '').strip()
+            if text:
+                text_parts.append(text)
+            added_units += 1
+            end_idx = idx
+            if added_units >= max_units:
+                break
+            if sum(len(part) for part in text_parts) >= max_chars:
+                break
+
+        block_text = ' '.join(part for part in text_parts if part).strip()
+        block_norm = self._normalize_pointer_text(block_text)
+        return {
+            'text': block_text,
+            'text_normalized': block_norm,
+            'end_idx': end_idx,
+        }
+
+    def _score_anchor_similarity(self, pdf_text, openxml_text):
+        pdf_norm = self._normalize_pointer_text(pdf_text)
+        openxml_norm = self._normalize_pointer_text(openxml_text)
+        if not pdf_norm or not openxml_norm:
+            return 0.0
+
+        pdf_sample = pdf_norm[:320]
+        openxml_sample = openxml_norm[:320]
+        char_ratio = difflib.SequenceMatcher(None, pdf_sample, openxml_sample, autojunk=False).ratio()
+
+        pdf_tokens = set(self._extract_anchor_tokens(pdf_sample))
+        openxml_tokens = set(self._extract_anchor_tokens(openxml_sample))
+        token_overlap = 0.0
+        if pdf_tokens and openxml_tokens:
+            token_overlap = len(pdf_tokens & openxml_tokens) / max(1, min(len(pdf_tokens), len(openxml_tokens)))
+
+        containment_bonus = 0.0
+        if pdf_sample in openxml_sample or openxml_sample in pdf_sample:
+            containment_bonus = 0.10
+
+        return (char_ratio * 0.65) + (token_overlap * 0.35) + containment_bonus
+
+    @staticmethod
+    def _normalize_sequence_range(seq_range):
+        if not seq_range or len(seq_range) != 2:
+            return None
+        try:
+            seq_min = int(seq_range[0])
+            seq_max = int(seq_range[1])
+        except (TypeError, ValueError):
+            return None
+        if seq_min > seq_max:
+            seq_min, seq_max = seq_max, seq_min
+        return (seq_min, seq_max)
+
+    def _expand_sequence_range(self, seq_range, buffer_size):
+        normalized = self._normalize_sequence_range(seq_range)
+        if normalized is None:
+            return None
+        seq_min, seq_max = normalized
+        return (seq_min - int(buffer_size or 0), seq_max + int(buffer_size or 0))
+
+    def _collect_openxml_indices_for_sequence_range(self, openxml_units, seq_range):
+        normalized = self._normalize_sequence_range(seq_range)
+        if normalized is None:
+            return []
+        seq_min, seq_max = normalized
+        return [
+            idx for idx, unit in enumerate(openxml_units or [])
+            if unit.get('elem_seq') is not None and seq_min <= unit.get('elem_seq') <= seq_max
+        ]
+
+    def _select_sequence_local_openxml_indices(
+        self,
+        pdf_units,
+        openxml_units,
+        min_openxml_idx=0,
+        page_sequence_range=None
+    ):
+        total_openxml_units = len(openxml_units or [])
+        if total_openxml_units <= 0:
+            return {
+                'indices': [],
+                'source': 'empty_openxml',
+                'anchor_hits': [],
+                'anchor_hit_count': 0,
+                'anchor_count': 0,
+                'preferred_seq_range': None,
+                'selected_seq_range': None,
+                'search_floor': 0,
+            }
+
+        preferred_range = self._normalize_sequence_range(page_sequence_range)
+        preferred_span = 0
+        if preferred_range is not None:
+            preferred_span = max(1, preferred_range[1] - preferred_range[0])
+
+        seq_buffer = min(
+            self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MAX_SEQ_BUFFER', 160),
+            max(
+                self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MIN_SEQ_BUFFER', 18),
+                preferred_span // 2 if preferred_span > 0 else max(18, len(pdf_units or []) * 3)
+            )
+        )
+        expanded_preferred_range = self._expand_sequence_range(preferred_range, seq_buffer)
+        preferred_indices = self._collect_openxml_indices_for_sequence_range(openxml_units, expanded_preferred_range)
+        preferred_index_set = set(preferred_indices)
+
+        search_backtrack = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_BACKTRACK_BUFFER', 240)
+        search_floor = max(0, int(min_openxml_idx or 0) - search_backtrack)
+        pointer_bonus_window = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_POINTER_BONUS_WINDOW', 160)
+        preferred_bonus = self._read_float_env(
+            'ALIGNMENT_PAGE_LOCAL_PREFERRED_SEQ_BONUS',
+            0.12,
+            min_value=0.0,
+            max_value=1.0
+        )
+        outside_penalty = self._read_float_env(
+            'ALIGNMENT_PAGE_LOCAL_OUTSIDE_SEQ_PENALTY',
+            0.04,
+            min_value=0.0,
+            max_value=1.0
+        )
+        pointer_bonus = self._read_float_env(
+            'ALIGNMENT_PAGE_LOCAL_POINTER_BONUS',
+            0.05,
+            min_value=0.0,
+            max_value=1.0
+        )
+        anchor_score_threshold = self._read_float_env(
+            'ALIGNMENT_PAGE_LOCAL_MIN_ANCHOR_SCORE',
+            0.40,
+            min_value=0.0,
+            max_value=2.0
+        )
+
+        candidate_openxml_units = []
+        for idx, unit in enumerate(openxml_units):
+            if idx < search_floor and idx not in preferred_index_set:
+                continue
+            if not self._is_openxml_anchor_candidate(unit):
+                continue
+            candidate_openxml_units.append((idx, unit))
+
+        anchors = self._collect_pdf_anchor_blocks(pdf_units)
+        anchor_hits = []
+        openxml_block_units = min(
+            4,
+            max(
+                1,
+                self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_OPENXML_BLOCK_UNITS', 3)
+            )
+        )
+        for anchor in anchors:
+            best_hit = None
+            for openxml_idx, unit in candidate_openxml_units:
+                block_unit_limit = max(1, min(openxml_block_units, int(anchor.get('block_size') or 1) + 1))
+                openxml_block = self._compose_openxml_anchor_block(
+                    openxml_units,
+                    openxml_idx,
+                    max_units=block_unit_limit
+                )
+                base_score = self._score_anchor_similarity(
+                    anchor.get('text_normalized'),
+                    openxml_block.get('text_normalized')
+                )
+                if base_score <= 0:
+                    continue
+
+                seq = self._try_parse_int(unit.get('elem_seq'))
+                in_preferred_range = (
+                    expanded_preferred_range is not None and
+                    seq is not None and
+                    expanded_preferred_range[0] <= seq <= expanded_preferred_range[1]
+                )
+                score = base_score
+                if expanded_preferred_range is not None:
+                    score += preferred_bonus if in_preferred_range else (-outside_penalty)
+                if min_openxml_idx is not None and openxml_idx >= int(min_openxml_idx or 0):
+                    if openxml_idx <= int(min_openxml_idx or 0) + pointer_bonus_window:
+                        score += pointer_bonus
+
+                if score < anchor_score_threshold:
+                    continue
+
+                hit = {
+                    'pdf_local_idx': anchor.get('local_idx'),
+                    'pdf_item_idx': anchor.get('item_idx'),
+                    'openxml_idx': openxml_idx,
+                    'openxml_end_idx': openxml_block.get('end_idx'),
+                    'elem_seq': seq,
+                    'score': score,
+                    'in_preferred_range': in_preferred_range,
+                    'pdf_text': (anchor.get('text') or '')[:80],
+                    'openxml_text': (openxml_block.get('text') or unit.get('text') or '')[:80],
+                    'openxml_block_size': block_unit_limit,
+                }
+                if best_hit is None or hit['score'] > best_hit['score']:
+                    best_hit = hit
+
+            if best_hit is not None:
+                anchor_hits.append(best_hit)
+
+        selected_seq_range = None
+        selected_source = None
+        anchor_cluster_min_idx = None
+        anchor_cluster_max_idx = None
+
+        if anchor_hits:
+            cluster_gap = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_SEQ_CLUSTER_GAP', 24)
+            sortable_hits = sorted(
+                anchor_hits,
+                key=lambda hit: (
+                    hit['elem_seq'] if hit.get('elem_seq') is not None else 10 ** 9,
+                    hit['openxml_idx']
+                )
+            )
+            clusters = []
+            current_cluster = [sortable_hits[0]]
+            for hit in sortable_hits[1:]:
+                prev_hit = current_cluster[-1]
+                prev_seq = prev_hit.get('elem_seq')
+                hit_seq = hit.get('elem_seq')
+                same_cluster = False
+                if prev_seq is not None and hit_seq is not None:
+                    same_cluster = abs(hit_seq - prev_seq) <= cluster_gap
+                else:
+                    same_cluster = abs(hit.get('openxml_idx', 0) - prev_hit.get('openxml_idx', 0)) <= cluster_gap
+                if same_cluster:
+                    current_cluster.append(hit)
+                else:
+                    clusters.append(current_cluster)
+                    current_cluster = [hit]
+            if current_cluster:
+                clusters.append(current_cluster)
+
+            def cluster_score(cluster):
+                preferred_hits = sum(1 for hit in cluster if hit.get('in_preferred_range'))
+                min_distance = min(
+                    abs((hit.get('openxml_idx') or 0) - int(min_openxml_idx or 0))
+                    for hit in cluster
+                ) if cluster else 10 ** 9
+                return (
+                    round(sum(hit.get('score', 0.0) for hit in cluster), 6),
+                    len(cluster),
+                    preferred_hits,
+                    -min_distance,
+                )
+
+            winner_cluster = max(clusters, key=cluster_score)
+            seq_hits = [hit.get('elem_seq') for hit in winner_cluster if hit.get('elem_seq') is not None]
+            if seq_hits:
+                cluster_buffer = min(
+                    self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MAX_CLUSTER_SEQ_BUFFER', 96),
+                    max(
+                        self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_MIN_CLUSTER_SEQ_BUFFER', 12),
+                        preferred_span if preferred_span > 0 else len(anchors) * 6
+                    )
+                )
+                selected_seq_range = self._expand_sequence_range((min(seq_hits), max(seq_hits)), cluster_buffer)
+                selected_source = 'sequence_anchor_cluster'
+            anchor_cluster_min_idx = min(hit.get('openxml_idx') or 0 for hit in winner_cluster)
+            anchor_cluster_max_idx = max(
+                hit.get('openxml_end_idx')
+                if hit.get('openxml_end_idx') is not None
+                else (hit.get('openxml_idx') or 0)
+                for hit in winner_cluster
+            )
+
+        candidate_indices = []
+        if selected_seq_range is not None:
+            candidate_indices = self._collect_openxml_indices_for_sequence_range(openxml_units, selected_seq_range)
+        if not candidate_indices and preferred_indices:
+            candidate_indices = preferred_indices
+            selected_seq_range = expanded_preferred_range
+            selected_source = 'page_sequence_range'
+        if not candidate_indices:
+            if min_openxml_idx and min_openxml_idx > 0:
+                fallback_forward = self._read_positive_int_env('ALIGNMENT_PAGE_LOCAL_FALLBACK_FORWARD', 480)
+                start_idx = search_floor
+                end_idx = min(total_openxml_units - 1, max(int(min_openxml_idx or 0), start_idx) + fallback_forward)
+                candidate_indices = list(range(start_idx, end_idx + 1))
+                selected_source = 'pointer_local_fallback'
+            else:
+                candidate_indices = list(range(total_openxml_units))
+                selected_source = 'global_fallback'
+
+        candidate_indices = sorted(set(candidate_indices))
+        return {
+            'indices': candidate_indices,
+            'source': selected_source or 'global_fallback',
+            'anchor_hits': anchor_hits[:8],
+            'anchor_hit_count': len(anchor_hits),
+            'anchor_count': len(anchors),
+            'preferred_seq_range': expanded_preferred_range,
+            'selected_seq_range': selected_seq_range,
+            'search_floor': search_floor,
+            'anchor_cluster_min_idx': anchor_cluster_min_idx,
+            'anchor_cluster_max_idx': anchor_cluster_max_idx,
+        }
+
+    def _build_retry_page_sequence_range(
+        self,
+        initial_candidate,
+        page_sequence_range,
+        openxml_units,
+        pdf_units
+    ):
+        preferred_range = self._normalize_sequence_range(page_sequence_range)
+        observed_skip_idx = self._try_parse_int((initial_candidate or {}).get('median_cross_page_skip_openxml_idx'))
+        if observed_skip_idx is None:
+            observed_skip_idx = self._try_parse_int((initial_candidate or {}).get('min_cross_page_skip_openxml_idx'))
+        if observed_skip_idx is None:
+            observed_skip_idx = self._try_parse_int((initial_candidate or {}).get('first_cross_page_skip_openxml_idx'))
+
+        skip_seq = None
+        if observed_skip_idx is not None and 0 <= observed_skip_idx < len(openxml_units or []):
+            skip_seq = self._try_parse_int((openxml_units[observed_skip_idx] or {}).get('elem_seq'))
+
+        if skip_seq is None:
+            return preferred_range
+
+        preferred_span = 0
+        if preferred_range is not None:
+            preferred_span = max(1, preferred_range[1] - preferred_range[0])
+        retry_span = max(
+            self._read_positive_int_env('ALIGNMENT_RETRY_SEQUENCE_MIN_SPAN', 24),
+            preferred_span,
+            len(pdf_units or []) * 4
+        )
+        retry_buffer = min(
+            self._read_positive_int_env('ALIGNMENT_RETRY_SEQUENCE_MAX_BUFFER', 96),
+            max(
+                self._read_positive_int_env('ALIGNMENT_RETRY_SEQUENCE_MIN_BUFFER', 12),
+                retry_span // 3
+            )
+        )
+        half_span = max(12, retry_span // 2)
+        return (
+            skip_seq - half_span - retry_buffer,
+            skip_seq + half_span + retry_buffer,
+        )
+
+    def _compute_candidate_band_metrics(self, alignments, openxml_units, seq_range=None, idx_range=None):
+        normalized_seq_range = self._normalize_sequence_range(seq_range)
+        normalized_idx_range = self._normalize_sequence_range(idx_range)
+
+        total_alignments = 0
+        in_band_alignments = 0
+        total_chars = 0
+        in_band_chars = 0
+
+        for alignment in alignments or []:
+            indices = self._collect_alignment_openxml_indices(alignment, include_table_cells=True)
+            if not indices:
+                continue
+
+            support = self._compute_alignment_support_metrics(alignment)
+            matched_chars = int(support.get('matched_chars') or 0)
+            total_alignments += 1
+            total_chars += matched_chars
+
+            in_band = False
+            if normalized_seq_range is not None:
+                seq_min, seq_max = normalized_seq_range
+                for idx in indices:
+                    if idx < 0 or idx >= len(openxml_units or []):
+                        continue
+                    elem_seq = self._try_parse_int((openxml_units[idx] or {}).get('elem_seq'))
+                    if elem_seq is not None and seq_min <= elem_seq <= seq_max:
+                        in_band = True
+                        break
+
+            if not in_band and normalized_idx_range is not None:
+                idx_min, idx_max = normalized_idx_range
+                in_band = any(idx_min <= idx <= idx_max for idx in indices)
+
+            if in_band:
+                in_band_alignments += 1
+                in_band_chars += matched_chars
+
+        return {
+            'alignment_ratio': (in_band_alignments / total_alignments) if total_alignments else 0.0,
+            'char_ratio': (in_band_chars / total_chars) if total_chars else 0.0,
+            'alignment_count': in_band_alignments,
+            'total_alignment_count': total_alignments,
+        }
+
+    @staticmethod
+    def _score_pass1_candidate(candidate):
+        retry_lock_candidate = bool(candidate.get('retry_lock_candidate'))
+        skip_anchor_penalty = bool(candidate.get('skip_anchor_penalty'))
+        local_anchor_source = 1 if candidate.get('candidate_openxml_source') == 'sequence_anchor_cluster' else 0
+        anchor_hit_count = int(candidate.get('candidate_anchor_hit_count') or 0)
+        band_alignment_ratio = float(candidate.get('candidate_band_alignment_ratio') or 0.0)
+        band_char_ratio = float(candidate.get('candidate_band_char_ratio') or 0.0)
+        cpb_ratio = float(candidate.get('cross_page_backward_skip_ratio') or 0.0)
+        coverage = float(candidate.get('match_coverage') or 0.0)
+        openxml_diversity = float(candidate.get('openxml_diversity') or 0.0)
+        matched_pdf_units = int(candidate.get('matched_pdf_units') or 0)
+        return (
+            0 if retry_lock_candidate else 1,
+            0 if skip_anchor_penalty else 1,
+            -cpb_ratio,
+            coverage,
+            band_alignment_ratio,
+            band_char_ratio,
+            openxml_diversity,
+            matched_pdf_units,
+            local_anchor_source,
+            anchor_hit_count,
+        )
 
     def _perform_two_pass_alignment(
         self,
@@ -24,6 +941,299 @@ class AlignmentMatchingMixin:
             trace_context=trace_pass1,
             page_sequence_range=page_sequence_range
         )
+        p1_debug = dict(p1_debug or {})
+        p1_debug.setdefault('pass1_retry_used', False)
+        p1_debug.setdefault('pass1_retry_min_openxml_idx', None)
+        total_pdf_units = len(pdf_units or [])
+        base_min_openxml_idx = int(min_openxml_idx or 0)
+
+        def build_candidate(
+            phase_name,
+            attempt_num,
+            candidate_min_openxml_idx,
+            alignments,
+            unaligned_pdf,
+            debug_info,
+            fallback_skip_anchor=None,
+            retry_page_sequence_range=None
+        ):
+            debug_info = dict(debug_info or {})
+            cross_page_ratio = float(debug_info.get('cross_page_backward_skip_ratio') or 0.0)
+            matched_pdf_units = self._count_matched_pdf_units(alignments)
+            match_coverage = self._compute_match_coverage(alignments, total_pdf_units)
+            openxml_diversity = self._compute_openxml_diversity(alignments)
+            stable_pointer = self._compute_stable_pass1_pointer(alignments, candidate_min_openxml_idx)
+            observed_skip_anchor = self._try_parse_int(debug_info.get('median_cross_page_skip_openxml_idx'))
+            if observed_skip_anchor is None:
+                observed_skip_anchor = self._try_parse_int(debug_info.get('min_cross_page_skip_openxml_idx'))
+            if observed_skip_anchor is None:
+                observed_skip_anchor = self._try_parse_int(debug_info.get('first_cross_page_skip_openxml_idx'))
+            if observed_skip_anchor is None:
+                observed_skip_anchor = self._try_parse_int(fallback_skip_anchor)
+            stable_pointer_max = self._try_parse_int(stable_pointer.get('max_openxml_idx'))
+            skip_anchor_distance = (
+                abs(candidate_min_openxml_idx - observed_skip_anchor)
+                if observed_skip_anchor is not None
+                else None
+            )
+            candidate_seq_range = self._normalize_sequence_range((
+                debug_info.get('candidate_openxml_seq_min'),
+                debug_info.get('candidate_openxml_seq_max'),
+            ))
+            candidate_idx_range = self._normalize_sequence_range((
+                debug_info.get('candidate_openxml_band_idx_min'),
+                debug_info.get('candidate_openxml_band_idx_max'),
+            ))
+            band_metrics = self._compute_candidate_band_metrics(
+                alignments,
+                openxml_units,
+                seq_range=candidate_seq_range,
+                idx_range=candidate_idx_range
+            )
+            return {
+                'phase': phase_name,
+                'attempt': attempt_num,
+                'min_openxml_idx': candidate_min_openxml_idx,
+                'alignments': alignments,
+                'unaligned_pdf': unaligned_pdf,
+                'debug': debug_info,
+                'matched_pdf_units': matched_pdf_units,
+                'match_coverage': match_coverage,
+                'openxml_diversity': openxml_diversity,
+                'cross_page_backward_skip_ratio': cross_page_ratio,
+                'first_cross_page_skip_openxml_idx': self._try_parse_int(
+                    debug_info.get('first_cross_page_skip_openxml_idx')
+                ),
+                'min_cross_page_skip_openxml_idx': self._try_parse_int(
+                    debug_info.get('min_cross_page_skip_openxml_idx')
+                ),
+                'median_cross_page_skip_openxml_idx': self._try_parse_int(
+                    debug_info.get('median_cross_page_skip_openxml_idx')
+                ),
+                'early_cross_page_skip_count': int(debug_info.get('early_cross_page_skip_count') or 0),
+                'early_cross_page_skip_ratio': float(debug_info.get('early_cross_page_skip_ratio') or 0.0),
+                'observed_skip_anchor': observed_skip_anchor,
+                'skip_anchor_distance': skip_anchor_distance,
+                'stable_pointer_max': stable_pointer_max,
+                'candidate_openxml_source': debug_info.get('candidate_openxml_source'),
+                'candidate_anchor_hit_count': int(debug_info.get('candidate_openxml_anchor_hit_count') or 0),
+                'candidate_seq_min': self._try_parse_int(debug_info.get('candidate_openxml_seq_min')),
+                'candidate_seq_max': self._try_parse_int(debug_info.get('candidate_openxml_seq_max')),
+                'candidate_band_idx_min': self._try_parse_int(debug_info.get('candidate_openxml_band_idx_min')),
+                'candidate_band_idx_max': self._try_parse_int(debug_info.get('candidate_openxml_band_idx_max')),
+                'candidate_band_alignment_ratio': band_metrics.get('alignment_ratio', 0.0),
+                'candidate_band_char_ratio': band_metrics.get('char_ratio', 0.0),
+                'candidate_band_alignment_count': band_metrics.get('alignment_count', 0),
+                'candidate_band_total_alignment_count': band_metrics.get('total_alignment_count', 0),
+                'retry_page_sequence_range': self._normalize_sequence_range(retry_page_sequence_range),
+            }
+
+        candidate_runs = [
+            build_candidate(
+                'pass1',
+                0,
+                base_min_openxml_idx,
+                p1_align,
+                p1_un_pdf,
+                p1_debug
+            )
+        ]
+
+        retry_cpb_ratio = self._read_float_env("ALIGNMENT_PASS1_RETRY_CPB_RATIO", 0.9, min_value=0.0, max_value=1.0)
+        retry_min_coverage = self._read_float_env("ALIGNMENT_PASS1_RETRY_MIN_COVERAGE", 0.25, min_value=0.0, max_value=1.0)
+        retry_min_matched_units = self._read_positive_int_env("ALIGNMENT_PASS1_RETRY_MIN_MATCHED_UNITS", 5)
+        retry_min_openxml_diversity = self._read_float_env(
+            "ALIGNMENT_PASS1_RETRY_MIN_OPENXML_DIVERSITY",
+            0.35,
+            min_value=0.0
+        )
+        retry_min_skip_gap = self._read_positive_int_env("ALIGNMENT_PASS1_RETRY_MIN_SKIP_GAP", 24)
+        retry_min_early_skip_count = self._read_positive_int_env("ALIGNMENT_PASS1_RETRY_MIN_EARLY_SKIP_COUNT", 8)
+        retry_min_early_skip_ratio = self._read_float_env(
+            "ALIGNMENT_PASS1_RETRY_MIN_EARLY_SKIP_RATIO",
+            0.5,
+            min_value=0.0,
+            max_value=1.0
+        )
+        retry_anchor_cpb_ratio = self._read_float_env(
+            "ALIGNMENT_PASS1_RETRY_ANCHOR_CPB_RATIO",
+            0.4,
+            min_value=0.0,
+            max_value=1.0
+        )
+        max_retries = self._read_positive_int_env("ALIGNMENT_PASS1_MAX_RETRIES", 2)
+
+        initial_candidate = candidate_runs[0]
+        initial_skip_anchor = initial_candidate.get('observed_skip_anchor')
+        initial_anchor_gap = (
+            max(0, base_min_openxml_idx - initial_skip_anchor)
+            if initial_skip_anchor is not None
+            else 0
+        )
+        initial_early_skip_count = int(initial_candidate.get('early_cross_page_skip_count') or 0)
+        initial_early_skip_ratio = float(initial_candidate.get('debug', {}).get('early_cross_page_skip_ratio') or 0.0)
+        strong_skip_anchor_signal = (
+            initial_skip_anchor is not None and
+            initial_anchor_gap > retry_min_skip_gap and
+            initial_early_skip_count >= retry_min_early_skip_count and
+            (
+                initial_early_skip_ratio >= retry_min_early_skip_ratio or
+                initial_candidate['cross_page_backward_skip_ratio'] >= retry_anchor_cpb_ratio
+            )
+        )
+        is_retry_candidate = (
+            strong_skip_anchor_signal or
+            (
+                initial_candidate['cross_page_backward_skip_ratio'] >= retry_cpb_ratio and
+                (
+                    initial_candidate['match_coverage'] <= retry_min_coverage or
+                    initial_candidate['matched_pdf_units'] <= retry_min_matched_units or
+                    initial_candidate['openxml_diversity'] <= retry_min_openxml_diversity
+                )
+            )
+        )
+        skip_anchor_penalty_cpb_ratio = self._read_float_env(
+            "ALIGNMENT_PASS1_SKIP_ANCHOR_PENALTY_CPB_RATIO",
+            0.4,
+            min_value=0.0,
+            max_value=1.0
+        )
+
+        attempted_min_openxml_idx = set()
+        if is_retry_candidate:
+            retry_min_openxml_idx_candidates = self._build_pass1_retry_candidates(
+                base_min_openxml_idx,
+                initial_candidate.get('debug'),
+                max_retries
+            )
+            for attempt_num, retry_min_openxml_idx in enumerate(retry_min_openxml_idx_candidates, start=1):
+                if retry_min_openxml_idx in attempted_min_openxml_idx:
+                    continue
+                attempted_min_openxml_idx.add(retry_min_openxml_idx)
+                retry_page_seq_range = self._build_retry_page_sequence_range(
+                    initial_candidate,
+                    page_sequence_range,
+                    openxml_units,
+                    pdf_units
+                )
+
+                trace_pass1_retry = dict(trace_context or {})
+                trace_pass1_retry['phase'] = f'pass1_retry_{attempt_num}'
+                retry_align, retry_un_pdf, _, retry_debug = self._perform_char_alignment(
+                    pdf_units,
+                    openxml_units,
+                    retry_min_openxml_idx,
+                    trace_context=trace_pass1_retry,
+                    page_sequence_range=retry_page_seq_range
+                )
+                candidate_runs.append(
+                    build_candidate(
+                        f'pass1_retry_{attempt_num}',
+                        attempt_num,
+                        retry_min_openxml_idx,
+                        retry_align,
+                        retry_un_pdf,
+                        retry_debug,
+                        fallback_skip_anchor=initial_skip_anchor,
+                        retry_page_sequence_range=retry_page_seq_range
+                    )
+                )
+                if retry_min_openxml_idx == 0:
+                    break
+
+        def mark_retry_lock_candidate(candidate):
+            candidate['retry_lock_candidate'] = (
+                candidate['cross_page_backward_skip_ratio'] >= retry_cpb_ratio and
+                (
+                    candidate['match_coverage'] <= retry_min_coverage or
+                    candidate['matched_pdf_units'] <= retry_min_matched_units or
+                    candidate['openxml_diversity'] <= retry_min_openxml_diversity
+                )
+            )
+            observed_skip_anchor = candidate.get('observed_skip_anchor')
+            candidate['skip_anchor_penalty'] = (
+                observed_skip_anchor is not None and
+                (
+                    candidate['cross_page_backward_skip_ratio'] >= skip_anchor_penalty_cpb_ratio or
+                    int(candidate.get('early_cross_page_skip_count') or 0) >= retry_min_early_skip_count
+                ) and
+                candidate['min_openxml_idx'] > (observed_skip_anchor + 16)
+            )
+            return candidate
+
+        candidate_runs = [mark_retry_lock_candidate(candidate) for candidate in candidate_runs]
+        selected_candidate = max(candidate_runs, key=self._score_pass1_candidate)
+        p1_align = selected_candidate['alignments']
+        p1_un_pdf = selected_candidate['unaligned_pdf']
+        p1_debug = dict(selected_candidate['debug'] or {})
+        p1_debug['pass1_retry_used'] = selected_candidate['attempt'] > 0
+        p1_debug['pass1_retry_min_openxml_idx'] = (
+            selected_candidate['min_openxml_idx'] if selected_candidate['attempt'] > 0 else None
+        )
+        p1_debug['pass1_retry_attempts'] = max(0, len(candidate_runs) - 1)
+        p1_debug['pass1_retry_candidate_scores'] = [
+            {
+                'phase': candidate['phase'],
+                'attempt': candidate['attempt'],
+                'min_openxml_idx': candidate['min_openxml_idx'],
+                'matched_pdf_units': candidate['matched_pdf_units'],
+                'match_coverage': candidate['match_coverage'],
+                'openxml_diversity': candidate['openxml_diversity'],
+                'cross_page_backward_skip_ratio': candidate['cross_page_backward_skip_ratio'],
+                'retry_lock_candidate': candidate.get('retry_lock_candidate', False),
+                'skip_anchor_penalty': candidate.get('skip_anchor_penalty', False),
+                'skip_anchor_distance': candidate.get('skip_anchor_distance'),
+                'observed_skip_anchor': candidate.get('observed_skip_anchor'),
+                'stable_pointer_max': candidate.get('stable_pointer_max'),
+                'candidate_openxml_source': candidate.get('candidate_openxml_source'),
+                'candidate_anchor_hit_count': candidate.get('candidate_anchor_hit_count'),
+                'candidate_seq_min': candidate.get('candidate_seq_min'),
+                'candidate_seq_max': candidate.get('candidate_seq_max'),
+                'candidate_band_idx_min': candidate.get('candidate_band_idx_min'),
+                'candidate_band_idx_max': candidate.get('candidate_band_idx_max'),
+                'candidate_band_alignment_ratio': candidate.get('candidate_band_alignment_ratio'),
+                'candidate_band_char_ratio': candidate.get('candidate_band_char_ratio'),
+                'retry_page_sequence_range': candidate.get('retry_page_sequence_range'),
+            }
+            for candidate in candidate_runs
+        ]
+        p1_debug['pass1_selected_attempt'] = selected_candidate['attempt']
+        p1_debug['pass1_matched_pdf_units'] = selected_candidate['matched_pdf_units']
+        p1_debug['pass1_matched_openxml_units'] = self._count_matched_openxml_units(p1_align)
+        p1_debug['pass1_match_coverage'] = selected_candidate['match_coverage']
+        p1_debug['pass1_openxml_diversity'] = selected_candidate['openxml_diversity']
+        p1_debug['pass1_observed_skip_anchor'] = selected_candidate.get('observed_skip_anchor')
+        p1_debug['pass1_skip_anchor_distance'] = selected_candidate.get('skip_anchor_distance')
+        p1_debug['pass1_candidate_openxml_source'] = selected_candidate.get('candidate_openxml_source')
+        p1_debug['pass1_candidate_anchor_hit_count'] = selected_candidate.get('candidate_anchor_hit_count', 0)
+        p1_debug['pass1_candidate_seq_min'] = selected_candidate.get('candidate_seq_min')
+        p1_debug['pass1_candidate_seq_max'] = selected_candidate.get('candidate_seq_max')
+        p1_debug['pass1_candidate_band_idx_min'] = selected_candidate.get('candidate_band_idx_min')
+        p1_debug['pass1_candidate_band_idx_max'] = selected_candidate.get('candidate_band_idx_max')
+        p1_debug['pass1_candidate_band_alignment_ratio'] = selected_candidate.get('candidate_band_alignment_ratio', 0.0)
+        p1_debug['pass1_candidate_band_char_ratio'] = selected_candidate.get('candidate_band_char_ratio', 0.0)
+        p1_debug['initial_pass_cross_page_backward_skip_ratio'] = initial_candidate.get('cross_page_backward_skip_ratio', 0.0)
+        p1_debug['initial_pass_first_cross_page_skip_openxml_idx'] = initial_candidate.get('first_cross_page_skip_openxml_idx')
+        p1_debug['initial_pass_min_cross_page_skip_openxml_idx'] = initial_candidate.get('min_cross_page_skip_openxml_idx')
+        p1_debug['initial_pass_median_cross_page_skip_openxml_idx'] = initial_candidate.get('median_cross_page_skip_openxml_idx')
+        p1_debug['initial_pass_early_cross_page_skip_count'] = initial_candidate.get('early_cross_page_skip_count', 0)
+        p1_debug['initial_pass_early_cross_page_skip_ratio'] = initial_candidate.get('early_cross_page_skip_ratio', 0.0)
+        p1_debug['initial_pass_observed_skip_anchor'] = initial_candidate.get('observed_skip_anchor')
+        p1_debug['selected_candidate_cross_page_backward_skip_ratio'] = selected_candidate.get('cross_page_backward_skip_ratio', 0.0)
+        p1_debug['selected_candidate_first_cross_page_skip_openxml_idx'] = selected_candidate.get('first_cross_page_skip_openxml_idx')
+        p1_debug['selected_candidate_min_cross_page_skip_openxml_idx'] = selected_candidate.get('min_cross_page_skip_openxml_idx')
+        p1_debug['selected_candidate_median_cross_page_skip_openxml_idx'] = selected_candidate.get('median_cross_page_skip_openxml_idx')
+        p1_debug['selected_candidate_early_cross_page_skip_count'] = selected_candidate.get('early_cross_page_skip_count', 0)
+        p1_debug['selected_candidate_early_cross_page_skip_ratio'] = selected_candidate.get('early_cross_page_skip_ratio', 0.0)
+        p1_debug['selected_candidate_stable_pointer_max'] = selected_candidate.get('stable_pointer_max')
+        selected_retry_seq_range = selected_candidate.get('retry_page_sequence_range')
+        p1_debug['selected_candidate_retry_seq_min'] = (
+            selected_retry_seq_range[0] if selected_retry_seq_range else None
+        )
+        p1_debug['selected_candidate_retry_seq_max'] = (
+            selected_retry_seq_range[1] if selected_retry_seq_range else None
+        )
+        stable_pointer = self._compute_stable_pass1_pointer(p1_align, min_openxml_idx)
 
         final_align = list(p1_align)
         final_align.sort(key=lambda x: x.get('element_sequence') or 0)
@@ -32,6 +1242,7 @@ class AlignmentMatchingMixin:
         final_align, final_un_pdf = self._absorb_unaligned_into_alignments(final_align, final_un_pdf, pdf_units)
 
         p1_un_ox = p1_debug.get('unaligned_openxml_indices', [])
+        p1_debug['pass2_openxml_source'] = 'selected_candidate_unaligned_openxml'
         final_align, final_un_pdf, _ = self._match_remaining_with_unaligned_openxml(
             final_align,
             final_un_pdf,
@@ -50,6 +1261,7 @@ class AlignmentMatchingMixin:
         final_align, final_un_pdf, shape_attach_debug = self._attach_shape_clusters_to_next_alignment(final_align, final_un_pdf, pdf_units)
         final_align = self._merge_line_overlap_alignments(final_align)
         final_align = self._repair_marker_only_alignment_gaps(final_align, openxml_units)
+        pre_filter_alignments = deepcopy(final_align)
         final_align, final_un_pdf = self._filter_sparse_matched_units(final_align, final_un_pdf, pdf_units)
         final_align, final_un_pdf = self._filter_low_match_alignments(final_align, final_un_pdf, pdf_units)
         final_un_pdf = self._restore_dropped_alignment_units(
@@ -58,6 +1270,15 @@ class AlignmentMatchingMixin:
             final_un_pdf,
             pdf_units
         )
+        paragraph_rescue_debug = []
+        rescue_paragraph_alignments = getattr(self, '_rescue_paragraph_alignments', None)
+        if callable(rescue_paragraph_alignments):
+            final_align, final_un_pdf, paragraph_rescue_debug = rescue_paragraph_alignments(
+                pre_filter_alignments,
+                final_align,
+                final_un_pdf,
+                pdf_units
+            )
         final_align, final_un_pdf = self._absorb_unaligned_by_y_overlap(final_align, final_un_pdf, pdf_units)
 
         # Legacy debug fields
@@ -70,8 +1291,19 @@ class AlignmentMatchingMixin:
         p1_debug['shape_conflict_count'] = len(shape_conflict_debug)
         p1_debug['shape_attach_debug'] = shape_attach_debug
         p1_debug['shape_attach_count'] = len(shape_attach_debug)
-
-        max_idx = self._compute_max_openxml_idx_from_alignments(final_align, min_openxml_idx)
+        p1_debug['paragraph_rescue_debug'] = paragraph_rescue_debug
+        p1_debug['paragraph_rescue_count'] = len(paragraph_rescue_debug)
+        pass2_max_idx = self._compute_alignment_max_openxml_idx(
+            [alignment for alignment in final_align if alignment.get('late_matched')]
+        )
+        max_idx = stable_pointer.get('max_openxml_idx', min_openxml_idx)
+        p1_debug['pass1_pointer_cluster_min'] = stable_pointer.get('cluster_min')
+        p1_debug['pass1_pointer_cluster_max'] = stable_pointer.get('cluster_max')
+        p1_debug['pass1_pointer_cluster_size'] = stable_pointer.get('cluster_size', 0)
+        p1_debug['pass1_pointer_cluster_total_matched_chars'] = stable_pointer.get('cluster_total_matched_chars', 0)
+        p1_debug['pass1_pointer_source'] = stable_pointer.get('source', 'frozen')
+        p1_debug['pass1_max_openxml_idx_raw'] = stable_pointer.get('raw_max_openxml_idx')
+        p1_debug['pass2_max_openxml_idx'] = pass2_max_idx
         p1_debug['final_max_openxml_idx'] = max_idx
 
         # Filter unaligned OpenXML to only those within this page's sequence range
@@ -117,7 +1349,7 @@ class AlignmentMatchingMixin:
                         max_idx = idx if max_idx is None else max(max_idx, idx)
         if max_idx is None:
             return min_openxml_idx
-        return max_idx
+        return max(min_openxml_idx, max_idx)
 
     def _is_marker_only_text(self, text):
         if not text:
@@ -224,6 +1456,7 @@ class AlignmentMatchingMixin:
                 'element_sequence': openxml_unit['elem_seq'],
                 'element_type': openxml_unit['elem_type'],
                 'is_table': False,
+                'is_synthetic_marker_repair': True,
                 'element_text': openxml_unit.get('text', ''),
                 'matched_pdf_units': [donor_unit],
                 'merged_bbox': list(donor_unit.get('bbox')) if donor_unit.get('bbox') else None,
@@ -265,19 +1498,38 @@ class AlignmentMatchingMixin:
         if not pdf_units or not openxml_units:
             return [], list(range(len(pdf_units))), list(range(len(openxml_units))), {
                 'max_openxml_idx': min_openxml_idx,
-                'unaligned_openxml_indices': list(range(len(openxml_units)))
+                'unaligned_openxml_indices': list(range(len(openxml_units))),
+                'cross_page_backward_skip_count': 0,
+                'cross_page_backward_skip_ratio': 0.0
             }
 
         filter_by_seq_range = os.getenv("ALIGNMENT_FILTER_BY_SEQ_RANGE", "").lower() in ("1", "true", "yes", "on")
         seq_min = seq_max = None
         if filter_by_seq_range and page_sequence_range and len(page_sequence_range) == 2:
             seq_min, seq_max = page_sequence_range
+        candidate_context = self._select_sequence_local_openxml_indices(
+            pdf_units,
+            openxml_units,
+            min_openxml_idx=min_openxml_idx,
+            page_sequence_range=page_sequence_range
+        )
+        suggested_openxml_indices = sorted(set(candidate_context.get('indices') or []))
+        if filter_by_seq_range and seq_min is not None and seq_max is not None:
+            candidate_openxml_indices = [
+                idx for idx, unit in enumerate(openxml_units)
+                if unit.get('elem_seq') is not None and seq_min <= unit.get('elem_seq') <= seq_max
+            ]
+        else:
+            candidate_openxml_indices = list(range(len(openxml_units)))
+        if not candidate_openxml_indices:
+            candidate_openxml_indices = list(range(len(openxml_units)))
 
         pdf_concat = ''
         pdf_char_map = []
         pdf_unit_ranges = []
 
-        for i, u in enumerate(pdf_units):
+        for i in range(len(pdf_units)):
+            u = pdf_units[i]
             text = u['text_normalized']
             start = len(pdf_concat)
             for _ in text:
@@ -298,7 +1550,8 @@ class AlignmentMatchingMixin:
         openxml_char_map = []
         openxml_unit_ranges = []
 
-        for i, u in enumerate(openxml_units):
+        for i in candidate_openxml_indices:
+            u = openxml_units[i]
             text = u['text_normalized']
             start = len(openxml_concat)
             for _ in text:
@@ -474,7 +1727,8 @@ class AlignmentMatchingMixin:
                 matching_log.append(block_log)
 
         unit_matching_summary = []
-        for i, u in enumerate(pdf_units):
+        for i in range(len(pdf_units)):
+            u = pdf_units[i]
             matched_to = []
             for openxml_idx, pdf_counts in openxml_to_pdf.items():
                 if i in pdf_counts:
@@ -503,7 +1757,7 @@ class AlignmentMatchingMixin:
         ]
 
         unaligned_openxml_indices = [
-            i for i in range(len(openxml_units))
+            i for i in candidate_openxml_indices
             if i not in openxml_to_pdf
         ]
 
@@ -513,6 +1767,12 @@ class AlignmentMatchingMixin:
                 if openxml_units[i].get('elem_seq') is not None
                 and seq_min <= openxml_units[i].get('elem_seq') <= seq_max
             ]
+
+        skip_entries = [entry for entry in traversal_log if entry.get('action') == 'SKIP']
+        cross_page_skip_metrics = self._extract_cross_page_skip_metrics(
+            traversal_log,
+            total_skip_count=len(skip_entries)
+        )
 
         debug_info = {
             'pdf_concat_len': len(pdf_concat),
@@ -537,9 +1797,51 @@ class AlignmentMatchingMixin:
             'traversal_log_count': len(traversal_log),
             'unit_matching_summary': unit_matching_summary,
             'consumed_pdf_count': len(pdf_unit_assignment),
+            'considered_openxml_count': len(candidate_openxml_indices),
+            'suggested_openxml_count': len(suggested_openxml_indices),
             'unaligned_pdf_count': len(unaligned_pdf_indices),
             'unaligned_openxml_count': len(unaligned_openxml_indices),
             'unaligned_openxml_indices': unaligned_openxml_indices,
+            'cross_page_backward_skip_count': cross_page_skip_metrics['cross_page_backward_skip_count'],
+            'cross_page_backward_skip_ratio': cross_page_skip_metrics['cross_page_backward_skip_ratio'],
+            'first_cross_page_skip_openxml_idx': cross_page_skip_metrics['first_cross_page_skip_openxml_idx'],
+            'min_cross_page_skip_openxml_idx': cross_page_skip_metrics['min_cross_page_skip_openxml_idx'],
+            'median_cross_page_skip_openxml_idx': cross_page_skip_metrics['median_cross_page_skip_openxml_idx'],
+            'early_cross_page_skip_count': cross_page_skip_metrics['early_cross_page_skip_count'],
+            'early_cross_page_skip_ratio': cross_page_skip_metrics['early_cross_page_skip_ratio'],
+            'candidate_openxml_source': candidate_context.get('source'),
+            'candidate_openxml_anchor_hit_count': candidate_context.get('anchor_hit_count', 0),
+            'candidate_openxml_anchor_count': candidate_context.get('anchor_count', 0),
+            'candidate_openxml_anchor_hits': candidate_context.get('anchor_hits', []),
+            'candidate_openxml_search_floor': candidate_context.get('search_floor'),
+            'candidate_openxml_preferred_seq_min': (
+                (candidate_context.get('preferred_seq_range') or (None, None))[0]
+                if candidate_context.get('preferred_seq_range')
+                else None
+            ),
+            'candidate_openxml_preferred_seq_max': (
+                (candidate_context.get('preferred_seq_range') or (None, None))[1]
+                if candidate_context.get('preferred_seq_range')
+                else None
+            ),
+            'candidate_openxml_seq_min': (
+                (candidate_context.get('selected_seq_range') or (None, None))[0]
+                if candidate_context.get('selected_seq_range')
+                else None
+            ),
+            'candidate_openxml_seq_max': (
+                (candidate_context.get('selected_seq_range') or (None, None))[1]
+                if candidate_context.get('selected_seq_range')
+                else None
+            ),
+            'candidate_openxml_band_idx_min': (
+                min(suggested_openxml_indices) if suggested_openxml_indices else None
+            ),
+            'candidate_openxml_band_idx_max': (
+                max(suggested_openxml_indices) if suggested_openxml_indices else None
+            ),
+            'candidate_openxml_cluster_min_idx': candidate_context.get('anchor_cluster_min_idx'),
+            'candidate_openxml_cluster_max_idx': candidate_context.get('anchor_cluster_max_idx'),
             'max_openxml_idx': max(pdf_unit_assignment.values()) if pdf_unit_assignment else min_openxml_idx
         }
 
@@ -549,7 +1851,7 @@ class AlignmentMatchingMixin:
                 traversal_log,
                 min_openxml_idx,
                 len(pdf_units),
-                len(openxml_units)
+                len(candidate_openxml_indices)
             )
 
         return alignments, unaligned_pdf_indices, unaligned_openxml_indices, debug_info
@@ -751,7 +2053,7 @@ class AlignmentMatchingMixin:
             page_sequence_range=page_sequence_range
         )
 
-        remap_pass2 = os.getenv("ALIGNMENT_FIX_PASS2_REMAP", "").lower() in ("1", "true", "yes", "on")
+        remap_pass2 = self._is_env_enabled_default_true("ALIGNMENT_FIX_PASS2_REMAP")
         if remap_pass2 and un_ox_idx:
             def remap_idx(local_idx):
                 if local_idx is None:
@@ -779,6 +2081,7 @@ class AlignmentMatchingMixin:
 
             if eid in ex_map:
                 ex = ex_map[eid]
+                ex['late_matched'] = True
                 ex['matched_pdf_units'].extend(la['matched_pdf_units'])
                 ex['matched_pdf_units'].sort(key=lambda x: x['item_idx'])
                 ex_fonts = set(ex.get('font_families') or [])
@@ -847,19 +2150,23 @@ class AlignmentMatchingMixin:
             text = str(value)
             return text.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
 
-        with open(path, 'a', encoding='utf-8') as log_file:
-            log_file.write(header)
-            for entry in traversal_log:
-                char = sanitize_char(entry.get('char'))
-                action = entry.get('action') or ''
-                reason = entry.get('reason') or ''
-                matched_count = entry.get('matched_count')
-                matched_part = f" cnt:{matched_count}" if matched_count is not None else ''
-                log_file.write(
-                    f"[{entry.get('step')}] "
-                    f"Block{entry.get('block')} Char=\"{char}\" "
-                    f"PDF[{entry.get('pdf_char_idx')}] -> U{entry.get('pdf_unit')}({entry.get('pdf_unit_id')}) "
-                    f"OX[{entry.get('openxml_char_idx')}] -> U{entry.get('openxml_unit')}({entry.get('openxml_unit_id')}) "
-                    f"| {action} {reason}{matched_part}\n"
-                )
-            log_file.write("\n")
+        try:
+            with open(path, 'a', encoding='utf-8') as log_file:
+                log_file.write(header)
+                for entry in traversal_log:
+                    char = sanitize_char(entry.get('char'))
+                    action = entry.get('action') or ''
+                    reason = entry.get('reason') or ''
+                    matched_count = entry.get('matched_count')
+                    matched_part = f" cnt:{matched_count}" if matched_count is not None else ''
+                    log_file.write(
+                        f"[{entry.get('step')}] "
+                        f"Block{entry.get('block')} Char=\"{char}\" "
+                        f"PDF[{entry.get('pdf_char_idx')}] -> U{entry.get('pdf_unit')}({entry.get('pdf_unit_id')}) "
+                        f"OX[{entry.get('openxml_char_idx')}] -> U{entry.get('openxml_unit')}({entry.get('openxml_unit_id')}) "
+                        f"| {action} {reason}{matched_part}\n"
+                    )
+                log_file.write("\n")
+        except OSError:
+            # Trace logging is best-effort and should never break document processing.
+            return

@@ -4,10 +4,9 @@ import json
 import logging
 import difflib
 import re
-from sqlalchemy import text
 from datetime import datetime
 from sqlalchemy.orm import Session
-from models import Bab, Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote
+from models import Bab, Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote, DokumenFormatText, DokumenFormatParagraf
 from services.pdf_extraction_service import PDFExtractor
 from services.alignment_service import AlignmentService
 from services.docling_service import DoclingService
@@ -61,6 +60,39 @@ class MergingExtractionService:
         self.docling_service = DoclingService()
         self.fusion_service = DoclingFusionService()
         self.visualization_service = VisualizationService(output_dir=VISUALIZATION_OUTPUT)
+
+    @staticmethod
+    def _read_positive_int_env(env_name: str, default_value: int) -> int:
+        value = os.getenv(env_name)
+        if value is None:
+            return default_value
+        try:
+            parsed = int(str(value).strip())
+            return parsed if parsed > 0 else default_value
+        except (TypeError, ValueError):
+            return default_value
+
+    @staticmethod
+    def _read_float_env(env_name: str, default_value: float, min_value: float = None, max_value: float = None) -> float:
+        value = os.getenv(env_name)
+        if value is None:
+            return default_value
+        try:
+            parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            return default_value
+        if min_value is not None:
+            parsed = max(min_value, parsed)
+        if max_value is not None:
+            parsed = min(max_value, parsed)
+        return parsed
+
+    @staticmethod
+    def _is_env_enabled_default_true(env_name: str) -> bool:
+        value = os.getenv(env_name)
+        if value is None:
+            return True
+        return str(value).strip().lower() not in ("0", "false", "no", "off")
 
     @staticmethod
     def _canonical_ref_tipe(ref_tipe: str) -> str:
@@ -142,6 +174,11 @@ class MergingExtractionService:
 
             # Track max_openxml_idx across pages to prevent backward matching
             max_openxml_idx = 0
+            pointer_state = {
+                'jump_lock_streak': 0,
+                'pointer_freeze_streak': 0,
+                'last_stable_pointer_max': 0,
+            }
             page_vis_payload = {}
             structural_state = self._new_structural_label_state()
             
@@ -186,16 +223,14 @@ class MergingExtractionService:
                 )
                 
                 if alignment_result['success']:
-                    # Update cross-page tracking from alignment result (never allow backtracking)
-                    new_max_openxml_idx = alignment_result.get('max_openxml_idx')
-                    if new_max_openxml_idx is not None:
-                        if new_max_openxml_idx < max_openxml_idx:
-                            logger.warning(
-                                f"Page {page_num}: max_openxml_idx backtracked "
-                                f"({new_max_openxml_idx} < {max_openxml_idx}); keeping previous value."
-                            )
-                        else:
-                            max_openxml_idx = new_max_openxml_idx
+                    page_debug = alignment_result.get('page_debug') or {}
+                    pointer_update = self.alignment_service._resolve_next_page_pointer(
+                        max_openxml_idx,
+                        alignment_result,
+                        pointer_state=pointer_state
+                    )
+                    max_openxml_idx = pointer_update['next_min_openxml_idx']
+                    pointer_state = pointer_update['pointer_state']
                     logger.debug(f"Page {page_num}: max_openxml_idx updated to {max_openxml_idx}")
                     
                     alignments = alignment_result['final_alignments']
@@ -221,17 +256,15 @@ class MergingExtractionService:
                         structural_state=structural_state
                     )
 
-                    if save_to_db and not generate_visualizations:
-                        self._replace_visual_records(
-                            db,
-                            canonical_ref_tipe,
-                            ref_id,
-                            page_num,
-                            fused_results,
-                            structural_state=structural_state
-                        )
-                    
-                    # Generate visualizations if enabled
+                    if save_to_db or generate_visualizations:
+                        payload = {
+                            'alignments': alignments,
+                            'fused_results': fused_results,
+                            'header_footer_units': header_footer_units,
+                            'section_data': section_data
+                        }
+                        page_vis_payload[page_num] = payload
+
                     if generate_visualizations:
                         all_pdf_units = self.alignment_service._flatten_extraction_items(extraction_items)
                         unaligned_units = alignment_result.get('unaligned_pdf_units', [])
@@ -242,20 +275,16 @@ class MergingExtractionService:
                         )
                         unaligned_for_vis = unaligned_units + unfused_units
 
-                        page_vis_payload[page_num] = {
-                            'alignments': alignments,
-                            'fused_results': fused_results,
-                            'header_footer_units': header_footer_units,
-                            'unaligned_pdf_units': unaligned_for_vis,
-                            'raw_docling': page_docling_preds
-                        }
+                        page_vis_payload[page_num]['unaligned_pdf_units'] = unaligned_for_vis
+                        page_vis_payload[page_num]['raw_docling'] = page_docling_preds
                 
             extractor.close()
 
-            if generate_visualizations and page_vis_payload:
+            if page_vis_payload and (save_to_db or generate_visualizations):
                 try:
                     duplicate_element_ids = self._collect_duplicate_openxml_element_ids(page_vis_payload)
-                    for page_num, payload in page_vis_payload.items():
+                    for page_num in sorted(page_vis_payload):
+                        payload = page_vis_payload[page_num]
                         alignments = payload.get('alignments')
                         removed_duplicate_element_ids = set()
                         if alignments and duplicate_element_ids:
@@ -270,49 +299,66 @@ class MergingExtractionService:
                             removed_duplicate_element_ids
                         )
 
-                        if save_to_db:
-                            self._replace_visual_records(
+                    claim_resolution_stats = self._resolve_document_visual_claims(page_vis_payload)
+                    logger.info(
+                        "Resolved document-level claims for %s:%s cleared=%s affected_pages=%s",
+                        canonical_ref_tipe,
+                        ref_id,
+                        claim_resolution_stats.get('cleared_claims', 0),
+                        claim_resolution_stats.get('affected_pages', 0)
+                    )
+
+                    if save_to_db:
+                        for page_num in sorted(page_vis_payload):
+                            payload = page_vis_payload[page_num]
+                            payload['fused_results'] = self._replace_visual_records(
                                 db,
                                 canonical_ref_tipe,
                                 ref_id,
                                 page_num,
                                 payload.get('fused_results'),
-                                structural_state=structural_state
+                                structural_state=structural_state,
+                                section_data=payload.get('section_data'),
+                                apply_duplicate_claim_guard=False
                             )
 
-                        duplicate_units = self._collect_duplicate_units_for_page(
-                            alignments,
-                            duplicate_element_ids
-                        )
+                    if generate_visualizations:
+                        for page_num in sorted(page_vis_payload):
+                            payload = page_vis_payload[page_num]
+                            alignments = payload.get('alignments')
+                            duplicate_units = self._collect_duplicate_units_for_page(
+                                alignments,
+                                duplicate_element_ids
+                            )
 
-                        vis_paths = self.visualization_service.visualize_page(
-                            pdf_path=pdf_path,
-                            page_num=page_num - 1,  # 0-based for visualization
-                            alignments=payload.get('alignments'),
-                            fused_results=payload.get('fused_results'),
-                            header_footer_units=payload.get('header_footer_units'),
-                            unaligned_pdf_units=payload.get('unaligned_pdf_units'),
-                            duplicate_mapping_units=duplicate_units,
-                            doc_id=ref_id,
-                            output_dir_override=output_dir
-                        )
-                        logger.info(f"Page {page_num}: Generated visualizations - {list(vis_paths.keys())}")
+                            vis_paths = self.visualization_service.visualize_page(
+                                pdf_path=pdf_path,
+                                page_num=page_num - 1,  # 0-based for visualization
+                                alignments=payload.get('alignments'),
+                                fused_results=payload.get('fused_results'),
+                                header_footer_units=payload.get('header_footer_units'),
+                                unaligned_pdf_units=payload.get('unaligned_pdf_units'),
+                                duplicate_mapping_units=duplicate_units,
+                                doc_id=ref_id,
+                                output_dir_override=output_dir
+                            )
+                            logger.info(f"Page {page_num}: Generated visualizations - {list(vis_paths.keys())}")
 
-                        json_output_dir = output_dir
-                        if not json_output_dir and vis_paths:
-                            json_output_dir = os.path.dirname(list(vis_paths.values())[0])
-                        if json_output_dir:
-                            json_path = os.path.join(json_output_dir, f"page_{page_num}_fusion_data.json")
-                            with open(json_path, 'w', encoding='utf-8') as f:
-                                json.dump({
-                                    'page': page_num,
-                                    'doc_id': ref_id if canonical_ref_tipe == 'dokumen' else None,
-                                    'ref_tipe': canonical_ref_tipe,
-                                    'ref_id': ref_id,
-                                    'fused_results': payload.get('fused_results'),
-                                    'raw_docling': payload.get('raw_docling'),
-                                    'alignments': payload.get('alignments')
-                                }, f, indent=2, ensure_ascii=False)
+                            json_output_dir = output_dir
+                            if not json_output_dir and vis_paths:
+                                json_output_dir = os.path.dirname(list(vis_paths.values())[0])
+                            if json_output_dir:
+                                json_path = os.path.join(json_output_dir, f"page_{page_num}_fusion_data.json")
+                                with open(json_path, 'w', encoding='utf-8') as f:
+                                    json.dump({
+                                        'page': page_num,
+                                        'doc_id': ref_id if canonical_ref_tipe == 'dokumen' else None,
+                                        'ref_tipe': canonical_ref_tipe,
+                                        'ref_id': ref_id,
+                                        'fused_results': payload.get('fused_results'),
+                                        'raw_docling': payload.get('raw_docling'),
+                                        'alignments': payload.get('alignments')
+                                    }, f, indent=2, ensure_ascii=False)
                 except Exception as vis_err:
                     logger.warning(f"Visualization/JSON save failed - {vis_err}")
             
@@ -485,6 +531,216 @@ class MergingExtractionService:
         if isinstance(value, list):
             value = ' '.join(str(v) for v in value)
         return self.alignment_service._normalize_text(str(value))
+
+    def _try_parse_int_id(self, value):
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if value >= 0 else None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if trimmed.isdigit():
+                return int(trimmed)
+        return None
+
+    def _normalize_part_position(self, position):
+        if not position:
+            return 'default'
+        normalized = str(position).strip().lower()
+        if normalized in ('first', 'even', 'default'):
+            return normalized
+        return 'default'
+
+    def _resolve_section_start_page(self, db, canonical_ref_tipe, ref_id, section_id):
+        if not db or ref_id is None or section_id is None:
+            return None
+
+        ref_tipes = ('bab', 'buku') if canonical_ref_tipe == 'bab' else (canonical_ref_tipe,)
+
+        row = (
+            db.query(DokumenElemenVisual.dev_page)
+            .join(DokumenElemen, DokumenElemenVisual.dokumen_elemen_id == DokumenElemen.delemen_id)
+            .join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id)
+            .filter(
+                DokumenElemenVisual.dev_ref_tipe.in_(ref_tipes),
+                DokumenElemenVisual.dev_ref_id == ref_id,
+                DokumenElemenVisual.dev_page.isnot(None),
+                DokumenPart.dsec_id == section_id,
+                DokumenPart.dpart_type == 'body'
+            )
+            .order_by(DokumenElemenVisual.dev_page.asc())
+            .first()
+        )
+        if not row or row[0] is None:
+            return None
+        try:
+            return int(row[0])
+        except (TypeError, ValueError):
+            return None
+
+    def _current_page_has_section_body_element(self, db, fused_results, section_id):
+        if not db or not fused_results or section_id is None:
+            return False
+
+        candidate_ids = set()
+        for result in fused_results:
+            label = self._get_visual_label(result)
+            if label in ('page_header', 'page_footer'):
+                continue
+            elem_id = self._try_parse_int_id(result.get('element_id'))
+            if elem_id is not None:
+                candidate_ids.add(elem_id)
+
+        if not candidate_ids:
+            return False
+
+        row = (
+            db.query(DokumenElemen.delemen_id)
+            .join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id)
+            .filter(
+                DokumenElemen.delemen_id.in_(candidate_ids),
+                DokumenPart.dsec_id == section_id,
+                DokumenPart.dpart_type == 'body'
+            )
+            .first()
+        )
+        return row is not None
+
+    def _select_header_footer_part(self, part_infos, preference_order):
+        if not part_infos:
+            return None
+
+        order_index = {pos: idx for idx, pos in enumerate(preference_order)}
+
+        for position in preference_order:
+            matches = [
+                info for info in part_infos
+                if info.get('position') == position and info.get('elements')
+            ]
+            if matches:
+                return sorted(matches, key=lambda item: item.get('part_id') or 0)[0]
+
+        candidates = [info for info in part_infos if info.get('elements')]
+        if not candidates:
+            return None
+
+        def key_fn(item):
+            position = item.get('position') or 'default'
+            return (order_index.get(position, len(order_index)), item.get('part_id') or 0)
+
+        return sorted(candidates, key=key_fn)[0]
+
+    def _extract_element_text_norm(self, element):
+        if not element:
+            return ''
+        tree = self._load_json_tree(element.delemen_json_tree)
+        text = self.alignment_service._extract_text_from_json_tree(tree)
+        return self._normalize_text_value(text)
+
+    def _build_header_footer_mapping_context(
+        self,
+        db,
+        canonical_ref_tipe,
+        ref_id,
+        page_num,
+        fused_results,
+        section_data
+    ):
+        section_id = self._try_parse_int_id((section_data or {}).get('dsec_id')) if isinstance(section_data, dict) else None
+        if section_id is None:
+            return None
+
+        section = db.query(DokumenSection).filter(DokumenSection.dsec_id == section_id).first()
+        if section is None:
+            return None
+
+        section_start_page = self._resolve_section_start_page(db, canonical_ref_tipe, ref_id, section_id)
+        if section_start_page is None and self._current_page_has_section_body_element(db, fused_results, section_id):
+            section_start_page = page_num
+
+        is_first_page = section_start_page is not None and int(page_num) == int(section_start_page)
+        is_even_page = int(page_num) % 2 == 0
+
+        part_rows = db.query(DokumenPart).filter(
+            DokumenPart.dsec_id == section_id,
+            DokumenPart.dpart_type.in_(('header', 'footer'))
+        ).all()
+        if not part_rows:
+            return None
+
+        part_ids = [part.dpart_id for part in part_rows if part.dpart_id is not None]
+        elements_by_part = {}
+        if part_ids:
+            part_elements = db.query(DokumenElemen).filter(DokumenElemen.dpart_id.in_(part_ids)).all()
+            for element in part_elements:
+                elements_by_part.setdefault(element.dpart_id, []).append(element)
+
+        context = {}
+        for part_type in ('header', 'footer'):
+            type_parts = [part for part in part_rows if (part.dpart_type or '').lower() == part_type]
+            part_infos = []
+            for part in type_parts:
+                position = self._normalize_part_position(part.dpart_position)
+                raw_elements = elements_by_part.get(part.dpart_id, [])
+                ordered_elements = sorted(
+                    raw_elements,
+                    key=lambda elem: (
+                        0 if str(elem.delemen_type or '').lower() == 'paragraph' else 1,
+                        elem.delemen_sequence if elem.delemen_sequence is not None else 2**31 - 1,
+                        elem.delemen_id
+                    )
+                )
+                part_infos.append({
+                    'part_id': part.dpart_id,
+                    'position': position,
+                    'elements': [
+                        {
+                            'id': int(elem.delemen_id),
+                            'text_norm': self._extract_element_text_norm(elem)
+                        }
+                        for elem in ordered_elements
+                    ]
+                })
+
+            if is_first_page and bool(section.dsec_has_title_page):
+                preference_order = ['first', 'default', 'even']
+            elif bool(section.dsec_different_odd_even) and is_even_page:
+                preference_order = ['even', 'default', 'first']
+            else:
+                preference_order = ['default', 'first', 'even']
+
+            context[part_type] = {
+                'selected_part': self._select_header_footer_part(part_infos, preference_order),
+                'parts': part_infos
+            }
+
+        return context
+
+    def _resolve_header_footer_element_id(self, result, visual_label, header_footer_context):
+        if visual_label not in ('page_header', 'page_footer') or not header_footer_context:
+            return None
+
+        part_type = 'header' if visual_label == 'page_header' else 'footer'
+        selected_part = (header_footer_context.get(part_type) or {}).get('selected_part')
+        if not selected_part:
+            return None
+
+        candidates = selected_part.get('elements') or []
+        if not candidates:
+            return None
+
+        text_norm = self._normalize_text_value(result.get('text'))
+        if text_norm:
+            matches = [
+                candidate for candidate in candidates
+                if candidate.get('text_norm') and candidate.get('text_norm') == text_norm
+            ]
+            if len(matches) == 1:
+                return matches[0].get('id')
+            if len(matches) > 1:
+                return None
+
+        return candidates[0].get('id')
 
     def _simplify_duplicate_unit_text(self, text):
         if not text:
@@ -732,12 +988,11 @@ class MergingExtractionService:
             return dfp_cache[dfp_id]
         alignment = None
         try:
-            row = db.execute(
-                text("SELECT dfp_jc FROM dokumen_format_paragraf WHERE dfp_id = :dfp_id"),
-                {"dfp_id": dfp_id}
-            ).fetchone()
-            if row and row[0] is not None:
-                alignment = self._normalize_alignment_value(row[0])
+            paragraph_format = db.query(DokumenFormatParagraf).filter(
+                DokumenFormatParagraf.dfp_id == dfp_id
+            ).first()
+            if paragraph_format and paragraph_format.dfp_jc is not None:
+                alignment = self._normalize_alignment_value(paragraph_format.dfp_jc)
         except Exception:
             alignment = None
         dfp_cache[dfp_id] = alignment
@@ -760,14 +1015,12 @@ class MergingExtractionService:
         missing = [dftx_id for dftx_id in dftx_ids if dftx_id not in bold_cache]
         if missing:
             try:
-                rows = db.execute(
-                    text(
-                        "SELECT dftx_id, dftx_bold "
-                        "FROM dokumen_format_text "
-                        "WHERE dftx_id IN :ids"
-                    ),
-                    {"ids": tuple(missing)}
-                ).fetchall()
+                rows = db.query(
+                    DokumenFormatText.dftx_id,
+                    DokumenFormatText.dftx_bold
+                ).filter(
+                    DokumenFormatText.dftx_id.in_(tuple(missing))
+                ).all()
                 for dftx_id, dftx_bold in rows:
                     bold_cache[dftx_id] = bool(dftx_bold)
             except Exception:
@@ -1254,10 +1507,250 @@ class MergingExtractionService:
 
         fused_results[:] = updated_results
 
-    def _replace_visual_records(self, db, ref_tipe, ref_id, page_num, fused_results, structural_state=None):
+    @staticmethod
+    def _bbox_area(bbox):
+        if not bbox or len(bbox) < 4:
+            return 0.0
+        width = max(0.0, float(bbox[2]) - float(bbox[0]))
+        height = max(0.0, float(bbox[3]) - float(bbox[1]))
+        return width * height
+
+    def _visual_result_claim_score(self, result):
+        overlap = float((result or {}).get('overlap') or 0.0)
+        area = self._bbox_area((result or {}).get('bbox'))
+        text_len = len(self._coerce_text((result or {}).get('text')))
+        return overlap, area, text_len
+
+    def _visual_existing_claim_score(self, row):
+        bbox = [
+            getattr(row, 'dev_bbox_x0', None),
+            getattr(row, 'dev_bbox_y0', None),
+            getattr(row, 'dev_bbox_x1', None),
+            getattr(row, 'dev_bbox_y1', None),
+        ]
+        area = self._bbox_area(bbox)
+        text_len = len(self._coerce_text(getattr(row, 'dev_text', None)))
+        # Historical rows do not store overlap, so default to 0.0.
+        return 0.0, area, text_len
+
+    def _is_table_like_visual_result(self, result):
+        if not result:
+            return False
+        visual_label = self._get_visual_label(result)
+        if visual_label == 'table':
+            return True
+        if result.get('has_table_units'):
+            return True
+        element_type = str(result.get('element_type') or '').strip().lower()
+        return 'table' in element_type
+
+    def _clear_visual_result_claim(self, result, reason, winner_claim=None):
+        if not result or result.get('element_id') is None:
+            return False
+        result['element_id'] = None
+        result['duplicate_claim_conflict'] = True
+        result['duplicate_claim_reason'] = reason
+        if winner_claim:
+            result['duplicate_claim_winner_page'] = winner_claim.get('page')
+            winner_result = winner_claim.get('result') or {}
+            result['duplicate_claim_winner_element_id'] = winner_result.get('element_id')
+        return True
+
+    def _resolve_document_visual_claims(self, page_vis_payload):
+        if not page_vis_payload:
+            return {
+                'cleared_claims': 0,
+                'affected_pages': 0,
+                'same_page_cleared': 0,
+                'far_gap_cleared': 0
+            }
+
+        claims_by_element = {}
+        for page_num, payload in (page_vis_payload or {}).items():
+            parsed_page_num = self._try_parse_int_id(page_num)
+            if parsed_page_num is None:
+                continue
+            for result in payload.get('fused_results') or []:
+                elem_id = self._try_parse_int_id((result or {}).get('element_id'))
+                if elem_id is None:
+                    continue
+                visual_label = self._get_visual_label(result)
+                if visual_label in ('page_header', 'page_footer'):
+                    continue
+                if self._is_table_like_visual_result(result):
+                    continue
+                claims_by_element.setdefault(elem_id, []).append({
+                    'page': parsed_page_num,
+                    'result': result,
+                    'score': self._visual_result_claim_score(result)
+                })
+
+        cleared_claims = 0
+        same_page_cleared = 0
+        far_gap_cleared = 0
+        affected_pages = set()
+
+        for elem_id, claims in claims_by_element.items():
+            claims_by_page = {}
+            for claim in claims:
+                claims_by_page.setdefault(claim['page'], []).append(claim)
+
+            for page, page_claims in sorted(claims_by_page.items()):
+                winner_claim = max(page_claims, key=lambda claim: claim['score'])
+                for claim in page_claims:
+                    if claim is winner_claim:
+                        continue
+                    if self._clear_visual_result_claim(claim.get('result'), 'same_page_duplicate', winner_claim):
+                        cleared_claims += 1
+                        same_page_cleared += 1
+                        affected_pages.add(page)
+
+        return {
+            'cleared_claims': cleared_claims,
+            'affected_pages': len(affected_pages),
+            'same_page_cleared': same_page_cleared,
+            'far_gap_cleared': far_gap_cleared
+        }
+
+    def _collect_existing_claims_by_element(self, db, canonical_ref_tipe, ref_id, page_num, element_ids):
+        if not db or ref_id is None or page_num is None or not element_ids:
+            return {}
+
+        query = db.query(DokumenElemenVisual).filter(
+            DokumenElemenVisual.dev_ref_id == ref_id,
+            DokumenElemenVisual.dokumen_elemen_id.in_(list(element_ids)),
+            DokumenElemenVisual.dev_page.isnot(None),
+            DokumenElemenVisual.dev_page != page_num
+        )
+        if canonical_ref_tipe == 'bab':
+            query = query.filter(DokumenElemenVisual.dev_ref_tipe.in_(('bab', 'buku')))
+        else:
+            query = query.filter(DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe)
+
+        existing_rows = list(query.all() or [])
+        claims_by_element = {}
+        for row in existing_rows:
+            elem_id = self._try_parse_int_id(getattr(row, 'dokumen_elemen_id', None))
+            page = self._try_parse_int_id(getattr(row, 'dev_page', None))
+            if elem_id is None or page is None:
+                continue
+            claims_by_element.setdefault(elem_id, []).append({
+                'dev_id': self._try_parse_int_id(getattr(row, 'dev_id', None)),
+                'page': page,
+                'score': self._visual_existing_claim_score(row),
+                'label': getattr(row, 'dev_label', None),
+                'is_table_like': str(getattr(row, 'dev_label', '') or '').strip().lower() == 'table'
+            })
+        return claims_by_element
+
+    def _prune_far_gap_duplicate_claims(self, fused_results, page_num, existing_claims_by_element):
+        if not fused_results:
+            return fused_results, 0, set()
+
+        current_page = self._try_parse_int_id(page_num)
+        if current_page is None:
+            return fused_results, 0, set()
+
+        claim_result_indices = {}
+        for idx, result in enumerate(fused_results):
+            elem_id = self._try_parse_int_id((result or {}).get('element_id'))
+            if elem_id is None:
+                continue
+            visual_label = self._get_visual_label(result)
+            if visual_label in ('page_header', 'page_footer'):
+                continue
+            claim_result_indices.setdefault(elem_id, []).append(idx)
+
+        if not claim_result_indices:
+            return fused_results, 0, set()
+
+        cleared_current_claims = 0
+        clear_existing_ids = set()
+
+        for elem_id, indices in claim_result_indices.items():
+            current_results = [fused_results[idx] for idx in indices]
+            if any(self._is_table_like_visual_result(result) for result in current_results):
+                continue
+
+            existing_claims = existing_claims_by_element.get(elem_id) or []
+            far_claims = [
+                claim for claim in existing_claims
+                if abs((claim.get('page') or current_page) - current_page) > self.DUPLICATE_SEQUENCE_GAP_THRESHOLD
+            ]
+            if not far_claims:
+                continue
+            if any(bool(claim.get('is_table_like')) for claim in far_claims):
+                continue
+
+            best_current_idx = max(indices, key=lambda i: self._visual_result_claim_score(fused_results[i]))
+            best_current_score = self._visual_result_claim_score(fused_results[best_current_idx])
+            best_existing_score = max((claim.get('score') or (0.0, 0.0, 0)) for claim in far_claims)
+
+            if best_current_score > best_existing_score:
+                for idx in indices:
+                    if idx == best_current_idx or fused_results[idx].get('element_id') is None:
+                        continue
+                    fused_results[idx]['element_id'] = None
+                    fused_results[idx]['duplicate_claim_conflict'] = True
+                    cleared_current_claims += 1
+                for claim in far_claims:
+                    dev_id = claim.get('dev_id')
+                    if dev_id is not None:
+                        clear_existing_ids.add(dev_id)
+            else:
+                for idx in indices:
+                    if fused_results[idx].get('element_id') is None:
+                        continue
+                    fused_results[idx]['element_id'] = None
+                    fused_results[idx]['duplicate_claim_conflict'] = True
+                    cleared_current_claims += 1
+
+        return fused_results, cleared_current_claims, clear_existing_ids
+
+    def _replace_visual_records(self, db, ref_tipe, ref_id, page_num, fused_results, structural_state=None, section_data=None, apply_duplicate_claim_guard=True):
         if not db or ref_id is None or page_num is None:
-            return
+            return list(fused_results or [])
         canonical_ref_tipe = self._canonical_ref_tipe(ref_tipe)
+        fused_results = list(fused_results or [])
+
+        if apply_duplicate_claim_guard:
+            claimed_element_ids = set()
+            for result in fused_results:
+                elem_id = self._try_parse_int_id(result.get('element_id'))
+                if elem_id is None:
+                    continue
+                visual_label = self._get_visual_label(result)
+                if visual_label in ('page_header', 'page_footer'):
+                    continue
+                claimed_element_ids.add(elem_id)
+
+            existing_claims = self._collect_existing_claims_by_element(
+                db,
+                canonical_ref_tipe,
+                ref_id,
+                page_num,
+                claimed_element_ids
+            )
+            fused_results, cleared_claim_rows, clear_existing_ids = self._prune_far_gap_duplicate_claims(
+                fused_results,
+                page_num,
+                existing_claims
+            )
+            if clear_existing_ids:
+                db.query(DokumenElemenVisual).filter(
+                    DokumenElemenVisual.dev_id.in_(list(clear_existing_ids))
+                ).update(
+                    {DokumenElemenVisual.dokumen_elemen_id: None},
+                    synchronize_session=False
+                )
+
+            logger.debug(
+                "Page %s: far-gap duplicate claim guard cleared_current=%s cleared_existing=%s",
+                page_num,
+                cleared_claim_rows,
+                len(clear_existing_ids)
+            )
+
         if fused_results:
             self._apply_structural_labels(
                 db,
@@ -1275,6 +1768,25 @@ class MergingExtractionService:
             delete_query = delete_query.filter(DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe)
         delete_query.delete(synchronize_session=False)
 
+        has_header_footer_rows = any(
+            self._get_visual_label(result) in ('page_header', 'page_footer')
+            for result in (fused_results or [])
+        )
+        header_footer_context = None
+        if has_header_footer_rows:
+            header_footer_context = self._build_header_footer_mapping_context(
+                db,
+                canonical_ref_tipe,
+                ref_id,
+                page_num,
+                fused_results,
+                section_data
+            )
+
+        header_footer_total = 0
+        header_footer_mapped = 0
+        header_footer_null = 0
+
         for result in fused_results or []:
             text_content = result.get('text', '')
             if isinstance(text_content, list):
@@ -1287,11 +1799,30 @@ class MergingExtractionService:
             if bbox and len(bbox) == 4:
                 x0, y0, x1, y1 = bbox
 
+            visual_label = self._get_visual_label(result)
+            final_element_id = result.get('element_id')
+            if visual_label in ('page_header', 'page_footer'):
+                header_footer_total += 1
+                parsed_element_id = self._try_parse_int_id(final_element_id)
+                if parsed_element_id is None:
+                    parsed_element_id = self._resolve_header_footer_element_id(
+                        result,
+                        visual_label,
+                        header_footer_context
+                    )
+                final_element_id = parsed_element_id
+                result['element_id'] = final_element_id
+
+                if final_element_id is None:
+                    header_footer_null += 1
+                else:
+                    header_footer_mapped += 1
+
             dev = DokumenElemenVisual(
                 dev_ref_tipe=canonical_ref_tipe,
                 dev_ref_id=ref_id,
                 dev_page=page_num,
-                dokumen_elemen_id=result.get('element_id'),
+                dokumen_elemen_id=final_element_id,
                 dev_bbox_x0=float(x0),
                 dev_bbox_y0=float(y0),
                 dev_bbox_x1=float(x1),
@@ -1301,6 +1832,20 @@ class MergingExtractionService:
                 dev_text=text_content
             )
             db.add(dev)
+
+        if header_footer_total > 0:
+            logger.info(
+                "Page %s: header/footer rows total=%s mapped=%s null=%s",
+                page_num,
+                header_footer_total,
+                header_footer_mapped,
+                header_footer_null
+            )
+
+        # SessionLocal is configured with autoflush=False, so flush explicitly to
+        # make this page's claims visible to duplicate-claim guard on next pages.
+        db.flush()
+        return fused_results
 
     def _is_duplicate_sequence_far(self, alignments, alignment, threshold):
         seq = self._get_alignment_sequence_value(alignment)
@@ -1677,8 +2222,12 @@ class MergingExtractionService:
         for key, value in fields.items():
             parts.append(f"{key}={sanitize(value)}")
         line = "\t".join(parts) + "\n"
-        with open(self.FOOTNOTE_LOG_PATH, "a", encoding="utf-8") as log_file:
-            log_file.write(line)
+        try:
+            with open(self.FOOTNOTE_LOG_PATH, "a", encoding="utf-8") as log_file:
+                log_file.write(line)
+        except OSError:
+            # Footnote trace logging is best-effort and should not fail the pipeline.
+            return
 
     def _save_alignment_results(self, db, alignments, docling_predictions, footnote_entries=None, header_footer_units=None, section_data=None, doc_id=None, page_num=None, structural_state=None):
         """

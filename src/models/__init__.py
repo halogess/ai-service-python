@@ -8,6 +8,8 @@ from .dokumen_part import DokumenPart
 from .dokumen_section import DokumenSection
 from .dokumen_elemen_visual import DokumenElemenVisual
 from .dokumen_note import DokumenNote
+from .dokumen_format_text import DokumenFormatText
+from .dokumen_format_paragraf import DokumenFormatParagraf
 
 
-__all__ = ["Base", "Antrian", "Buku", "Bab", "Dokumen", "DokumenElemen", "DokumenPart", "DokumenSection", "DokumenElemenVisual", "DokumenNote"]
+__all__ = ["Base", "Antrian", "Buku", "Bab", "Dokumen", "DokumenElemen", "DokumenPart", "DokumenSection", "DokumenElemenVisual", "DokumenNote", "DokumenFormatText", "DokumenFormatParagraf"]

@@ -4,8 +4,11 @@ Handles fusion of Docling predictions with alignment bboxes.
 Ports logic from classification.html's fuseAlignmentWithDocling() function.
 """
 
+import logging
 import re
 from typing import Dict, Any, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class DoclingFusionService:
@@ -240,6 +243,25 @@ class DoclingFusionService:
         return bool(self.CAPTION_TEXT_REGEX.match(text.strip()))
 
     @staticmethod
+    def _narrative_word_count(text: Optional[str]) -> int:
+        if not text:
+            return 0
+        return len([part for part in re.split(r'\s+', str(text).strip()) if part])
+
+    def _is_narrative_text(
+        self,
+        text: Optional[str],
+        min_chars: int = 80,
+        min_words: int = 8
+    ) -> bool:
+        if not text:
+            return False
+        normalized = re.sub(r'\s+', ' ', str(text)).strip()
+        if len(normalized) < min_chars:
+            return False
+        return self._narrative_word_count(normalized) >= min_words
+
+    @staticmethod
     def _bbox_area(bbox: Optional[List[float]]) -> float:
         if not bbox or len(bbox) < 4:
             return 0.0
@@ -252,11 +274,27 @@ class DoclingFusionService:
         Resolve table split where one Docling table overlaps multiple OpenXML table elements.
         Keep per-cell output, but rewrite small/header-only fragments to dominant element.
         """
+        if not matching_items:
+            return matching_items
+
+        table_like_count = sum(
+            1 for matched in matching_items
+            if self._is_table_element_item((matched or {}).get('item'))
+        )
+        if table_like_count != len(matching_items):
+            if table_like_count > 0:
+                logger.debug(
+                    "Skip table canonicalization for mixed candidates: table_like=%s non_table_like=%s",
+                    table_like_count,
+                    len(matching_items) - table_like_count
+                )
+            return matching_items
+
         groups: Dict[Any, List[Dict]] = {}
         for matched in matching_items or []:
             item = matched.get('item') or {}
             elem_id = item.get('element_id')
-            if elem_id is None or not item.get('has_table_units'):
+            if elem_id is None or not self._is_table_element_item(item):
                 continue
             groups.setdefault(elem_id, []).append(matched)
 
@@ -932,7 +970,41 @@ class DoclingFusionService:
                 )
                 if (above_picture and below_caption) or (above_caption and below_picture):
                     result['label'] = 'caption'
-        
+
+        # Downgrade obvious Docling label noise when the bbox contains narrative text.
+        for result in fused_results:
+            label = result.get('label')
+            text = (result.get('text') or '').strip()
+            bbox = result.get('bbox')
+
+            if label == 'table':
+                if (
+                    self._is_narrative_text(text) and
+                    not result.get('has_table_units') and
+                    not self._is_table_element_item(result)
+                ):
+                    result['label'] = 'text'
+            elif label == 'picture':
+                if (
+                    self._is_narrative_text(text) and
+                    not result.get('has_pdf_image') and
+                    not result.get('has_shape_units') and
+                    not result.get('is_openxml_chart')
+                ):
+                    result['label'] = 'text'
+            elif label == 'caption':
+                has_picture_neighbor = False
+                if bbox and picture_results:
+                    has_picture_neighbor = (
+                        self._has_item_above(bbox, picture_results) or
+                        self._has_item_below(bbox, picture_results)
+                    )
+                if (
+                    self._is_narrative_text(text, min_chars=100, min_words=12) and
+                    not has_picture_neighbor
+                ):
+                    result['label'] = 'text'
+
         # Sort by reading order (line-aware)
         def sort_key(item):
             return item.get('bbox') or [0, 0, 0, 0]

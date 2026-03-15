@@ -2,8 +2,7 @@ import json
 import logging
 import re
 
-from sqlalchemy import text
-from models import DokumenElemen, DokumenSection, DokumenPart
+from models import DokumenElemen, DokumenSection, DokumenPart, DokumenFormatText, DokumenFormatParagraf
 
 logger = logging.getLogger(__name__)
 
@@ -279,43 +278,42 @@ class AlignmentOpenXmlMixin:
 
         if dftx_ids:
             try:
-                rows = db_session.execute(
-                    text(
-                        "SELECT dftx_id, dftx_font_ascii, dftx_bold, dftx_italic, dftx_underline "
-                        "FROM dokumen_format_text WHERE dftx_id IN :ids"
-                    ),
-                    {'ids': tuple(dftx_ids)}
-                ).fetchall()
+                rows = db_session.query(
+                    DokumenFormatText.dftx_id,
+                    DokumenFormatText.dftx_font_ascii,
+                    DokumenFormatText.dftx_bold,
+                    DokumenFormatText.dftx_italic,
+                    DokumenFormatText.dftx_underline
+                ).filter(
+                    DokumenFormatText.dftx_id.in_(tuple(dftx_ids))
+                ).all()
                 for row in rows:
-                    mapped = self._row_to_mapping(row)
-                    row_id = self._safe_int(mapped.get('dftx_id'))
+                    row_id = self._safe_int(row.dftx_id)
                     if row_id is None:
                         continue
                     cache['text'][row_id] = {
-                        'dftx_font_ascii': mapped.get('dftx_font_ascii'),
-                        'dftx_bold': mapped.get('dftx_bold'),
-                        'dftx_italic': mapped.get('dftx_italic'),
-                        'dftx_underline': mapped.get('dftx_underline'),
+                        'dftx_font_ascii': row.dftx_font_ascii,
+                        'dftx_bold': row.dftx_bold,
+                        'dftx_italic': row.dftx_italic,
+                        'dftx_underline': row.dftx_underline,
                     }
             except Exception as exc:
                 logger.warning("Failed prefetch dokumen_format_text: %s", exc)
 
         if dfp_ids:
             try:
-                rows = db_session.execute(
-                    text(
-                        "SELECT dfp_id, dfp_p_style_id FROM dokumen_format_paragraf "
-                        "WHERE dfp_id IN :ids"
-                    ),
-                    {'ids': tuple(dfp_ids)}
-                ).fetchall()
+                rows = db_session.query(
+                    DokumenFormatParagraf.dfp_id,
+                    DokumenFormatParagraf.dfp_p_style_id
+                ).filter(
+                    DokumenFormatParagraf.dfp_id.in_(tuple(dfp_ids))
+                ).all()
                 for row in rows:
-                    mapped = self._row_to_mapping(row)
-                    row_id = self._safe_int(mapped.get('dfp_id'))
+                    row_id = self._safe_int(row.dfp_id)
                     if row_id is None:
                         continue
                     cache['paragraph'][row_id] = {
-                        'dfp_p_style_id': mapped.get('dfp_p_style_id'),
+                        'dfp_p_style_id': row.dfp_p_style_id,
                     }
             except Exception as exc:
                 logger.warning("Failed prefetch dokumen_format_paragraf: %s", exc)
