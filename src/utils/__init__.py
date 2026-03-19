@@ -20,12 +20,6 @@ from .char_grouping import (
     detect_column_boundaries,
     check_boundary_crossing,
 )
-from .alignment_core import (
-    perform_global_alignment,
-    group_aligned_tokens,
-    merge_bboxes,
-    calculate_alignment_score,
-)
 
 __all__ = [
     # Char grouping - Constants
@@ -47,9 +41,4 @@ __all__ = [
     "count_large_gaps",
     "detect_column_boundaries",
     "check_boundary_crossing",
-    # Alignment
-    "perform_global_alignment",
-    "group_aligned_tokens",
-    "merge_bboxes",
-    "calculate_alignment_score",
 ]

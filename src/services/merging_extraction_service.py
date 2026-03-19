@@ -203,6 +203,10 @@ class MergingExtractionService:
                 extraction_items = self._transform_extraction_data_to_items(extraction_data)
 
                 page_docling_preds = docling_predictions.get(str(page_num), [])
+                extraction_items = self._annotate_picture_visual_items(
+                    extraction_items,
+                    page_docling_preds
+                )
                 footnote_groups = []
                 if canonical_ref_tipe == 'dokumen':
                     footnote_groups, footnote_item_idxs = self._build_footnote_groups(
@@ -244,7 +248,7 @@ class MergingExtractionService:
                         footnote_entries = []
                     
                     # Save alignment results with header_footer_units for proper Docling fusion
-                    fused_results = self._save_alignment_results(
+                    fused_results, fusion_debug = self._save_alignment_results(
                         db, 
                         alignments, 
                         page_docling_preds,
@@ -255,6 +259,19 @@ class MergingExtractionService:
                         page_num=page_num,
                         structural_state=structural_state
                     )
+                    if fusion_debug:
+                        page_debug.update(fusion_debug)
+                    orphan_chart_visual_count = sum(
+                        1 for unit in (alignment_result.get('unaligned_pdf_units') or [])
+                        if unit.get('is_chart_visual')
+                    )
+                    page_debug['orphan_chart_visual_count'] = orphan_chart_visual_count
+                    if orphan_chart_visual_count:
+                        logger.warning(
+                            "Page %s has orphan chart visual units: %s",
+                            page_num,
+                            orphan_chart_visual_count
+                        )
 
                     if save_to_db or generate_visualizations:
                         payload = {
@@ -454,6 +471,81 @@ class MergingExtractionService:
 
         items.sort(key=cmp_to_key(compare_items))
         return items
+
+    def _annotate_picture_visual_items(self, extraction_items, docling_predictions):
+        if not extraction_items or not docling_predictions:
+            return extraction_items
+
+        overlap_threshold = self._read_float_env(
+            "ALIGNMENT_CHART_VISUAL_DOCLING_OVERLAP",
+            self.fusion_service.OVERLAP_THRESHOLD,
+            min_value=0.0,
+            max_value=1.0
+        )
+        min_width = self._read_float_env(
+            "ALIGNMENT_CHART_VISUAL_MIN_WIDTH",
+            160.0,
+            min_value=1.0
+        )
+        min_height = self._read_float_env(
+            "ALIGNMENT_CHART_VISUAL_MIN_HEIGHT",
+            100.0,
+            min_value=1.0
+        )
+        shape_min_width = self._read_float_env(
+            "ALIGNMENT_CHART_VISUAL_SHAPE_MIN_WIDTH",
+            1.0,
+            min_value=0.0
+        )
+        shape_min_height = self._read_float_env(
+            "ALIGNMENT_CHART_VISUAL_SHAPE_MIN_HEIGHT",
+            1.0,
+            min_value=0.0
+        )
+
+        picture_preds = [
+            pred for pred in (docling_predictions or [])
+            if str(pred.get('label') or '').strip().lower() == 'picture' and pred.get('bbox')
+        ]
+        if not picture_preds:
+            return extraction_items
+
+        for item in extraction_items:
+            item_type = str(item.get('type') or '').strip().lower()
+            if item_type not in {'hline_table', 'shape'}:
+                continue
+
+            bbox = item.get('bbox')
+            if not bbox or len(bbox) < 4:
+                continue
+
+            width = max(0.0, float(bbox[2]) - float(bbox[0]))
+            height = max(0.0, float(bbox[3]) - float(bbox[1]))
+            item_min_width = shape_min_width if item_type == 'shape' else min_width
+            item_min_height = shape_min_height if item_type == 'shape' else min_height
+            if width < item_min_width or height < item_min_height:
+                continue
+
+            best_overlap = 0.0
+            best_pred_bbox = None
+            for pred in picture_preds:
+                pred_bbox = pred.get('bbox')
+                overlap = self.fusion_service.calculate_overlap(bbox, pred_bbox)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_pred_bbox = pred_bbox
+
+            if best_overlap < overlap_threshold:
+                continue
+
+            item['docling_label'] = 'picture'
+            item['docling_picture_overlap'] = round(best_overlap, 4)
+            item['docling_picture_bbox'] = list(best_pred_bbox) if best_pred_bbox else None
+            item['is_docling_picture_area'] = True
+            item['suppress_text_alignment'] = True
+            item['is_chart_visual'] = True
+
+        return extraction_items
 
     def _pdf_unit_key(self, unit):
         unit_id = unit.get('unit_id')
@@ -1293,6 +1385,22 @@ class MergingExtractionService:
         if not alignments or not duplicate_element_ids:
             return alignments, set()
 
+        def is_visual_alignment(alignment):
+            if not alignment:
+                return False
+            if (
+                alignment.get('is_openxml_chart') or
+                alignment.get('is_openxml_visual_slot') or
+                alignment.get('is_chart_visual_attachment') or
+                alignment.get('is_image_part')
+            ):
+                return True
+            units = alignment.get('matched_pdf_units', []) or []
+            return any(
+                unit.get('is_chart_visual') or unit.get('item_type') in ('image', 'shape', 'hline_table')
+                for unit in units
+            )
+
         ordered = [
             alignment for alignment in alignments
             if not alignment.get('is_table') and alignment.get('merged_bbox')
@@ -1368,6 +1476,9 @@ class MergingExtractionService:
                     else:
                         target = above if above_delta <= below_delta else below
 
+                if is_visual_alignment(target):
+                    target = None
+
                 if not target:
                     remaining_units.append(unit)
                     continue
@@ -1428,7 +1539,13 @@ class MergingExtractionService:
         seen_picture_bboxes = set()
 
         for result in fused_results:
-            if result.get('source') != 'alignment':
+            if (
+                result.get('source') != 'alignment' and
+                not (
+                    result.get('source') == 'merged' and
+                    result.get('element_id') is not None
+                )
+            ):
                 updated_results.append(result)
                 continue
             elem_id = result.get('element_id')
@@ -1443,8 +1560,14 @@ class MergingExtractionService:
                 or result.get('is_image_part')
             )
             alignments_for_elem = alignment_by_id.get(elem_id, [])
+            has_chart_alignment = any(
+                alignment.get('is_openxml_chart') or
+                alignment.get('is_openxml_visual_slot') or
+                alignment.get('is_chart_visual_attachment')
+                for alignment in alignments_for_elem
+            )
 
-            if is_picture and alignments_for_elem:
+            if is_picture and alignments_for_elem and not has_chart_alignment:
                 image_units = [
                     unit
                     for alignment in alignments_for_elem
@@ -1492,6 +1615,10 @@ class MergingExtractionService:
             if not align_bbox:
                 updated_results.append(result)
                 continue
+            if is_picture and has_chart_alignment:
+                result['bbox'] = list(align_bbox)
+                updated_results.append(result)
+                continue
             bbox = result.get('bbox')
             if not bbox or len(bbox) < 4:
                 result['bbox'] = list(align_bbox)
@@ -1506,6 +1633,220 @@ class MergingExtractionService:
             updated_results.append(result)
 
         fused_results[:] = updated_results
+
+    def _alignment_has_visual_units(self, alignment):
+        if not alignment:
+            return False
+        return any(
+            unit.get('is_chart_visual') or unit.get('item_type') in ('image', 'shape', 'hline_table')
+            for unit in (alignment.get('matched_pdf_units') or [])
+        )
+
+    def _sort_fused_results_in_reading_order(self, fused_results):
+        if not fused_results:
+            return
+        from functools import cmp_to_key
+
+        def sort_key(item):
+            return item.get('bbox') or [0, 0, 0, 0]
+
+        def compare(a, b):
+            a_bbox = sort_key(a)
+            b_bbox = sort_key(b)
+            y_diff = a_bbox[1] - b_bbox[1]
+            if abs(y_diff) > 10:
+                return -1 if y_diff < 0 else 1
+            x_diff = a_bbox[0] - b_bbox[0]
+            return -1 if x_diff < 0 else (1 if x_diff > 0 else 0)
+
+        fused_results.sort(key=cmp_to_key(compare))
+
+    def _find_best_visual_alignment_for_bbox(self, alignments, target_bbox):
+        if not alignments or not target_bbox:
+            return None
+
+        candidates = []
+        for alignment in alignments:
+            bbox = alignment.get('merged_bbox')
+            if not bbox or not self._alignment_has_visual_units(alignment):
+                continue
+            if not (
+                alignment.get('is_openxml_chart') or
+                alignment.get('is_openxml_visual_slot') or
+                alignment.get('is_chart_visual_attachment')
+            ):
+                continue
+            overlap = self.fusion_service.calculate_overlap(bbox, target_bbox)
+            if overlap <= 0:
+                continue
+            candidates.append((alignment, overlap))
+
+        if not candidates:
+            return None
+
+        def candidate_score(entry):
+            alignment, overlap = entry
+            bbox = alignment.get('merged_bbox')
+            return (
+                1 if alignment.get('is_openxml_visual_slot') else 0,
+                overlap,
+                self._bbox_area(bbox),
+                alignment.get('element_sequence') or 0,
+            )
+
+        return max(candidates, key=candidate_score)[0]
+
+    def _build_picture_result_from_alignment(self, alignment, docling_bbox=None, repair_reason=None):
+        if not alignment or not alignment.get('merged_bbox'):
+            return None
+        matched_units = alignment.get('matched_pdf_units') or []
+        has_pdf_image = any(unit.get('item_type') == 'image' for unit in matched_units)
+        has_shape_units = any(
+            unit.get('item_type') in ('shape', 'hline_table') or unit.get('is_chart_visual')
+            for unit in matched_units
+        )
+        has_table_units = any(unit.get('item_type') in ('table', 'hline_table') for unit in matched_units)
+        openxml_indices = alignment.get('openxml_indices') or []
+        overlap = 0.0
+        if docling_bbox:
+            overlap = self.fusion_service.calculate_overlap(alignment.get('merged_bbox'), docling_bbox)
+        return {
+            'bbox': list(alignment.get('merged_bbox')),
+            'label': 'picture',
+            'text': alignment.get('element_text', ''),
+            'overlap': overlap,
+            'source': 'alignment',
+            'element_id': alignment.get('element_id'),
+            'element_type': alignment.get('element_type'),
+            'element_sequence': alignment.get('element_sequence'),
+            'openxml_idx': min(openxml_indices) if openxml_indices else alignment.get('openxml_idx'),
+            'docling_label': 'picture' if docling_bbox else None,
+            'is_text_part': alignment.get('is_text_part'),
+            'is_image_part': alignment.get('is_image_part'),
+            'unit_id': alignment.get('unit_id'),
+            'merged_count': 1,
+            'is_picture_area': True,
+            'has_shape_units': has_shape_units,
+            'has_pdf_image': has_pdf_image,
+            'has_table_units': has_table_units,
+            'is_text_only_item': False,
+            'is_openxml_chart': alignment.get('is_openxml_chart', False),
+            'is_openxml_visual_slot': alignment.get('is_openxml_visual_slot', False),
+            'visual_slot_promoted': alignment.get('visual_slot_promoted', False),
+            'repair_reason': repair_reason or alignment.get('repair_reason'),
+        }
+
+    def _picture_body_text_overlap_ratio(self, picture_result, fused_results):
+        if not picture_result or not fused_results:
+            return 0.0
+        picture_bbox = picture_result.get('bbox')
+        if not picture_bbox:
+            return 0.0
+
+        max_overlap = 0.0
+        picture_elem_id = picture_result.get('element_id')
+        for other in fused_results:
+            if other is picture_result:
+                continue
+            if other.get('element_id') == picture_elem_id and picture_elem_id is not None:
+                continue
+            other_bbox = other.get('bbox')
+            if not other_bbox:
+                continue
+            label = self._get_visual_label(other)
+            if label in ('picture', 'caption', 'table', 'page_header', 'page_footer', 'formula', 'code', 'footnote'):
+                continue
+            if self.fusion_service._is_caption_candidate(self._coerce_text(other.get('text'))):
+                continue
+            overlap = self.fusion_service.calculate_overlap(picture_bbox, other_bbox)
+            if overlap > max_overlap:
+                max_overlap = overlap
+        return max_overlap
+
+    def _repair_picture_fusion_results(self, alignments, fused_results, docling_predictions=None):
+        if not fused_results:
+            return fused_results, {
+                'missing_picture_repair_count': 0,
+                'picture_overlap_prune_count': 0,
+            }
+
+        debug = {
+            'missing_picture_repair_count': 0,
+            'picture_overlap_prune_count': 0,
+        }
+        raw_picture_preds = [
+            pred for pred in (docling_predictions or [])
+            if pred.get('label') == 'picture' and pred.get('bbox')
+        ]
+        picture_results = [result for result in fused_results if self._is_picture_result(result)]
+
+        if raw_picture_preds and not picture_results:
+            for pred in raw_picture_preds:
+                alignment = self._find_best_visual_alignment_for_bbox(alignments, pred.get('bbox'))
+                if not alignment:
+                    continue
+                replacement = self._build_picture_result_from_alignment(
+                    alignment,
+                    docling_bbox=pred.get('bbox'),
+                    repair_reason='missing_picture_repair'
+                )
+                if not replacement:
+                    continue
+                existing_result = None
+                for result in fused_results:
+                    if result.get('element_id') == alignment.get('element_id'):
+                        existing_result = result
+                        break
+                if existing_result is not None:
+                    existing_result.update(replacement)
+                else:
+                    fused_results.append(replacement)
+                debug['missing_picture_repair_count'] += 1
+            picture_results = [result for result in fused_results if self._is_picture_result(result)]
+
+        alignment_by_element = {}
+        for alignment in alignments or []:
+            elem_id = alignment.get('element_id')
+            if elem_id is None or not alignment.get('merged_bbox'):
+                continue
+            alignment_by_element.setdefault(elem_id, []).append(alignment)
+
+        picture_overlap_threshold = self._read_float_env(
+            'ALIGNMENT_PICTURE_TEXT_OVERLAP_REPAIR_THRESHOLD',
+            0.2,
+            min_value=0.0,
+            max_value=1.0
+        )
+
+        for result in picture_results:
+            overlap_ratio = self._picture_body_text_overlap_ratio(result, fused_results)
+            if overlap_ratio <= picture_overlap_threshold:
+                continue
+            elem_id = result.get('element_id')
+            candidate_alignments = alignment_by_element.get(elem_id) or []
+            if not candidate_alignments:
+                continue
+            best_alignment = max(
+                candidate_alignments,
+                key=lambda alignment: (
+                    1 if alignment.get('is_openxml_visual_slot') else 0,
+                    self.fusion_service.calculate_overlap(
+                        alignment.get('merged_bbox'),
+                        result.get('bbox')
+                    ) if alignment.get('merged_bbox') and result.get('bbox') else 0.0,
+                    self._bbox_area(alignment.get('merged_bbox')),
+                )
+            )
+            align_bbox = best_alignment.get('merged_bbox')
+            if not align_bbox:
+                continue
+            result['bbox'] = list(align_bbox)
+            result['repair_reason'] = 'picture_overlap_prune'
+            result['picture_text_overlap_ratio'] = overlap_ratio
+            debug['picture_overlap_prune_count'] += 1
+
+        self._sort_fused_results_in_reading_order(fused_results)
+        return fused_results, debug
 
     @staticmethod
     def _bbox_area(bbox):
@@ -2253,23 +2594,14 @@ class MergingExtractionService:
 
         if footnote_entries:
             fused_results.extend(footnote_entries)
-            from functools import cmp_to_key
-
-            def sort_key(item):
-                return item.get('bbox') or [0, 0, 0, 0]
-
-            def compare(a, b):
-                a_bbox = sort_key(a)
-                b_bbox = sort_key(b)
-                y_diff = a_bbox[1] - b_bbox[1]
-                if abs(y_diff) > 10:
-                    return -1 if y_diff < 0 else 1
-                x_diff = a_bbox[0] - b_bbox[0]
-                return -1 if x_diff < 0 else (1 if x_diff > 0 else 0)
-
-            fused_results.sort(key=cmp_to_key(compare))
+        fused_results, repair_debug = self._repair_picture_fusion_results(
+            alignments,
+            fused_results,
+            docling_predictions=docling_predictions or []
+        )
+        self._sort_fused_results_in_reading_order(fused_results)
 
         self._apply_structural_labels(db, fused_results, structural_state=structural_state)
 
         # Return fused results for visualization
-        return fused_results
+        return fused_results, repair_debug

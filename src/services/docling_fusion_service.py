@@ -220,7 +220,9 @@ class DoclingFusionService:
         return bool(
             item.get('is_image_part') or 
             item.get('has_pdf_image') or 
-            item.get('has_shape_units')
+            item.get('has_shape_units') or
+            item.get('is_openxml_chart') or
+            item.get('is_openxml_visual_slot')
         )
 
     def _is_text_only_item(self, item: Dict) -> bool:
@@ -234,13 +236,28 @@ class DoclingFusionService:
         return not (
             item.get('is_image_part') or
             item.get('has_pdf_image') or
-            item.get('has_shape_units')
+            item.get('has_shape_units') or
+            item.get('is_openxml_chart') or
+            item.get('is_openxml_visual_slot')
         )
 
     def _is_caption_candidate(self, text: Optional[str]) -> bool:
         if not text:
             return False
         return bool(self.CAPTION_TEXT_REGEX.match(text.strip()))
+
+    def _extract_figure_key(self, text: Optional[str]) -> Optional[str]:
+        if not text:
+            return None
+        match = re.search(
+            r'\b(?:gambar|figure|fig\.?|tabel|table)\s*(\d+(?:\.\d+)*)',
+            str(text),
+            re.IGNORECASE
+        )
+        if not match:
+            return None
+        prefix = str(match.group(0)).split()[0].lower().rstrip('.')
+        return f"{prefix}:{match.group(1)}"
 
     @staticmethod
     def _narrative_word_count(text: Optional[str]) -> int:
@@ -468,7 +485,11 @@ class DoclingFusionService:
             return False
         if item.get('is_image_part') or item.get('has_pdf_image'):
             return True
-        if item.get('has_shape_units') and item.get('is_openxml_chart'):
+        if item.get('has_shape_units') and (
+            item.get('is_openxml_chart') or item.get('is_openxml_visual_slot')
+        ):
+            return True
+        if item.get('is_openxml_visual_slot'):
             return True
         element_type = self._normalized_element_type(item)
         return any(marker in element_type for marker in ('image', 'picture', 'figure', 'gambar'))
@@ -637,6 +658,12 @@ class DoclingFusionService:
                                 'is_openxml_chart',
                                 alignment.get('is_openxml_chart', False)
                             ),
+                            'is_openxml_visual_slot': cell.get(
+                                'is_openxml_visual_slot',
+                                alignment.get('is_openxml_visual_slot', False)
+                            ),
+                            'visual_slot_promoted': alignment.get('visual_slot_promoted', False),
+                            'repair_reason': alignment.get('repair_reason'),
                         })
             elif alignment.get('merged_bbox'):
                 # Non-table elements
@@ -644,8 +671,14 @@ class DoclingFusionService:
                 has_shape = any(u.get('item_type') == 'shape' for u in matched_units)
                 has_image = any(u.get('item_type') == 'image' for u in matched_units)
                 has_table_units = any(u.get('item_type') in ('table', 'hline_table') for u in matched_units)
+                has_chart_visual_units = any(u.get('is_chart_visual') for u in matched_units)
                 is_picture_area = bool(
-                    alignment.get('is_image_part') or has_shape or has_image
+                    alignment.get('is_image_part') or
+                    has_shape or
+                    has_image or
+                    has_chart_visual_units or
+                    alignment.get('is_openxml_chart') or
+                    alignment.get('is_openxml_visual_slot')
                 )
                 
                 all_aligned_items.append({
@@ -669,6 +702,9 @@ class DoclingFusionService:
                     'is_code_style': alignment.get('is_code_style', False),
                     'is_code_like_openxml': alignment.get('is_code_like_openxml', False),
                     'is_openxml_chart': alignment.get('is_openxml_chart', False),
+                    'is_openxml_visual_slot': alignment.get('is_openxml_visual_slot', False),
+                    'visual_slot_promoted': alignment.get('visual_slot_promoted', False),
+                    'repair_reason': alignment.get('repair_reason'),
                 })
         
         # Add header/footer units
@@ -683,7 +719,10 @@ class DoclingFusionService:
                     'has_shape_units': False,
                     'has_table_units': False,
                     'is_picture_area': False,
-                    'is_openxml_chart': False
+                    'is_openxml_chart': False,
+                    'is_openxml_visual_slot': False,
+                    'visual_slot_promoted': False,
+                    'repair_reason': None,
                 })
         
         # Track which aligned items have been used
@@ -732,6 +771,9 @@ class DoclingFusionService:
                     has_pdf_image = any(m['item'].get('has_pdf_image') for m in matching_items)
                     has_table_units = any(m['item'].get('has_table_units') for m in matching_items)
                     has_openxml_chart = any(m['item'].get('is_openxml_chart') for m in matching_items)
+                    has_openxml_visual_slot = any(
+                        m['item'].get('is_openxml_visual_slot') for m in matching_items
+                    )
                     all_text_only = all(self._is_text_only_item(m['item']) for m in matching_items)
                     
                     # Special case: Docling 'picture' with multiple shapes
@@ -776,7 +818,7 @@ class DoclingFusionService:
                         # Determine label
                         merged_label = doc_item.get('label')
                         if merged_label == 'picture':
-                            if not has_pdf_image and not has_openxml_chart:
+                            if not has_pdf_image and not has_openxml_chart and not has_openxml_visual_slot:
                                 merged_label = 'text'
                             elif not any(
                                 m['item'].get('is_picture_area') for m in matching_items
@@ -823,7 +865,15 @@ class DoclingFusionService:
                             'has_pdf_image': has_pdf_image,
                             'has_table_units': has_table_units,
                             'is_text_only_item': all_text_only,
-                            'is_openxml_chart': has_openxml_chart
+                            'is_openxml_chart': has_openxml_chart,
+                            'is_openxml_visual_slot': has_openxml_visual_slot,
+                            'visual_slot_promoted': any(
+                                m['item'].get('visual_slot_promoted') for m in matching_items
+                            ),
+                            'repair_reason': next(
+                                (m['item'].get('repair_reason') for m in matching_items if m['item'].get('repair_reason')),
+                                None
+                            ),
                         })
                     else:
                         # Don't merge - add each item separately
@@ -832,7 +882,11 @@ class DoclingFusionService:
                             
                             final_label = doc_item.get('label')
                             if final_label == 'picture':
-                                if not item.get('has_pdf_image') and not item.get('is_openxml_chart'):
+                                if (
+                                    not item.get('has_pdf_image') and
+                                    not item.get('is_openxml_chart') and
+                                    not item.get('is_openxml_visual_slot')
+                                ):
                                     final_label = 'text'
                                 elif not item.get('is_picture_area') and not item.get('has_shape_units'):
                                     if self._is_text_only_item(item):
@@ -864,6 +918,9 @@ class DoclingFusionService:
                                 'has_table_units': item.get('has_table_units'),
                                 'is_text_only_item': self._is_text_only_item(item),
                                 'is_openxml_chart': item.get('is_openxml_chart', False),
+                                'is_openxml_visual_slot': item.get('is_openxml_visual_slot', False),
+                                'visual_slot_promoted': item.get('visual_slot_promoted', False),
+                                'repair_reason': item.get('repair_reason'),
                                 'table_canonical_from_element_id': item.get('table_canonical_from_element_id'),
                                 'table_canonical_from_sequence': item.get('table_canonical_from_sequence')
                             })
@@ -877,7 +934,9 @@ class DoclingFusionService:
             if item.get('source') == 'header_footer' and item.get('zone'):
                 label = 'page_header' if item['zone'] == 'header' else 'page_footer'
             elif item.get('is_image_part') and (
-                item.get('has_pdf_image') or item.get('is_openxml_chart')
+                item.get('has_pdf_image') or
+                item.get('is_openxml_chart') or
+                item.get('is_openxml_visual_slot')
             ):
                 label = 'picture'
             elif item.get('is_image_part'):
@@ -905,7 +964,10 @@ class DoclingFusionService:
                 'has_pdf_image': item.get('has_pdf_image'),
                 'has_table_units': item.get('has_table_units'),
                 'is_text_only_item': self._is_text_only_item(item),
-                'is_openxml_chart': item.get('is_openxml_chart', False)
+                'is_openxml_chart': item.get('is_openxml_chart', False),
+                'is_openxml_visual_slot': item.get('is_openxml_visual_slot', False),
+                'visual_slot_promoted': item.get('visual_slot_promoted', False),
+                'repair_reason': item.get('repair_reason'),
             })
         
         # Post-pass: force picture label for image/shape areas that overlap any picture prediction
@@ -918,7 +980,11 @@ class DoclingFusionService:
                 for result in fused_results:
                     if result.get('label') == 'picture':
                         continue
-                    if not result.get('has_pdf_image') and not result.get('is_openxml_chart'):
+                    if (
+                        not result.get('has_pdf_image') and
+                        not result.get('is_openxml_chart') and
+                        not result.get('is_openxml_visual_slot')
+                    ):
                         continue
                     bbox = result.get('bbox')
                     if not bbox:
@@ -971,6 +1037,37 @@ class DoclingFusionService:
                 if (above_picture and below_caption) or (above_caption and below_picture):
                     result['label'] = 'caption'
 
+        if picture_results:
+            for result in fused_results:
+                if result.get('label') != 'caption' or not result.get('is_openxml_chart'):
+                    continue
+                bbox = result.get('bbox')
+                if not bbox or len(bbox) < 4:
+                    continue
+                caption_key = self._extract_figure_key(result.get('text'))
+                if not caption_key:
+                    continue
+
+                neighbor_picture = None
+                for picture in picture_results:
+                    picture_bbox = picture.get('bbox')
+                    if not picture_bbox or len(picture_bbox) < 4:
+                        continue
+                    if (
+                        self._has_item_above(bbox, [picture], require_x_overlap=False) or
+                        self._has_item_below(bbox, [picture], require_x_overlap=False)
+                    ):
+                        neighbor_picture = picture
+                        break
+
+                if not neighbor_picture:
+                    continue
+
+                picture_key = self._extract_figure_key(neighbor_picture.get('text'))
+                if picture_key and picture_key != caption_key:
+                    result['label'] = 'text'
+                    result['element_id'] = None
+
         # Downgrade obvious Docling label noise when the bbox contains narrative text.
         for result in fused_results:
             label = result.get('label')
@@ -989,7 +1086,8 @@ class DoclingFusionService:
                     self._is_narrative_text(text) and
                     not result.get('has_pdf_image') and
                     not result.get('has_shape_units') and
-                    not result.get('is_openxml_chart')
+                    not result.get('is_openxml_chart') and
+                    not result.get('is_openxml_visual_slot')
                 ):
                     result['label'] = 'text'
             elif label == 'caption':

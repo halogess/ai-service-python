@@ -36,3 +36,4 @@ Thumbs.db
 /src/benchmark/
 /src/visualization_output/
 /src/gap_analysis.log
+/tmp*

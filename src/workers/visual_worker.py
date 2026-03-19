@@ -10,18 +10,13 @@ New Flow (Backend-Only PDF Processing):
 """
 
 import time
-import json
 import logging
 import os
-import glob
-import fitz
 from database import SessionLocal, engine
 from models import Base, Bab, Dokumen
 from services.antrian_service import AntrianService, STORAGE_BASE
 from services.merging_extraction_service import MergingExtractionService
 from services.pdf_image_service import convert_pdf_to_images
-from services.alignment_service import AlignmentService
-from utils.alignment_visualizer import AlignmentVisualizer
 
 # Setup logging
 logging.basicConfig(

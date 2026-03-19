@@ -5,7 +5,6 @@ class Bab(Base):
     __tablename__ = "bab"
     
     bab_id = Column(Integer, primary_key=True, autoincrement=True)
-    bab_tipe = Column(String(100), nullable=True)
     buku_id = Column(Integer, nullable=False)
     bab_order = Column(Integer, nullable=True)
     bab_filename = Column(String(255), nullable=False)

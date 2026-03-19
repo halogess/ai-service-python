@@ -4,13 +4,11 @@ Handles processing tasks from the antrian table
 """
 
 import os
-import json
 import logging
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from models import Antrian, Dokumen, Bab
-from services.pdf_extraction_service import PDFExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -29,21 +27,6 @@ class AntrianService:
         """
         self.db = db
         
-    def get_next_extraction_task(self) -> Optional[Antrian]:
-        """
-        Get the next task in queue with status 'in_queue' for extraction.
-        
-        Returns:
-            Antrian object or None if queue is empty
-        """
-        task = self.db.query(Antrian).filter(
-            Antrian.antrian_extraction_status == 'in_queue'
-        ).order_by(Antrian.antrian_created_at).first()
-        
-        if task:
-            logger.info(f"Found extraction task in queue: ID {task.antrian_id}")
-        return task
-
     def get_next_labeling_task(self) -> Optional[Antrian]:
         """
         Get the next labeling task in queue.
@@ -57,18 +40,6 @@ class AntrianService:
         return task
 
     
-    def update_extraction_status(self, task: Antrian, status: str, error_message: str = None):
-        """
-        Update task status (Extraction).
-        """
-        task.antrian_extraction_status = status
-        if error_message:
-            task.antrian_error_message = error_message[:255]
-        elif status == 'completed':
-            task.antrian_error_message = None
-        self.db.commit()
-        logger.info(f"Task {task.antrian_id} extraction status updated to: {status}")
-
     def update_labeling_status(self, task: Antrian, status: str, error_message: str = None):
         """
         Update task status (Labeling).
@@ -181,55 +152,3 @@ class AntrianService:
         os.makedirs(full_output_dir, exist_ok=True)
         return full_output_dir
     
-    def get_alignment_directory(self, task: Antrian) -> str:
-        """
-        Get alignment visualization directory (same level as PDF).
-        
-        Args:
-            task: Antrian object
-            
-        Returns:
-            Alignment directory path
-        """
-        pdf_path = self.get_pdf_path(task)
-        pdf_dir = os.path.dirname(pdf_path)
-        
-        alignment_dir = os.path.join(pdf_dir, 'alignment')
-        full_alignment_dir = os.path.join(STORAGE_BASE, alignment_dir)
-        
-        os.makedirs(full_alignment_dir, exist_ok=True)
-        return full_alignment_dir
-    
-    def process_char_groups(self, task: Antrian) -> dict:
-        """
-        Process PDF and extract character groups.
-        
-        Args:
-            task: Antrian object
-            
-        Returns:
-            dict with extraction results
-        """
-        pdf_path = self.get_full_pdf_path(task)
-        output_dir = self.get_output_directory(task)
-        
-        logger.info(f"Processing PDF: {pdf_path}")
-        
-        with PDFExtractor(pdf_path) as extractor:
-            # Extract char groups from all pages
-            char_groups = extractor.extract_all_char_groups()
-            
-            # Save char groups to JSON
-            output_path = os.path.join(output_dir, "char_groups.json")
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(char_groups, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Saved char groups to: {output_path}")
-            
-            return {
-                "pdf_path": pdf_path,
-                "output_dir": output_dir,
-                "char_groups_file": output_path,
-                "page_count": extractor.page_count,
-                "total_groups": sum(len(p["groups"]) for p in char_groups),
-            }

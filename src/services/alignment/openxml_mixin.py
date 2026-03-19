@@ -128,6 +128,21 @@ class AlignmentOpenXmlMixin:
 
         return walk(json_tree)
 
+    def _is_openxml_visual_slot_element(self, text, elem_type, style_ids, is_openxml_chart=False):
+        if is_openxml_chart:
+            return False
+        element_type = str(elem_type or '').strip().lower()
+        if not element_type or 'paragraph' not in element_type:
+            return False
+        if self._normalize_text(text or '').strip():
+            return False
+        style_tokens = {
+            self._normalize_hint_token(style_id).replace(' ', '')
+            for style_id in (style_ids or [])
+            if style_id is not None
+        }
+        return 'gambarlampiran' in style_tokens
+
     def _is_table_element(self, etype):
         return etype in ['table', 'grid_table']
 
@@ -540,6 +555,12 @@ class AlignmentOpenXmlMixin:
                 paragraph_format_cache=paragraph_format_cache
             )
             is_openxml_chart = self._is_openxml_chart_element(json_tree)
+            is_openxml_visual_slot = self._is_openxml_visual_slot_element(
+                '',
+                elem.delemen_type,
+                style_hints.get('style_ids', []),
+                is_openxml_chart=is_openxml_chart
+            )
 
             if self._is_table_element(elem.delemen_type):
                 cells = self._extract_table_cells(json_tree)
@@ -574,6 +595,7 @@ class AlignmentOpenXmlMixin:
                             'is_code_style': style_hints.get('is_code_style', False),
                             'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                             'is_openxml_chart': is_openxml_chart,
+                            'is_openxml_visual_slot': False,
                         })
                 elif elem_has_shape:
                     table_info['action'] = 'created shape placeholder'
@@ -595,6 +617,7 @@ class AlignmentOpenXmlMixin:
                         'is_code_style': style_hints.get('is_code_style', False),
                         'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                         'is_openxml_chart': is_openxml_chart,
+                        'is_openxml_visual_slot': False,
                     })
                 table_debug.append(table_info)
             else:
@@ -623,6 +646,7 @@ class AlignmentOpenXmlMixin:
                                 'is_code_style': style_hints.get('is_code_style', False),
                                 'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                                 'is_openxml_chart': is_openxml_chart,
+                                'is_openxml_visual_slot': False,
                             })
                         elif item['type'] == 'text' and not text_unit_created:
                             if content['text_only']:
@@ -642,10 +666,17 @@ class AlignmentOpenXmlMixin:
                                     'is_code_style': style_hints.get('is_code_style', False),
                                     'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                                     'is_openxml_chart': is_openxml_chart,
+                                    'is_openxml_visual_slot': False,
                                 })
                                 text_unit_created = True
                 else:
                     text = content['combined'] if content['combined'] else self._extract_text_from_json_tree(json_tree)
+                    is_openxml_visual_slot = self._is_openxml_visual_slot_element(
+                        text,
+                        elem.delemen_type,
+                        style_hints.get('style_ids', []),
+                        is_openxml_chart=is_openxml_chart
+                    )
                     units.append({
                         'unit_id': str(elem.delemen_id),
                         'elem_id': elem.delemen_id,
@@ -661,6 +692,7 @@ class AlignmentOpenXmlMixin:
                         'is_code_style': style_hints.get('is_code_style', False),
                         'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                         'is_openxml_chart': is_openxml_chart,
+                        'is_openxml_visual_slot': is_openxml_visual_slot,
                     })
         return units, table_debug
 
@@ -682,6 +714,7 @@ class AlignmentOpenXmlMixin:
                 'is_code_style': all_units[i].get('is_code_style', False),
                 'is_code_like_openxml': all_units[i].get('is_code_like_openxml', False),
                 'is_openxml_chart': all_units[i].get('is_openxml_chart', False),
+                'is_openxml_visual_slot': all_units[i].get('is_openxml_visual_slot', False),
             }
             for i in indices
         ]

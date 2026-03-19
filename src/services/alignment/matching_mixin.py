@@ -902,6 +902,7 @@ class AlignmentMatchingMixin:
     @staticmethod
     def _score_pass1_candidate(candidate):
         retry_lock_candidate = bool(candidate.get('retry_lock_candidate'))
+        backward_retry_penalty = bool(candidate.get('backward_retry_penalty'))
         skip_anchor_penalty = bool(candidate.get('skip_anchor_penalty'))
         local_anchor_source = 1 if candidate.get('candidate_openxml_source') == 'sequence_anchor_cluster' else 0
         anchor_hit_count = int(candidate.get('candidate_anchor_hit_count') or 0)
@@ -913,6 +914,7 @@ class AlignmentMatchingMixin:
         matched_pdf_units = int(candidate.get('matched_pdf_units') or 0)
         return (
             0 if retry_lock_candidate else 1,
+            0 if backward_retry_penalty else 1,
             0 if skip_anchor_penalty else 1,
             -cpb_ratio,
             coverage,
@@ -971,6 +973,14 @@ class AlignmentMatchingMixin:
             if observed_skip_anchor is None:
                 observed_skip_anchor = self._try_parse_int(fallback_skip_anchor)
             stable_pointer_max = self._try_parse_int(stable_pointer.get('max_openxml_idx'))
+            rollback_gap = max(
+                0,
+                base_min_openxml_idx - (
+                    stable_pointer_max
+                    if stable_pointer_max is not None
+                    else candidate_min_openxml_idx
+                )
+            )
             skip_anchor_distance = (
                 abs(candidate_min_openxml_idx - observed_skip_anchor)
                 if observed_skip_anchor is not None
@@ -1015,6 +1025,7 @@ class AlignmentMatchingMixin:
                 'observed_skip_anchor': observed_skip_anchor,
                 'skip_anchor_distance': skip_anchor_distance,
                 'stable_pointer_max': stable_pointer_max,
+                'rollback_gap': rollback_gap,
                 'candidate_openxml_source': debug_info.get('candidate_openxml_source'),
                 'candidate_anchor_hit_count': int(debug_info.get('candidate_openxml_anchor_hit_count') or 0),
                 'candidate_seq_min': self._try_parse_int(debug_info.get('candidate_openxml_seq_min')),
@@ -1142,6 +1153,10 @@ class AlignmentMatchingMixin:
                     break
 
         def mark_retry_lock_candidate(candidate):
+            retry_max_backward_gap = self._read_positive_int_env(
+                "ALIGNMENT_PASS1_RETRY_MAX_BACKWARD_GAP",
+                48
+            )
             candidate['retry_lock_candidate'] = (
                 candidate['cross_page_backward_skip_ratio'] >= retry_cpb_ratio and
                 (
@@ -1149,6 +1164,10 @@ class AlignmentMatchingMixin:
                     candidate['matched_pdf_units'] <= retry_min_matched_units or
                     candidate['openxml_diversity'] <= retry_min_openxml_diversity
                 )
+            )
+            candidate['backward_retry_penalty'] = (
+                candidate.get('attempt', 0) > 0 and
+                int(candidate.get('rollback_gap') or 0) > retry_max_backward_gap
             )
             observed_skip_anchor = candidate.get('observed_skip_anchor')
             candidate['skip_anchor_penalty'] = (
@@ -1181,10 +1200,12 @@ class AlignmentMatchingMixin:
                 'openxml_diversity': candidate['openxml_diversity'],
                 'cross_page_backward_skip_ratio': candidate['cross_page_backward_skip_ratio'],
                 'retry_lock_candidate': candidate.get('retry_lock_candidate', False),
+                'backward_retry_penalty': candidate.get('backward_retry_penalty', False),
                 'skip_anchor_penalty': candidate.get('skip_anchor_penalty', False),
                 'skip_anchor_distance': candidate.get('skip_anchor_distance'),
                 'observed_skip_anchor': candidate.get('observed_skip_anchor'),
                 'stable_pointer_max': candidate.get('stable_pointer_max'),
+                'rollback_gap': candidate.get('rollback_gap'),
                 'candidate_openxml_source': candidate.get('candidate_openxml_source'),
                 'candidate_anchor_hit_count': candidate.get('candidate_anchor_hit_count'),
                 'candidate_seq_min': candidate.get('candidate_seq_min'),
@@ -1234,6 +1255,10 @@ class AlignmentMatchingMixin:
             selected_retry_seq_range[1] if selected_retry_seq_range else None
         )
         stable_pointer = self._compute_stable_pass1_pointer(p1_align, min_openxml_idx)
+        p1_align, backward_alignment_prune_debug = self._drop_far_backward_alignments(
+            p1_align,
+            min_openxml_idx
+        )
 
         final_align = list(p1_align)
         final_align.sort(key=lambda x: x.get('element_sequence') or 0)
@@ -1258,9 +1283,27 @@ class AlignmentMatchingMixin:
 
         final_align = self._cleanup_punctuation_alignments(final_align)
         final_align, shape_conflict_debug = self._resolve_shape_alignment_conflicts(final_align, pdf_units)
+        final_align, final_un_pdf, chart_visual_attach_debug = self._attach_chart_visuals_to_chart_alignments(
+            final_align,
+            final_un_pdf,
+            pdf_units,
+            openxml_units,
+            min_openxml_idx=min_openxml_idx,
+            page_sequence_range=page_sequence_range
+        )
+        final_align, final_un_pdf, picture_overlap_prune_debug = self._prune_visual_alignment_text_units(
+            final_align,
+            final_un_pdf,
+            pdf_units
+        )
         final_align, final_un_pdf, shape_attach_debug = self._attach_shape_clusters_to_next_alignment(final_align, final_un_pdf, pdf_units)
         final_align = self._merge_line_overlap_alignments(final_align)
         final_align = self._repair_marker_only_alignment_gaps(final_align, openxml_units)
+        final_align, chart_rescue_debug = self._rescue_chart_hline_alignments(
+            final_align,
+            openxml_units,
+            min_openxml_idx=min_openxml_idx
+        )
         pre_filter_alignments = deepcopy(final_align)
         final_align, final_un_pdf = self._filter_sparse_matched_units(final_align, final_un_pdf, pdf_units)
         final_align, final_un_pdf = self._filter_low_match_alignments(final_align, final_un_pdf, pdf_units)
@@ -1289,10 +1332,28 @@ class AlignmentMatchingMixin:
         p1_debug['non_shape_openxml_count'] = len(openxml_units)
         p1_debug['shape_conflict_debug'] = shape_conflict_debug
         p1_debug['shape_conflict_count'] = len(shape_conflict_debug)
+        p1_debug['chart_visual_attach_debug'] = chart_visual_attach_debug
+        p1_debug['chart_visual_attach_count'] = len(chart_visual_attach_debug)
+        p1_debug['visual_slot_attach_count'] = sum(
+            1 for entry in (chart_visual_attach_debug or [])
+            if entry.get('target_type') == 'visual_slot'
+        )
+        p1_debug['picture_overlap_prune_debug'] = picture_overlap_prune_debug
+        p1_debug['picture_overlap_prune_count'] = len(picture_overlap_prune_debug)
         p1_debug['shape_attach_debug'] = shape_attach_debug
         p1_debug['shape_attach_count'] = len(shape_attach_debug)
+        p1_debug['backward_alignment_prune_debug'] = backward_alignment_prune_debug
+        p1_debug['backward_alignment_prune_count'] = len(backward_alignment_prune_debug)
+        p1_debug['chart_rescue_debug'] = chart_rescue_debug
+        p1_debug['chart_rescue_count'] = len(chart_rescue_debug)
         p1_debug['paragraph_rescue_debug'] = paragraph_rescue_debug
         p1_debug['paragraph_rescue_count'] = len(paragraph_rescue_debug)
+        orphan_chart_visual_indices = [
+            pdf_idx for pdf_idx in final_un_pdf
+            if 0 <= pdf_idx < len(pdf_units) and pdf_units[pdf_idx].get('is_chart_visual')
+        ]
+        p1_debug['orphan_chart_visual_count'] = len(orphan_chart_visual_indices)
+        p1_debug['orphan_chart_visual_indices'] = orphan_chart_visual_indices
         pass2_max_idx = self._compute_alignment_max_openxml_idx(
             [alignment for alignment in final_align if alignment.get('late_matched')]
         )
@@ -1473,6 +1534,7 @@ class AlignmentMatchingMixin:
                 'is_code_style': openxml_unit.get('is_code_style', False),
                 'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                 'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
+                'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
             }
             created.append(restored)
             seq_to_alignment[missing_seq] = restored
@@ -1486,6 +1548,198 @@ class AlignmentMatchingMixin:
             alignments.sort(key=lambda x: x.get('element_sequence') or 0)
 
         return alignments
+
+    def _rescue_chart_hline_alignments(self, alignments, openxml_units, min_openxml_idx=None):
+        if not alignments or not openxml_units:
+            return alignments, []
+
+        min_openxml_idx = self._try_parse_int(min_openxml_idx)
+
+        max_seq_gap = self._read_positive_int_env(
+            'ALIGNMENT_CHART_RESCUE_MAX_SEQ_GAP',
+            4
+        )
+        min_width = self._read_positive_int_env(
+            'ALIGNMENT_CHART_RESCUE_MIN_WIDTH',
+            160
+        )
+        min_height = self._read_positive_int_env(
+            'ALIGNMENT_CHART_RESCUE_MIN_HEIGHT',
+            100
+        )
+
+        def bbox_size_ok(bbox):
+            if not bbox or len(bbox) < 4:
+                return False
+            width = max(0.0, float(bbox[2]) - float(bbox[0]))
+            height = max(0.0, float(bbox[3]) - float(bbox[1]))
+            return width >= min_width and height >= min_height
+
+        seq_to_alignment = {}
+        for alignment in alignments:
+            if alignment.get('is_table'):
+                continue
+            seq = self._try_parse_int(alignment.get('element_sequence'))
+            if seq is None:
+                continue
+            seq_to_alignment[seq] = alignment
+
+        seq_to_openxml = {}
+        for openxml_idx, unit in enumerate(openxml_units):
+            seq = self._try_parse_int((unit or {}).get('elem_seq'))
+            if seq is None or seq in seq_to_openxml:
+                continue
+            seq_to_openxml[seq] = (openxml_idx, unit)
+
+        if not seq_to_alignment or not seq_to_openxml:
+            return alignments, []
+
+        debug = []
+        created = []
+        touched_alignments = []
+
+        for alignment in list(alignments):
+            if alignment.get('is_table') or alignment.get('is_openxml_chart') or alignment.get('is_openxml_visual_slot'):
+                continue
+            if not self._is_paragraph_like_alignment(alignment):
+                continue
+
+            donor_seq = self._try_parse_int(alignment.get('element_sequence'))
+            if donor_seq is None:
+                continue
+
+            donor_text = self._normalize_text(alignment.get('element_text') or '')
+            if not donor_text.startswith('gambar'):
+                continue
+
+            units = list(alignment.get('matched_pdf_units') or [])
+            moved_units = [
+                unit for unit in units
+                if unit.get('item_type') == 'hline_table' and bbox_size_ok(unit.get('bbox'))
+            ]
+            if not moved_units:
+                continue
+
+            candidate = None
+            for gap in range(1, max_seq_gap + 1):
+                prev_seq = donor_seq - gap
+                prev_entry = seq_to_openxml.get(prev_seq)
+                if prev_entry and prev_seq not in seq_to_alignment:
+                    openxml_idx, openxml_unit = prev_entry
+                    if min_openxml_idx is not None and openxml_idx < min_openxml_idx:
+                        prev_entry = None
+                    if not prev_entry:
+                        continue
+                    if openxml_unit.get('is_openxml_chart') or openxml_unit.get('is_openxml_visual_slot'):
+                        candidate = (prev_seq, openxml_idx, openxml_unit)
+                        break
+
+                next_seq = donor_seq + gap
+                next_entry = seq_to_openxml.get(next_seq)
+                if next_entry and next_seq not in seq_to_alignment:
+                    openxml_idx, openxml_unit = next_entry
+                    if min_openxml_idx is not None and openxml_idx < min_openxml_idx:
+                        next_entry = None
+                    if not next_entry:
+                        continue
+                    if openxml_unit.get('is_openxml_chart') or openxml_unit.get('is_openxml_visual_slot'):
+                        candidate = (next_seq, openxml_idx, openxml_unit)
+                        break
+
+            if not candidate:
+                continue
+
+            candidate_seq, openxml_idx, openxml_unit = candidate
+            moved_units = sorted(moved_units, key=lambda unit: unit.get('item_idx', -1))
+            remaining_units = [unit for unit in units if unit not in moved_units]
+
+            rescued_alignment = {
+                'element_id': openxml_unit.get('elem_id'),
+                'element_sequence': openxml_unit.get('elem_seq'),
+                'element_type': openxml_unit.get('elem_type'),
+                'is_table': False,
+                'is_chart_rescue': True,
+                'element_text': openxml_unit.get('text', ''),
+                'matched_pdf_units': moved_units,
+                'merged_bbox': self._merge_bboxes([u.get('bbox') for u in moved_units]),
+                'cells': None,
+                'is_text_part': openxml_unit.get('is_text_part', False),
+                'is_image_part': openxml_unit.get('is_image_part', False),
+                'unit_id': str(openxml_unit.get('unit_id') or openxml_unit.get('elem_id')),
+                'openxml_indices': [openxml_idx],
+                'openxml_idx': openxml_idx,
+                'image_index': openxml_unit.get('image_index'),
+                'font_families': openxml_unit.get('font_families', []),
+                'style_ids': openxml_unit.get('style_ids', []),
+                'is_code_font': openxml_unit.get('is_code_font', False),
+                'is_code_style': openxml_unit.get('is_code_style', False),
+                'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
+                'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
+                'chart_rescued_from_element_id': alignment.get('element_id'),
+            }
+
+            alignment['matched_pdf_units'] = remaining_units
+            touched_alignments.append(alignment)
+            created.append(rescued_alignment)
+            seq_to_alignment[candidate_seq] = rescued_alignment
+            debug.append({
+                'from_element_id': alignment.get('element_id'),
+                'from_element_sequence': donor_seq,
+                'to_element_id': openxml_unit.get('elem_id'),
+                'to_element_sequence': candidate_seq,
+                'moved_unit_count': len(moved_units),
+            })
+
+        if created:
+            for alignment in touched_alignments:
+                self._recompute_alignment_bboxes(alignment)
+            alignments.extend(created)
+            alignments[:] = [
+                alignment for alignment in alignments
+                if alignment.get('is_table') or alignment.get('matched_pdf_units')
+            ]
+            alignments.sort(key=lambda x: x.get('element_sequence') or 0)
+
+        return alignments, debug
+
+    def _drop_far_backward_alignments(self, alignments, min_openxml_idx):
+        if not alignments:
+            return alignments, []
+
+        base_min_openxml_idx = self._try_parse_int(min_openxml_idx)
+        if base_min_openxml_idx is None or base_min_openxml_idx <= 0:
+            return alignments, []
+
+        max_backward_gap = self._read_positive_int_env(
+            'ALIGNMENT_MAX_BACKWARD_ALIGNMENT_GAP',
+            24
+        )
+        cutoff_idx = max(0, base_min_openxml_idx - max_backward_gap)
+
+        kept = []
+        dropped = []
+        for alignment in alignments:
+            indices = self._collect_alignment_openxml_indices(
+                alignment,
+                include_table_cells=True
+            )
+            if not indices:
+                kept.append(alignment)
+                continue
+
+            alignment_max_idx = max(indices)
+            if alignment_max_idx < cutoff_idx:
+                dropped.append({
+                    'element_id': alignment.get('element_id'),
+                    'element_sequence': alignment.get('element_sequence'),
+                    'openxml_max_idx': alignment_max_idx,
+                    'cutoff_idx': cutoff_idx,
+                })
+                continue
+            kept.append(alignment)
+
+        return kept, dropped
 
     def _perform_char_alignment(
         self,
@@ -1925,6 +2179,7 @@ class AlignmentMatchingMixin:
                         'is_code_style': openxml_unit.get('is_code_style', False),
                         'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                         'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
+                        'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                     }
                 continue
 
@@ -1952,6 +2207,7 @@ class AlignmentMatchingMixin:
                         'is_code_style': openxml_unit.get('is_code_style', False),
                         'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                         'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
+                        'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                     }
 
                 cell = {
@@ -1967,6 +2223,7 @@ class AlignmentMatchingMixin:
                     'is_code_style': openxml_unit.get('is_code_style', False),
                     'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                     'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
+                    'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                 }
                 elem_alignments[elem_id]['cells'].append(cell)
                 elem_alignments[elem_id]['openxml_indices'].append(openxml_idx)
@@ -1992,6 +2249,7 @@ class AlignmentMatchingMixin:
                     'is_code_style': openxml_unit.get('is_code_style', False),
                     'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                     'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
+                    'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                 }
 
         alignments = list(elem_alignments.values()) + list(non_table_units.values())
@@ -2101,6 +2359,10 @@ class AlignmentMatchingMixin:
                     bool(ex.get('is_code_style'))
                 )
                 ex['is_openxml_chart'] = bool(ex.get('is_openxml_chart')) or bool(la.get('is_openxml_chart'))
+                ex['is_openxml_visual_slot'] = (
+                    bool(ex.get('is_openxml_visual_slot')) or
+                    bool(la.get('is_openxml_visual_slot'))
+                )
                 la_indices = la.get('openxml_indices') or []
                 if la_indices:
                     ex_indices = ex.setdefault('openxml_indices', [])

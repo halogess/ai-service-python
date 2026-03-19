@@ -5,6 +5,14 @@ import re
 
 class AlignmentPostprocessMixin:
     MARKER_ONLY_TEXT_RE = re.compile(r'^\s*\d+(?:\.\d+)*\s*[:.)]?\s*$')
+    FIGURE_KEY_RE = re.compile(
+        r'\b(?:gambar|figure|fig\.?|tabel|table)\s*(\d+(?:\.\d+)*)',
+        re.IGNORECASE
+    )
+    VISUAL_CAPTION_RE = re.compile(
+        r'^\s*(?:gambar|figure|fig\.?|tabel|table)\s*\d+(?:\.\d+)?\b',
+        re.IGNORECASE
+    )
 
     @staticmethod
     def _read_positive_int_env(env_name, default_value):
@@ -33,7 +41,12 @@ class AlignmentPostprocessMixin:
         return parsed
 
     def _is_paragraph_like_alignment(self, alignment):
-        if not alignment or alignment.get('is_table'):
+        if (
+            not alignment or
+            alignment.get('is_table') or
+            alignment.get('is_openxml_chart') or
+            alignment.get('is_openxml_visual_slot')
+        ):
             return False
         element_type = str(alignment.get('element_type') or '').strip().lower()
         if not element_type:
@@ -52,6 +65,166 @@ class AlignmentPostprocessMixin:
             'heading',
             'section_header',
         }
+
+    def _extract_figure_key(self, text):
+        if not text:
+            return None
+        match = self.FIGURE_KEY_RE.search(str(text))
+        if not match:
+            return None
+        prefix_match = re.search(r'(gambar|figure|fig\.?|tabel|table)', str(text), re.IGNORECASE)
+        prefix = prefix_match.group(1).lower().rstrip('.') if prefix_match else 'gambar'
+        return f"{prefix}:{match.group(1)}"
+
+    def _is_caption_like_text(self, text):
+        if not text:
+            return False
+        return bool(self.VISUAL_CAPTION_RE.match(str(text).strip()))
+
+    def _bbox_x_overlap_ratio(self, bbox_a, bbox_b):
+        if not bbox_a or not bbox_b or len(bbox_a) < 4 or len(bbox_b) < 4:
+            return 0.0
+        overlap_start = max(bbox_a[0], bbox_b[0])
+        overlap_end = min(bbox_a[2], bbox_b[2])
+        overlap = max(0.0, overlap_end - overlap_start)
+        width_a = max(0.0, bbox_a[2] - bbox_a[0])
+        width_b = max(0.0, bbox_b[2] - bbox_b[0])
+        denom = min(width_a, width_b)
+        if denom <= 0:
+            return 0.0
+        return overlap / denom
+
+    def _is_visual_target_alignment(self, alignment):
+        if not alignment or alignment.get('is_table'):
+            return False
+        return bool(
+            alignment.get('is_openxml_chart') or
+            alignment.get('is_openxml_visual_slot') or
+            alignment.get('is_chart_visual_attachment')
+        )
+
+    def _is_visual_pdf_unit(self, unit):
+        if not unit:
+            return False
+        if unit.get('is_chart_visual'):
+            return True
+        return unit.get('item_type') in {'image', 'shape', 'hline_table'}
+
+    def _alignment_visual_bbox(self, alignment):
+        visual_bboxes = [
+            unit.get('bbox')
+            for unit in (alignment or {}).get('matched_pdf_units', []) or []
+            if self._is_visual_pdf_unit(unit) and unit.get('bbox')
+        ]
+        if not visual_bboxes:
+            return None
+        return self._merge_bboxes(visual_bboxes)
+
+    def _is_caption_band_bbox(
+        self,
+        unit_bbox,
+        visual_bbox,
+        vertical_gap_max=48.0,
+        x_overlap_min=0.5
+    ):
+        if not unit_bbox or not visual_bbox or len(unit_bbox) < 4 or len(visual_bbox) < 4:
+            return False
+        if self._bbox_x_overlap_ratio(unit_bbox, visual_bbox) < x_overlap_min:
+            return False
+        if unit_bbox[3] <= visual_bbox[1]:
+            gap = visual_bbox[1] - unit_bbox[3]
+        elif unit_bbox[1] >= visual_bbox[3]:
+            gap = unit_bbox[1] - visual_bbox[3]
+        else:
+            return False
+        return gap <= vertical_gap_max
+
+    def _find_prev_meaningful_openxml_unit(self, openxml_units, start_idx, seq_min=None, seq_max=None):
+        for idx in range(int(start_idx or 0) - 1, -1, -1):
+            unit = openxml_units[idx] or {}
+            seq = unit.get('elem_seq')
+            if seq_min is not None and (seq is None or seq < seq_min):
+                break
+            if seq_max is not None and seq is not None and seq > seq_max:
+                continue
+            text = self._normalize_text(unit.get('text') or '').strip()
+            if text:
+                return idx, unit
+        return None, None
+
+    def _find_next_meaningful_openxml_unit(self, openxml_units, start_idx, seq_min=None, seq_max=None):
+        for idx in range(int(start_idx or 0) + 1, len(openxml_units or [])):
+            unit = openxml_units[idx] or {}
+            seq = unit.get('elem_seq')
+            if seq_max is not None and (seq is None or seq > seq_max):
+                break
+            if seq_min is not None and seq is not None and seq < seq_min:
+                continue
+            if unit.get('is_openxml_visual_slot'):
+                continue
+            text = self._normalize_text(unit.get('text') or '').strip()
+            if text:
+                return idx, unit
+        return None, None
+
+    def _is_valid_visual_slot_target(
+        self,
+        openxml_units,
+        openxml_idx,
+        page_sequence_range=None
+    ):
+        if not openxml_units or openxml_idx is None or openxml_idx < 0 or openxml_idx >= len(openxml_units):
+            return False
+        unit = openxml_units[openxml_idx] or {}
+        if not unit.get('is_openxml_visual_slot'):
+            return False
+
+        seq_min = seq_max = None
+        if page_sequence_range and len(page_sequence_range) == 2:
+            seq_min, seq_max = page_sequence_range
+
+        unit_seq = unit.get('elem_seq')
+        if seq_min is not None and (unit_seq is None or unit_seq < seq_min):
+            return False
+        if seq_max is not None and (unit_seq is None or unit_seq > seq_max):
+            return False
+
+        prev_idx, prev_unit = self._find_prev_meaningful_openxml_unit(
+            openxml_units,
+            openxml_idx,
+            seq_min=seq_min,
+            seq_max=seq_max
+        )
+        next_idx, next_unit = self._find_next_meaningful_openxml_unit(
+            openxml_units,
+            openxml_idx,
+            seq_min=seq_min,
+            seq_max=seq_max
+        )
+        if prev_unit is None or next_unit is None:
+            return False
+
+        prev_key = self._extract_figure_key(prev_unit.get('text'))
+        if not prev_key:
+            return False
+
+        next_key = self._extract_figure_key(next_unit.get('text'))
+        if next_key and next_key != prev_key:
+            return False
+
+        next_text = str(next_unit.get('text') or '').strip()
+        if not next_text:
+            return False
+        if self._is_caption_like_text(next_text):
+            next_word_count = len([part for part in re.split(r'\s+', next_text) if part])
+            if next_word_count <= 8:
+                return False
+
+        prev_seq = prev_unit.get('elem_seq')
+        next_seq = next_unit.get('elem_seq')
+        if prev_seq is None or next_seq is None or unit_seq is None:
+            return False
+        return prev_seq < unit_seq < next_seq and prev_idx < openxml_idx < next_idx
 
     def _paragraph_text_len(self, alignment):
         if not alignment:
@@ -1023,7 +1196,12 @@ class AlignmentPostprocessMixin:
 
         shape_indices = [
             idx for idx in unaligned_pdf_indices
-            if pdf_units[idx].get('item_type') == 'shape'
+            if (
+                pdf_units[idx].get('item_type') == 'shape' and
+                not pdf_units[idx].get('is_chart_visual') and
+                not pdf_units[idx].get('is_docling_picture_area') and
+                not pdf_units[idx].get('suppress_text_alignment')
+            )
         ]
         if not shape_indices:
             return alignments, unaligned_pdf_indices, []
@@ -1074,7 +1252,7 @@ class AlignmentPostprocessMixin:
             # Attach merged unit as shape placeholder
             merged_unit = {
                 'pdf_unit_id': f"pdf_shape_cluster_{cluster[0]}",
-                'item_idx': cluster[0],
+                'item_idx': cluster_units[0].get('item_idx', cluster[0]),
                 'item_type': 'shape',
                 'text': '',
                 'bbox': merged_bbox,
@@ -1082,6 +1260,10 @@ class AlignmentPostprocessMixin:
                 'score': 0,
                 'is_cell': False,
                 'absorbed': True,
+                'source_item_type': cluster_units[0].get('source_item_type'),
+                'is_chart_visual': any(unit.get('is_chart_visual', False) for unit in cluster_units),
+                'is_docling_picture_area': any(unit.get('is_docling_picture_area', False) for unit in cluster_units),
+                'suppress_text_alignment': any(unit.get('suppress_text_alignment', False) for unit in cluster_units),
                 'debug': {}
             }
 
@@ -1090,3 +1272,386 @@ class AlignmentPostprocessMixin:
             self._recompute_alignment_bboxes(target_alignment)
 
         return alignments, remaining_unaligned, debug
+
+    def _attach_chart_visuals_to_chart_alignments(
+        self,
+        alignments,
+        unaligned_pdf_indices,
+        pdf_units,
+        openxml_units,
+        min_openxml_idx=None,
+        page_sequence_range=None
+    ):
+        if not unaligned_pdf_indices or not pdf_units or not openxml_units:
+            return alignments, unaligned_pdf_indices, []
+
+        chart_visual_indices = [
+            idx for idx in unaligned_pdf_indices
+            if pdf_units[idx].get('is_chart_visual') and pdf_units[idx].get('bbox')
+        ]
+        if not chart_visual_indices:
+            return alignments, unaligned_pdf_indices, []
+
+        seq_min = seq_max = None
+        if page_sequence_range and len(page_sequence_range) == 2:
+            seq_min, seq_max = page_sequence_range
+
+        aligned_sequences = sorted(
+            {
+                self._get_alignment_sequence(alignment)
+                for alignment in (alignments or [])
+                if (
+                    not alignment.get('is_table') and
+                    alignment.get('matched_pdf_units') and
+                    self._get_alignment_sequence(alignment) > 0
+                )
+            }
+        )
+        if aligned_sequences:
+            local_seq_min = aligned_sequences[0] - 1
+            local_seq_max = aligned_sequences[-1] + 1
+            seq_min = min(seq_min, local_seq_min) if seq_min is not None else local_seq_min
+            seq_max = max(seq_max, local_seq_max) if seq_max is not None else local_seq_max
+
+        def center_y(bbox):
+            if not bbox or len(bbox) < 4:
+                return None
+            return (bbox[1] + bbox[3]) / 2
+
+        chart_visual_indices.sort(
+            key=lambda idx: (
+                pdf_units[idx].get('item_idx', 10**9),
+                center_y(pdf_units[idx].get('bbox')) or 10**9,
+            )
+        )
+
+        def cluster_indices(indices):
+            clusters = []
+            cluster = []
+            previous_idx = None
+            previous_bbox = None
+            for idx in indices:
+                unit = pdf_units[idx]
+                bbox = unit.get('bbox')
+                item_idx = unit.get('item_idx')
+                should_join = False
+                if cluster:
+                    if (
+                        previous_idx is not None and item_idx is not None and
+                        (item_idx - previous_idx) <= 1
+                    ):
+                        should_join = True
+                    elif previous_bbox and bbox:
+                        should_join = self._bbox_y_overlap_ratio(previous_bbox, bbox) > 0.3
+                if cluster and not should_join:
+                    clusters.append(cluster)
+                    cluster = []
+                cluster.append(idx)
+                previous_idx = item_idx
+                previous_bbox = bbox
+            if cluster:
+                clusters.append(cluster)
+            return clusters
+
+        def build_matched_unit(pdf_unit):
+            return {
+                'pdf_unit_id': pdf_unit.get('unit_id'),
+                'item_idx': pdf_unit.get('item_idx'),
+                'item_type': pdf_unit.get('item_type'),
+                'source_item_type': pdf_unit.get('source_item_type'),
+                'text': pdf_unit.get('text'),
+                'bbox': pdf_unit.get('bbox'),
+                'matched_count': 0,
+                'score': 0,
+                'is_cell': pdf_unit.get('is_cell', False),
+                'is_hline_table_unit': pdf_unit.get('is_hline_table_unit', False),
+                'row': pdf_unit.get('row'),
+                'col': pdf_unit.get('col'),
+                'is_chart_visual': True,
+                'visual_only_match': True,
+                'debug': {}
+            }
+
+        def alignment_needs_visual_units(alignment):
+            units = alignment.get('matched_pdf_units') or []
+            if not units:
+                return True
+            for unit in units:
+                if unit.get('is_chart_visual'):
+                    return False
+                if unit.get('item_type') in ('image', 'shape', 'hline_table'):
+                    return False
+            return True
+
+        def resolve_target_priority(target):
+            target_type = target.get('target_type')
+            if target_type == 'visual_slot':
+                return 1
+            if target_type == 'chart':
+                text = ''
+                if target.get('alignment'):
+                    text = target['alignment'].get('element_text') or ''
+                else:
+                    text = (target.get('openxml_unit') or {}).get('text') or ''
+                return 0 if self._normalize_text(text).strip() else 2
+            return 3
+
+        chart_clusters = cluster_indices(chart_visual_indices)
+        if not chart_clusters:
+            return alignments, unaligned_pdf_indices, []
+
+        existing_chart_targets = []
+        for alignment in alignments:
+            target_type = None
+            if alignment.get('is_openxml_chart'):
+                target_type = 'chart'
+            elif alignment.get('is_openxml_visual_slot'):
+                target_type = 'visual_slot'
+            if not target_type or not alignment_needs_visual_units(alignment):
+                continue
+            existing_chart_targets.append({
+                'alignment': alignment,
+                'openxml_idx': (alignment.get('openxml_indices') or [alignment.get('openxml_idx')])[0],
+                'openxml_unit': None,
+                'target_type': target_type,
+                'target_priority': resolve_target_priority({
+                    'alignment': alignment,
+                    'target_type': target_type,
+                }),
+            })
+
+        used_openxml_indices = self._collect_matched_openxml_indices(alignments)
+        seen_elem_ids = {
+            target['alignment'].get('element_id')
+            for target in existing_chart_targets
+            if target.get('alignment')
+        }
+        chart_candidates = []
+        for openxml_idx, openxml_unit in enumerate(openxml_units):
+            if not (
+                openxml_unit.get('is_openxml_chart') or
+                openxml_unit.get('is_openxml_visual_slot')
+            ):
+                continue
+            if openxml_idx in used_openxml_indices:
+                continue
+            if min_openxml_idx is not None and openxml_idx < int(min_openxml_idx or 0):
+                continue
+            elem_seq = openxml_unit.get('elem_seq')
+            if seq_min is not None and seq_max is not None:
+                if elem_seq is None or elem_seq < seq_min or elem_seq > seq_max:
+                    continue
+            elem_id = openxml_unit.get('elem_id')
+            if elem_id in seen_elem_ids:
+                continue
+            target_type = 'chart' if openxml_unit.get('is_openxml_chart') else 'visual_slot'
+            if target_type == 'visual_slot' and not self._is_valid_visual_slot_target(
+                openxml_units,
+                openxml_idx,
+                page_sequence_range=(seq_min, seq_max)
+            ):
+                continue
+            seen_elem_ids.add(elem_id)
+            chart_candidates.append({
+                'alignment': None,
+                'openxml_idx': openxml_idx,
+                'openxml_unit': openxml_unit,
+                'target_type': target_type,
+                'target_priority': resolve_target_priority({
+                    'openxml_unit': openxml_unit,
+                    'target_type': target_type,
+                }),
+            })
+
+        chart_targets = existing_chart_targets + chart_candidates
+        chart_targets.sort(
+            key=lambda target: (
+                target.get('target_priority', 1),
+                (
+                    (target.get('alignment') or {}).get('element_sequence')
+                    if target.get('alignment')
+                    else (target.get('openxml_unit') or {}).get('elem_seq')
+                ) or 0,
+                target.get('openxml_idx') or 0,
+            )
+        )
+        if not chart_targets:
+            return alignments, unaligned_pdf_indices, []
+
+        remaining_unaligned = set(unaligned_pdf_indices or [])
+        debug = []
+        for cluster, target in zip(chart_clusters, chart_targets):
+            cluster_units = [pdf_units[idx] for idx in cluster if pdf_units[idx].get('bbox')]
+            if not cluster_units:
+                continue
+
+            matched_units = [build_matched_unit(unit) for unit in cluster_units]
+            merged_bbox = self._merge_bboxes([unit.get('bbox') for unit in cluster_units])
+
+            if target.get('alignment'):
+                alignment = target['alignment']
+                alignment.setdefault('matched_pdf_units', []).extend(matched_units)
+                alignment['matched_pdf_units'].sort(key=lambda unit: unit.get('item_idx', -1))
+                alignment['is_chart_visual_attachment'] = True
+                alignment['matched_by_visual_only'] = True
+                if target.get('target_type') == 'visual_slot':
+                    alignment['is_openxml_visual_slot'] = True
+                    alignment['is_image_part'] = True
+                    alignment['visual_slot_promoted'] = True
+                    alignment['repair_reason'] = 'visual_slot_attach'
+                self._recompute_alignment_bboxes(alignment)
+                mode = 'augment_existing'
+                element_id = alignment.get('element_id')
+                element_sequence = alignment.get('element_sequence')
+            else:
+                openxml_unit = target.get('openxml_unit') or {}
+                target_type = target.get('target_type')
+                alignment = {
+                    'element_id': openxml_unit.get('elem_id'),
+                    'element_sequence': openxml_unit.get('elem_seq'),
+                    'element_type': openxml_unit.get('elem_type'),
+                    'is_table': False,
+                    'element_text': openxml_unit.get('text', ''),
+                    'matched_pdf_units': matched_units,
+                    'merged_bbox': merged_bbox,
+                    'cells': None,
+                    'is_text_part': bool(openxml_unit.get('is_text_part', False)),
+                    'is_image_part': target_type == 'visual_slot',
+                    'unit_id': str(openxml_unit.get('elem_id')),
+                    'openxml_indices': [target.get('openxml_idx')],
+                    'openxml_idx': target.get('openxml_idx'),
+                    'image_index': openxml_unit.get('image_index'),
+                    'font_families': openxml_unit.get('font_families', []),
+                    'style_ids': openxml_unit.get('style_ids', []),
+                    'is_code_font': openxml_unit.get('is_code_font', False),
+                    'is_code_style': openxml_unit.get('is_code_style', False),
+                    'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+                    'is_openxml_chart': bool(openxml_unit.get('is_openxml_chart', False)),
+                    'is_openxml_visual_slot': bool(openxml_unit.get('is_openxml_visual_slot', False)),
+                    'is_chart_visual_attachment': True,
+                    'matched_by_visual_only': True,
+                    'visual_slot_promoted': target_type == 'visual_slot',
+                    'repair_reason': 'visual_slot_attach' if target_type == 'visual_slot' else 'chart_visual_attach',
+                }
+                alignments.append(alignment)
+                mode = 'create_new'
+                element_id = openxml_unit.get('elem_id')
+                element_sequence = openxml_unit.get('elem_seq')
+
+            for pdf_idx in cluster:
+                remaining_unaligned.discard(pdf_idx)
+
+            debug.append({
+                'mode': mode,
+                'element_id': element_id,
+                'element_sequence': element_sequence,
+                'openxml_idx': target.get('openxml_idx'),
+                'cluster_pdf_indices': list(cluster),
+                'cluster_item_indices': [pdf_units[idx].get('item_idx') for idx in cluster],
+                'cluster_item_types': [pdf_units[idx].get('item_type') for idx in cluster],
+                'cluster_source_item_types': [pdf_units[idx].get('source_item_type') for idx in cluster],
+                'target_type': target.get('target_type') or 'chart',
+            })
+
+        if debug:
+            alignments.sort(key=lambda alignment: alignment.get('element_sequence') or 0)
+        return alignments, sorted(remaining_unaligned), debug
+
+    def _prune_visual_alignment_text_units(self, alignments, unaligned_pdf_indices, pdf_units):
+        if not alignments:
+            return alignments, unaligned_pdf_indices, []
+
+        vertical_gap_max = self._read_float_env(
+            'ALIGNMENT_VISUAL_CAPTION_BAND_MAX_GAP',
+            48.0,
+            min_value=0.0
+        )
+        x_overlap_min = self._read_float_env(
+            'ALIGNMENT_VISUAL_CAPTION_BAND_MIN_X_OVERLAP',
+            0.5,
+            min_value=0.0,
+            max_value=1.0
+        )
+
+        previous_keys = self._collect_alignment_unit_keys(alignments)
+        debug = []
+
+        for alignment in alignments:
+            if not self._is_visual_target_alignment(alignment):
+                continue
+
+            units = list(alignment.get('matched_pdf_units') or [])
+            if not units:
+                continue
+
+            visual_bbox = self._alignment_visual_bbox(alignment)
+            if not visual_bbox:
+                continue
+
+            figure_key = self._extract_figure_key(alignment.get('element_text'))
+            kept_units = []
+            dropped_units = []
+            kept_caption_units = 0
+
+            for unit in units:
+                if self._is_visual_pdf_unit(unit):
+                    kept_units.append(unit)
+                    continue
+
+                unit_text = str(unit.get('text') or '').strip()
+                unit_bbox = unit.get('bbox')
+                unit_figure_key = self._extract_figure_key(unit_text)
+
+                if figure_key and unit_figure_key and unit_figure_key != figure_key:
+                    dropped_units.append(unit)
+                    continue
+
+                if unit_figure_key and figure_key and unit_figure_key == figure_key:
+                    kept_units.append(unit)
+                    kept_caption_units += 1
+                    continue
+
+                in_caption_band = self._is_caption_band_bbox(
+                    unit_bbox,
+                    visual_bbox,
+                    vertical_gap_max=vertical_gap_max,
+                    x_overlap_min=x_overlap_min
+                )
+                if in_caption_band:
+                    kept_units.append(unit)
+                    kept_caption_units += 1
+                    continue
+
+                if self._is_caption_like_text(unit_text):
+                    kept_units.append(unit)
+                    kept_caption_units += 1
+                    continue
+
+                dropped_units.append(unit)
+
+            if not dropped_units:
+                continue
+
+            alignment['matched_pdf_units'] = sorted(
+                kept_units,
+                key=lambda unit: unit.get('item_idx', -1)
+            )
+            self._recompute_alignment_bboxes(alignment)
+            alignment['repair_reason'] = 'picture_overlap_prune'
+            debug.append({
+                'element_id': alignment.get('element_id'),
+                'element_sequence': alignment.get('element_sequence'),
+                'dropped_unit_count': len(dropped_units),
+                'kept_unit_count': len(kept_units),
+                'kept_caption_unit_count': kept_caption_units,
+                'visual_bbox': list(visual_bbox) if visual_bbox else None,
+            })
+
+        if debug:
+            unaligned_pdf_indices = self._restore_dropped_alignment_units(
+                previous_keys,
+                alignments,
+                unaligned_pdf_indices,
+                pdf_units
+            )
+        return alignments, unaligned_pdf_indices, debug

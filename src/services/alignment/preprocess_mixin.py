@@ -9,15 +9,42 @@ class AlignmentPreprocessMixin:
             itype = item.get('type', '')
             idata = item.get('data', {})
             ibbox = item.get('bbox')
+            is_chart_visual = bool(item.get('is_chart_visual'))
+            suppress_text_alignment = bool(item.get('suppress_text_alignment'))
+            source_item_type = str(item.get('type') or '')
+            is_docling_picture_area = bool(item.get('is_docling_picture_area'))
+            docling_picture_overlap = item.get('docling_picture_overlap')
 
             if itype == 'group':
                 text = idata.get('text', '')
                 if text.strip():
-                    collected.append({'item_idx': item_idx, 'item_type': itype, 'text': text, 'bbox': ibbox, 'is_cell': False})
+                    collected.append({
+                        'item_idx': item_idx,
+                        'item_type': itype,
+                        'text': text,
+                        'bbox': ibbox,
+                        'is_cell': False,
+                        'source_item_type': source_item_type,
+                        'is_chart_visual': is_chart_visual,
+                        'is_docling_picture_area': is_docling_picture_area,
+                        'docling_picture_overlap': docling_picture_overlap,
+                        'suppress_text_alignment': suppress_text_alignment,
+                    })
             elif itype == 'paragraph':
                 text = idata.get('text', '')
                 if text.strip():
-                    collected.append({'item_idx': item_idx, 'item_type': itype, 'text': text, 'bbox': ibbox, 'is_cell': False})
+                    collected.append({
+                        'item_idx': item_idx,
+                        'item_type': itype,
+                        'text': text,
+                        'bbox': ibbox,
+                        'is_cell': False,
+                        'source_item_type': source_item_type,
+                        'is_chart_visual': is_chart_visual,
+                        'is_docling_picture_area': is_docling_picture_area,
+                        'docling_picture_overlap': docling_picture_overlap,
+                        'suppress_text_alignment': suppress_text_alignment,
+                    })
             elif itype == 'table':
                 for r_idx, row in enumerate(idata.get('rows', [])):
                     for c_idx, cell in enumerate(row.get('cells', [])):
@@ -31,9 +58,30 @@ class AlignmentPreprocessMixin:
                                 'is_cell': True,
                                 'row': r_idx,
                                 'col': c_idx,
-                                'table_bbox': ibbox
+                                'table_bbox': ibbox,
+                                'source_item_type': source_item_type,
+                                'is_chart_visual': is_chart_visual,
+                                'is_docling_picture_area': is_docling_picture_area,
+                                'docling_picture_overlap': docling_picture_overlap,
+                                'suppress_text_alignment': suppress_text_alignment,
                             })
             elif itype == 'hline_table':
+                if suppress_text_alignment:
+                    if ibbox:
+                        collected.append({
+                            'item_idx': item_idx,
+                            'item_type': itype,
+                            'text': '',
+                            'bbox': ibbox,
+                            'is_cell': False,
+                            'is_hline_table_unit': True,
+                            'source_item_type': source_item_type,
+                            'is_chart_visual': True,
+                            'is_docling_picture_area': is_docling_picture_area,
+                            'docling_picture_overlap': docling_picture_overlap,
+                            'suppress_text_alignment': True,
+                        })
+                    continue
                 # Handle hline_table: prefer cells if available
                 cells = idata.get('cells', [])
                 rows = idata.get('rows', [])
@@ -51,18 +99,61 @@ class AlignmentPreprocessMixin:
                             'text': ' '.join(all_text),
                             'bbox': ibbox,
                             'is_cell': False,
-                            'is_hline_table_unit': True
+                            'is_hline_table_unit': True,
+                            'source_item_type': source_item_type,
+                            'is_chart_visual': is_chart_visual,
+                            'is_docling_picture_area': is_docling_picture_area,
+                            'docling_picture_overlap': docling_picture_overlap,
+                            'suppress_text_alignment': suppress_text_alignment,
                         })
             elif itype == 'shape':
+                if suppress_text_alignment:
+                    if ibbox:
+                        collected.append({
+                            'item_idx': item_idx,
+                            'item_type': itype,
+                            'text': '',
+                            'bbox': ibbox,
+                            'is_cell': False,
+                            'source_item_type': source_item_type,
+                            'is_chart_visual': True,
+                            'is_docling_picture_area': is_docling_picture_area,
+                            'docling_picture_overlap': docling_picture_overlap,
+                            'suppress_text_alignment': True,
+                        })
+                    continue
                 text = idata.get('text', '')
                 image_bbox = idata.get('image_bbox')
                 if text.strip() or image_bbox:
                     # If it's an image-shape with no text, use [IMG] placeholder
                     if not text.strip() and image_bbox:
                         text = '[IMG]'
-                    collected.append({'item_idx': item_idx, 'item_type': itype, 'text': text, 'bbox': ibbox, 'is_cell': False})
+                    collected.append({
+                        'item_idx': item_idx,
+                        'item_type': itype,
+                        'text': text,
+                        'bbox': ibbox,
+                        'is_cell': False,
+                        'source_item_type': source_item_type,
+                        'is_chart_visual': is_chart_visual,
+                        'is_docling_picture_area': is_docling_picture_area,
+                        'docling_picture_overlap': docling_picture_overlap,
+                        'suppress_text_alignment': suppress_text_alignment,
+                    })
             elif itype == 'image':
-                collected.append({'item_idx': item_idx, 'item_type': itype, 'text': None, 'bbox': ibbox, 'is_cell': False, 'is_image': True})
+                collected.append({
+                    'item_idx': item_idx,
+                    'item_type': itype,
+                    'text': None,
+                    'bbox': ibbox,
+                    'is_cell': False,
+                    'is_image': True,
+                    'source_item_type': source_item_type,
+                    'is_chart_visual': is_chart_visual,
+                    'is_docling_picture_area': is_docling_picture_area,
+                    'docling_picture_overlap': docling_picture_overlap,
+                    'suppress_text_alignment': suppress_text_alignment,
+                })
 
         collected = self._merge_list_markers_with_following_text(collected)
         collected = self._merge_code_like_lines(collected)
@@ -84,7 +175,12 @@ class AlignmentPreprocessMixin:
                     'text': ph,
                     'text_normalized': ph.lower(),
                     'bbox': item['bbox'],
-                    'is_cell': False
+                    'is_cell': False,
+                    'source_item_type': item.get('source_item_type'),
+                    'is_chart_visual': item.get('is_chart_visual', False),
+                    'is_docling_picture_area': item.get('is_docling_picture_area', False),
+                    'docling_picture_overlap': item.get('docling_picture_overlap'),
+                    'suppress_text_alignment': item.get('suppress_text_alignment', False),
                 })
             else:
                 txt = item['text']
@@ -98,7 +194,12 @@ class AlignmentPreprocessMixin:
                     'is_cell': item.get('is_cell', False),
                     'row': item.get('row'),
                     'col': item.get('col'),
-                    'is_hline_table_unit': item.get('is_hline_table_unit', False)
+                    'is_hline_table_unit': item.get('is_hline_table_unit', False),
+                    'source_item_type': item.get('source_item_type'),
+                    'is_chart_visual': item.get('is_chart_visual', False),
+                    'is_docling_picture_area': item.get('is_docling_picture_area', False),
+                    'docling_picture_overlap': item.get('docling_picture_overlap'),
+                    'suppress_text_alignment': item.get('suppress_text_alignment', False),
                 })
             unit_counter += 1
         return pdf_units
@@ -279,7 +380,14 @@ class AlignmentPreprocessMixin:
                     'bbox': mbbox,
                     'is_cell': False,
                     'row': None,
-                    'col': None
+                    'col': None,
+                    'source_item_type': cluster[0].get('source_item_type'),
+                    'is_chart_visual': any(i.get('is_chart_visual', False) for i in cluster),
+                    'is_docling_picture_area': any(i.get('is_docling_picture_area', False) for i in cluster),
+                    'docling_picture_overlap': max(
+                        (i.get('docling_picture_overlap') or 0) for i in cluster
+                    ),
+                    'suppress_text_alignment': any(i.get('suppress_text_alignment', False) for i in cluster),
                 })
         return merged
 
