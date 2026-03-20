@@ -267,6 +267,8 @@ class VisualizationService:
         dup_units = self._dedupe_pdf_units(duplicate_units or [])
 
         for unit in dup_units:
+            if unit.get('valid_cross_page_continuation'):
+                continue
             bbox = unit.get('bbox')
             if bbox:
                 self.draw_bbox(draw, bbox, ALIGNMENT_COLORS['duplicate_mapping'], None, fill_alpha=0, line_width=2)

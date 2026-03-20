@@ -13,6 +13,10 @@ class AlignmentPostprocessMixin:
         r'^\s*(?:gambar|figure|fig\.?|tabel|table)\s*\d+(?:\.\d+)?\b',
         re.IGNORECASE
     )
+    CAPTION_FRAGMENT_LEAD_RE = re.compile(
+        r'^\s*\d+\s*(?:gambar|figure|fig\.?|tabel|table)\s*\d',
+        re.IGNORECASE
+    )
 
     @staticmethod
     def _read_positive_int_env(env_name, default_value):
@@ -81,6 +85,25 @@ class AlignmentPostprocessMixin:
             return False
         return bool(self.VISUAL_CAPTION_RE.match(str(text).strip()))
 
+    def _is_image_placeholder_only_text(self, text):
+        if not text:
+            return False
+        stripped = str(text).strip()
+        return bool(re.fullmatch(r'(?:\[img(?::\d+)?\]\s*)+', stripped, re.IGNORECASE))
+
+    def _is_short_caption_fragment_text(self, text):
+        if not text:
+            return False
+        stripped = str(text).strip()
+        if not stripped or self._is_image_placeholder_only_text(stripped):
+            return False
+        norm = self._normalize_text(stripped).strip()
+        if not norm or len(norm) > 64:
+            return False
+        if self._is_caption_like_text(stripped):
+            return True
+        return bool(self.CAPTION_FRAGMENT_LEAD_RE.match(stripped))
+
     def _bbox_x_overlap_ratio(self, bbox_a, bbox_b):
         if not bbox_a or not bbox_b or len(bbox_a) < 4 or len(bbox_b) < 4:
             return 0.0
@@ -109,6 +132,16 @@ class AlignmentPostprocessMixin:
         if unit.get('is_chart_visual'):
             return True
         return unit.get('item_type') in {'image', 'shape', 'hline_table'}
+
+    def _alignment_has_visual_units(self, alignment):
+        if not alignment:
+            return False
+        if self._is_visual_target_alignment(alignment):
+            return True
+        return any(
+            self._is_visual_pdf_unit(unit)
+            for unit in (alignment.get('matched_pdf_units') or [])
+        )
 
     def _alignment_visual_bbox(self, alignment):
         visual_bboxes = [
@@ -152,7 +185,14 @@ class AlignmentPostprocessMixin:
                 return idx, unit
         return None, None
 
-    def _find_next_meaningful_openxml_unit(self, openxml_units, start_idx, seq_min=None, seq_max=None):
+    def _find_next_meaningful_openxml_unit(
+        self,
+        openxml_units,
+        start_idx,
+        seq_min=None,
+        seq_max=None,
+        skip_short_caption_fragments=False
+    ):
         for idx in range(int(start_idx or 0) + 1, len(openxml_units or [])):
             unit = openxml_units[idx] or {}
             seq = unit.get('elem_seq')
@@ -164,6 +204,8 @@ class AlignmentPostprocessMixin:
                 continue
             text = self._normalize_text(unit.get('text') or '').strip()
             if text:
+                if skip_short_caption_fragments and self._is_short_caption_fragment_text(unit.get('text')):
+                    continue
                 return idx, unit
         return None, None
 
@@ -201,8 +243,34 @@ class AlignmentPostprocessMixin:
             seq_min=seq_min,
             seq_max=seq_max
         )
+        bridge_idx = None
+        bridge_unit = None
+        if next_unit is not None and self._is_short_caption_fragment_text(next_unit.get('text')):
+            bridge_idx = next_idx
+            bridge_unit = next_unit
+            next_idx, next_unit = self._find_next_meaningful_openxml_unit(
+                openxml_units,
+                bridge_idx,
+                seq_min=seq_min,
+                seq_max=seq_max,
+                skip_short_caption_fragments=True
+            )
+            if next_unit is None:
+                bridge_idx = None
+                bridge_unit = None
         if prev_unit is None or next_unit is None:
             return False
+
+        if bridge_unit is not None:
+            bridge_seq = bridge_unit.get('elem_seq')
+            next_seq = next_unit.get('elem_seq')
+            if (
+                unit_seq is not None and
+                bridge_seq is not None and
+                next_seq is not None and
+                unit_seq < bridge_seq < next_seq
+            ):
+                return True
 
         prev_key = self._extract_figure_key(prev_unit.get('text'))
         if not prev_key:
@@ -329,6 +397,76 @@ class AlignmentPostprocessMixin:
                     return True
         return False
 
+    def _find_neighbor_alignment_by_sequence(self, alignments, target_sequence, direction=1, max_gap=2):
+        if target_sequence is None:
+            return None
+
+        best_alignment = None
+        best_gap = None
+        for alignment in alignments or []:
+            seq = self._get_alignment_sequence(alignment)
+            if seq is None:
+                continue
+            delta = seq - target_sequence
+            if direction < 0:
+                if delta >= 0:
+                    continue
+                gap = abs(delta)
+            else:
+                if delta <= 0:
+                    continue
+                gap = delta
+            if gap > max_gap:
+                continue
+
+            if best_alignment is None or gap < best_gap:
+                best_alignment = alignment
+                best_gap = gap
+                continue
+
+            if gap == best_gap:
+                if self._alignment_has_visual_units(alignment) and not self._alignment_has_visual_units(best_alignment):
+                    best_alignment = alignment
+                    best_gap = gap
+        return best_alignment
+
+    def _build_inherited_alignment(self, source_alignment, openxml_unit, openxml_idx, reason):
+        if not source_alignment or not openxml_unit:
+            return None
+
+        inherited = {
+            'element_id': openxml_unit.get('elem_id'),
+            'element_sequence': openxml_unit.get('elem_seq'),
+            'element_type': openxml_unit.get('elem_type'),
+            'is_table': False,
+            'element_text': openxml_unit.get('text', ''),
+            'matched_pdf_units': deepcopy(source_alignment.get('matched_pdf_units', []) or []),
+            'merged_bbox': deepcopy(source_alignment.get('merged_bbox')),
+            'cells': None,
+            'is_text_part': bool(openxml_unit.get('is_text_part', False)),
+            'is_image_part': bool(openxml_unit.get('is_image_part', False)),
+            'unit_id': str(openxml_unit.get('elem_id')),
+            'openxml_indices': [openxml_idx] if openxml_idx is not None else [],
+            'openxml_idx': openxml_idx,
+            'image_index': openxml_unit.get('image_index'),
+            'font_families': openxml_unit.get('font_families', []),
+            'style_ids': openxml_unit.get('style_ids', []),
+            'is_code_font': openxml_unit.get('is_code_font', False),
+            'is_code_style': openxml_unit.get('is_code_style', False),
+            'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
+            'is_openxml_chart': bool(openxml_unit.get('is_openxml_chart', False)),
+            'is_openxml_visual_slot': bool(openxml_unit.get('is_openxml_visual_slot', False)),
+            'is_chart_caption_text': bool(openxml_unit.get('is_chart_caption_text', False)),
+            'is_chart_visual_attachment': bool(source_alignment.get('is_chart_visual_attachment', False)),
+            'matched_by_visual_only': bool(source_alignment.get('matched_by_visual_only', False)),
+            'repair_reason': reason,
+            'inherited_from_element_id': source_alignment.get('element_id'),
+            'inherited_from_sequence': source_alignment.get('element_sequence'),
+        }
+        if inherited.get('matched_pdf_units'):
+            self._recompute_alignment_bboxes(inherited)
+        return inherited
+
     def _rescue_paragraph_alignments(self, rescue_candidates, alignments, unaligned_pdf_indices, pdf_units):
         if not rescue_candidates or not unaligned_pdf_indices:
             return alignments, unaligned_pdf_indices, []
@@ -375,7 +513,14 @@ class AlignmentPostprocessMixin:
                 continue
 
             candidate_units = candidate.get('matched_pdf_units', []) or []
-            if len(candidate_units) < min_units:
+            is_short_caption_fragment = self._is_short_caption_fragment_text(
+                candidate.get('element_text')
+            )
+            candidate_min_units = 1 if is_short_caption_fragment else min_units
+            candidate_min_chars = 0 if is_short_caption_fragment else min_chars
+            candidate_min_ratio = 0.0 if is_short_caption_fragment else min_ratio
+
+            if len(candidate_units) < candidate_min_units:
                 continue
 
             rescued_units = []
@@ -394,7 +539,7 @@ class AlignmentPostprocessMixin:
                 rescued_indices.append(pdf_idx)
                 seen_indices.add(pdf_idx)
 
-            if len(rescued_units) < min_units:
+            if len(rescued_units) < candidate_min_units:
                 continue
 
             availability_ratio = len(rescued_units) / max(1, len(candidate_units))
@@ -417,7 +562,7 @@ class AlignmentPostprocessMixin:
                 rescued_alignment,
                 rescued_alignment.get('matched_pdf_units', [])
             )
-            if norm_len > 0 and matched_chars < min_chars and ratio < min_ratio:
+            if norm_len > 0 and matched_chars < candidate_min_chars and ratio < candidate_min_ratio:
                 continue
 
             alignments.append(rescued_alignment)
@@ -438,6 +583,130 @@ class AlignmentPostprocessMixin:
         if rescue_debug:
             alignments.sort(key=lambda alignment: alignment.get('element_sequence') or 0)
         return alignments, sorted(unaligned_set), rescue_debug
+
+    def _rescue_fragment_paragraph_alignments(self, openxml_units, alignments, page_sequence_range=None):
+        if not openxml_units or not alignments:
+            return alignments, []
+
+        seq_min = seq_max = None
+        if page_sequence_range and len(page_sequence_range) == 2:
+            seq_min, seq_max = page_sequence_range
+
+        existing_element_ids = {
+            alignment.get('element_id')
+            for alignment in alignments or []
+            if alignment.get('element_id') is not None
+        }
+        seen_candidate_ids = set()
+        rescue_debug = []
+
+        for openxml_idx, openxml_unit in enumerate(openxml_units or []):
+            if openxml_unit.get('is_cell'):
+                continue
+
+            elem_id = openxml_unit.get('elem_id')
+            elem_seq = openxml_unit.get('elem_seq')
+            elem_type = str(openxml_unit.get('elem_type') or '').strip().lower()
+            text = str(openxml_unit.get('text') or '').strip()
+            text_norm = self._normalize_text(text).strip()
+
+            if elem_id is None or elem_id in existing_element_ids or elem_id in seen_candidate_ids:
+                continue
+            seen_candidate_ids.add(elem_id)
+            if seq_min is not None and (elem_seq is None or elem_seq < seq_min):
+                continue
+            if seq_max is not None and (elem_seq is None or elem_seq > seq_max):
+                continue
+            if 'paragraph' not in elem_type or not text_norm:
+                continue
+
+            prev_alignment = self._find_neighbor_alignment_by_sequence(
+                alignments,
+                elem_seq,
+                direction=-1,
+                max_gap=2
+            )
+            next_alignment = self._find_neighbor_alignment_by_sequence(
+                alignments,
+                elem_seq,
+                direction=1,
+                max_gap=2
+            )
+
+            source_alignment = None
+            reason = None
+
+            prev_text_norm = self._normalize_text(
+                (prev_alignment or {}).get('element_text') or ''
+            ).strip()
+            prev_figure_key = self._extract_figure_key((prev_alignment or {}).get('element_text'))
+            if (
+                prev_alignment is not None and
+                prev_text_norm and
+                text_norm != prev_text_norm and
+                text_norm in prev_text_norm and
+                prev_figure_key
+            ):
+                source_alignment = prev_alignment
+                reason = 'caption_suffix_inherit'
+            elif self._is_image_placeholder_only_text(text):
+                if next_alignment is not None and self._alignment_has_visual_units(next_alignment):
+                    source_alignment = next_alignment
+                elif prev_alignment is not None and self._alignment_has_visual_units(prev_alignment):
+                    source_alignment = prev_alignment
+                elif next_alignment is not None:
+                    source_alignment = next_alignment
+                elif prev_alignment is not None:
+                    source_alignment = prev_alignment
+                reason = 'image_placeholder_neighbor_inherit'
+            elif self._is_short_caption_fragment_text(text):
+                if next_alignment is not None:
+                    source_alignment = next_alignment
+                elif prev_alignment is not None:
+                    source_alignment = prev_alignment
+                reason = 'caption_fragment_inherit'
+            elif next_alignment is not None and next_alignment.get('is_table'):
+                _, prev_unit = self._find_prev_meaningful_openxml_unit(
+                    openxml_units,
+                    openxml_idx,
+                    seq_min=seq_min,
+                    seq_max=seq_max
+                )
+                prev_key = self._extract_figure_key((prev_unit or {}).get('text'))
+                if prev_key and prev_key.startswith('tabel'):
+                    source_alignment = next_alignment
+                    reason = 'table_lead_inherit'
+
+            if source_alignment is None or not reason:
+                continue
+
+            inherited_alignment = self._build_inherited_alignment(
+                source_alignment,
+                openxml_unit,
+                openxml_idx,
+                reason
+            )
+            if inherited_alignment is None:
+                continue
+            if (
+                not inherited_alignment.get('merged_bbox') and
+                not inherited_alignment.get('matched_pdf_units')
+            ):
+                continue
+
+            alignments.append(inherited_alignment)
+            existing_element_ids.add(elem_id)
+            rescue_debug.append({
+                'element_id': elem_id,
+                'element_sequence': elem_seq,
+                'reason': reason,
+                'source_element_id': source_alignment.get('element_id'),
+                'source_sequence': source_alignment.get('element_sequence'),
+            })
+
+        if rescue_debug:
+            alignments.sort(key=lambda alignment: alignment.get('element_sequence') or 0)
+        return alignments, rescue_debug
 
     def _matched_unit_key(self, unit):
         if unit.get('pdf_unit_id') is not None:
@@ -1528,6 +1797,7 @@ class AlignmentPostprocessMixin:
                     'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
                     'is_openxml_chart': bool(openxml_unit.get('is_openxml_chart', False)),
                     'is_openxml_visual_slot': bool(openxml_unit.get('is_openxml_visual_slot', False)),
+                    'is_chart_caption_text': bool(openxml_unit.get('is_chart_caption_text', False)),
                     'is_chart_visual_attachment': True,
                     'matched_by_visual_only': True,
                     'visual_slot_promoted': target_type == 'visual_slot',

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 
 from models import DokumenElemen, DokumenSection, DokumenPart, DokumenFormatText, DokumenFormatParagraf
@@ -8,6 +9,14 @@ logger = logging.getLogger(__name__)
 
 
 class AlignmentOpenXmlMixin:
+    IMAGE_PLACEHOLDER_ONLY_RE = re.compile(
+        r'^\s*(?:\[img(?::\d+)?\]\s*)+$',
+        re.IGNORECASE
+    )
+    CHART_CAPTION_TEXT_RE = re.compile(
+        r'^\s*(?:gambar|figure|fig\.?|grafik|graph|chart|tabel|table)\s*\d',
+        re.IGNORECASE
+    )
     CODE_FONT_MARKERS = (
         'courier',
         'lucida',
@@ -47,6 +56,13 @@ class AlignmentOpenXmlMixin:
         if ref_tipe in ('bab', 'buku'):
             return ('bab', 'buku')
         return (ref_tipe,)
+
+    @staticmethod
+    def _is_env_enabled_default_true(env_name):
+        value = os.getenv(env_name)
+        if value is None:
+            return True
+        return str(value).strip().lower() not in ("0", "false", "no", "off")
 
     def _get_openxml_elements(self, db_session, ref_id: int, ref_tipe: str = 'dokumen'):
         ref_tipes = self._resolve_ref_tipe_for_read(ref_tipe)
@@ -134,7 +150,13 @@ class AlignmentOpenXmlMixin:
         element_type = str(elem_type or '').strip().lower()
         if not element_type or 'paragraph' not in element_type:
             return False
-        if self._normalize_text(text or '').strip():
+        raw_text = str(text or '').strip()
+        if (
+            self._is_env_enabled_default_true("ALIGNMENT_ENABLE_IMAGE_PLACEHOLDER_VISUAL_SLOT")
+            and self._is_image_placeholder_only_text(raw_text)
+        ):
+            return True
+        if self._normalize_text(raw_text).strip():
             return False
         style_tokens = {
             self._normalize_hint_token(style_id).replace(' ', '')
@@ -142,6 +164,16 @@ class AlignmentOpenXmlMixin:
             if style_id is not None
         }
         return 'gambarlampiran' in style_tokens
+
+    def _is_image_placeholder_only_text(self, text):
+        if not text:
+            return False
+        return bool(self.IMAGE_PLACEHOLDER_ONLY_RE.match(str(text).strip()))
+
+    def _is_chart_caption_text(self, text):
+        if not text:
+            return False
+        return bool(self.CHART_CAPTION_TEXT_RE.match(str(text).strip()))
 
     def _is_table_element(self, etype):
         return etype in ['table', 'grid_table']
@@ -623,6 +655,12 @@ class AlignmentOpenXmlMixin:
             else:
                 content = self._extract_text_and_images_separately(json_tree)
                 if content['has_images']:
+                    image_only_visual_slot = (
+                        self._is_env_enabled_default_true("ALIGNMENT_ENABLE_IMAGE_PLACEHOLDER_VISUAL_SLOT")
+                        and self._is_image_placeholder_only_text(
+                            content.get('combined') or content.get('text_only') or ''
+                        )
+                    )
                     text_unit_created = False
                     for item in content['ordered_items']:
                         if item['type'] == 'image':
@@ -646,7 +684,7 @@ class AlignmentOpenXmlMixin:
                                 'is_code_style': style_hints.get('is_code_style', False),
                                 'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
                                 'is_openxml_chart': is_openxml_chart,
-                                'is_openxml_visual_slot': False,
+                                'is_openxml_visual_slot': image_only_visual_slot,
                             })
                         elif item['type'] == 'text' and not text_unit_created:
                             if content['text_only']:
@@ -677,23 +715,64 @@ class AlignmentOpenXmlMixin:
                         style_hints.get('style_ids', []),
                         is_openxml_chart=is_openxml_chart
                     )
-                    units.append({
-                        'unit_id': str(elem.delemen_id),
-                        'elem_id': elem.delemen_id,
-                        'elem_seq': elem.delemen_sequence,
-                        'elem_type': elem.delemen_type,
-                        'text': text,
-                        'text_normalized': self._normalize_text(text).rstrip('.:'),
-                        'is_cell': False,
-                        'has_shape': elem_has_shape,
-                        'font_families': style_hints.get('font_families', []),
-                        'style_ids': style_hints.get('style_ids', []),
-                        'is_code_font': style_hints.get('is_code_font', False),
-                        'is_code_style': style_hints.get('is_code_style', False),
-                        'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
-                        'is_openxml_chart': is_openxml_chart,
-                        'is_openxml_visual_slot': is_openxml_visual_slot,
-                    })
+                    if is_openxml_chart and self._is_chart_caption_text(text):
+                        units.append({
+                            'unit_id': f"{elem.delemen_id}_chart",
+                            'elem_id': elem.delemen_id,
+                            'elem_seq': elem.delemen_sequence,
+                            'elem_type': elem.delemen_type,
+                            'text': '',
+                            'text_normalized': '',
+                            'is_cell': False,
+                            'has_shape': True,
+                            'is_image_part': True,
+                            'font_families': style_hints.get('font_families', []),
+                            'style_ids': style_hints.get('style_ids', []),
+                            'is_code_font': style_hints.get('is_code_font', False),
+                            'is_code_style': style_hints.get('is_code_style', False),
+                            'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                            'is_openxml_chart': True,
+                            'is_openxml_visual_slot': False,
+                            'is_chart_caption_text': False,
+                        })
+                        units.append({
+                            'unit_id': f"{elem.delemen_id}_caption",
+                            'elem_id': elem.delemen_id,
+                            'elem_seq': elem.delemen_sequence,
+                            'elem_type': elem.delemen_type,
+                            'text': text,
+                            'text_normalized': self._normalize_text(text).rstrip('.:'),
+                            'is_cell': False,
+                            'is_text_part': True,
+                            'has_shape': False,
+                            'font_families': style_hints.get('font_families', []),
+                            'style_ids': style_hints.get('style_ids', []),
+                            'is_code_font': style_hints.get('is_code_font', False),
+                            'is_code_style': style_hints.get('is_code_style', False),
+                            'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                            'is_openxml_chart': False,
+                            'is_openxml_visual_slot': False,
+                            'is_chart_caption_text': True,
+                        })
+                    else:
+                        units.append({
+                            'unit_id': str(elem.delemen_id),
+                            'elem_id': elem.delemen_id,
+                            'elem_seq': elem.delemen_sequence,
+                            'elem_type': elem.delemen_type,
+                            'text': text,
+                            'text_normalized': self._normalize_text(text).rstrip('.:'),
+                            'is_cell': False,
+                            'has_shape': elem_has_shape,
+                            'font_families': style_hints.get('font_families', []),
+                            'style_ids': style_hints.get('style_ids', []),
+                            'is_code_font': style_hints.get('is_code_font', False),
+                            'is_code_style': style_hints.get('is_code_style', False),
+                            'is_code_like_openxml': style_hints.get('is_code_like_openxml', False),
+                            'is_openxml_chart': is_openxml_chart,
+                            'is_openxml_visual_slot': is_openxml_visual_slot,
+                            'is_chart_caption_text': False,
+                        })
         return units, table_debug
 
     def _format_unaligned_openxml(self, all_units, indices):

@@ -12,6 +12,7 @@ from services.alignment_service import AlignmentService
 from services.docling_service import DoclingService
 from services.docling_fusion_service import DoclingFusionService
 from services.visualization_service import VisualizationService
+from utils.cross_page_claims import analyze_cross_page_entries
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,13 @@ class MergingExtractionService:
         self.visualization_service = VisualizationService(output_dir=VISUALIZATION_OUTPUT)
 
     @staticmethod
+    def _is_env_enabled_default_true(env_name: str) -> bool:
+        value = os.getenv(env_name)
+        if value is None:
+            return True
+        return str(value).strip().lower() not in ("0", "false", "no", "off")
+
+    @staticmethod
     def _read_positive_int_env(env_name: str, default_value: int) -> int:
         value = os.getenv(env_name)
         if value is None:
@@ -86,13 +94,6 @@ class MergingExtractionService:
         if max_value is not None:
             parsed = min(max_value, parsed)
         return parsed
-
-    @staticmethod
-    def _is_env_enabled_default_true(env_name: str) -> bool:
-        value = os.getenv(env_name)
-        if value is None:
-            return True
-        return str(value).strip().lower() not in ("0", "false", "no", "off")
 
     @staticmethod
     def _canonical_ref_tipe(ref_tipe: str) -> str:
@@ -125,6 +126,7 @@ class MergingExtractionService:
         """
         db = SessionLocal()
         try:
+            save_debug_json = bool(output_dir)
             ref_id = doc_id
             if ref_id is None:
                 logger.error("process_document called without ref_id")
@@ -273,12 +275,13 @@ class MergingExtractionService:
                             orphan_chart_visual_count
                         )
 
-                    if save_to_db or generate_visualizations:
+                    if save_to_db or generate_visualizations or save_debug_json:
                         payload = {
                             'alignments': alignments,
                             'fused_results': fused_results,
                             'header_footer_units': header_footer_units,
-                            'section_data': section_data
+                            'section_data': section_data,
+                            'page_height': page_height,
                         }
                         page_vis_payload[page_num] = payload
 
@@ -297,9 +300,14 @@ class MergingExtractionService:
                 
             extractor.close()
 
-            if page_vis_payload and (save_to_db or generate_visualizations):
+            if page_vis_payload and (save_to_db or generate_visualizations or save_debug_json):
                 try:
-                    duplicate_element_ids = self._collect_duplicate_openxml_element_ids(page_vis_payload)
+                    duplicate_analysis = self._analyze_duplicate_openxml_elements(page_vis_payload)
+                    duplicate_element_ids = {
+                        elem_id
+                        for elem_id, analysis in (duplicate_analysis or {}).items()
+                        if analysis.get('is_invalid_duplicate')
+                    }
                     for page_num in sorted(page_vis_payload):
                         payload = page_vis_payload[page_num]
                         alignments = payload.get('alignments')
@@ -345,7 +353,8 @@ class MergingExtractionService:
                             alignments = payload.get('alignments')
                             duplicate_units = self._collect_duplicate_units_for_page(
                                 alignments,
-                                duplicate_element_ids
+                                duplicate_analysis,
+                                page_num
                             )
 
                             vis_paths = self.visualization_service.visualize_page(
@@ -360,22 +369,21 @@ class MergingExtractionService:
                                 output_dir_override=output_dir
                             )
                             logger.info(f"Page {page_num}: Generated visualizations - {list(vis_paths.keys())}")
-
-                            json_output_dir = output_dir
-                            if not json_output_dir and vis_paths:
-                                json_output_dir = os.path.dirname(list(vis_paths.values())[0])
-                            if json_output_dir:
-                                json_path = os.path.join(json_output_dir, f"page_{page_num}_fusion_data.json")
-                                with open(json_path, 'w', encoding='utf-8') as f:
-                                    json.dump({
-                                        'page': page_num,
-                                        'doc_id': ref_id if canonical_ref_tipe == 'dokumen' else None,
-                                        'ref_tipe': canonical_ref_tipe,
-                                        'ref_id': ref_id,
-                                        'fused_results': payload.get('fused_results'),
-                                        'raw_docling': payload.get('raw_docling'),
-                                        'alignments': payload.get('alignments')
-                                    }, f, indent=2, ensure_ascii=False)
+                    if save_debug_json:
+                        os.makedirs(output_dir, exist_ok=True)
+                        for page_num in sorted(page_vis_payload):
+                            payload = page_vis_payload[page_num]
+                            json_path = os.path.join(output_dir, f"page_{page_num}_fusion_data.json")
+                            with open(json_path, 'w', encoding='utf-8') as f:
+                                json.dump({
+                                    'page': page_num,
+                                    'doc_id': ref_id if canonical_ref_tipe == 'dokumen' else None,
+                                    'ref_tipe': canonical_ref_tipe,
+                                    'ref_id': ref_id,
+                                    'fused_results': payload.get('fused_results'),
+                                    'raw_docling': payload.get('raw_docling'),
+                                    'alignments': payload.get('alignments')
+                                }, f, indent=2, ensure_ascii=False)
                 except Exception as vis_err:
                     logger.warning(f"Visualization/JSON save failed - {vis_err}")
             
@@ -593,14 +601,43 @@ class MergingExtractionService:
         return unfused
 
     def _collect_duplicate_openxml_element_ids(self, page_vis_payload):
-        element_pages = {}
+        duplicate_analysis = self._analyze_duplicate_openxml_elements(page_vis_payload)
+        return {
+            elem_id
+            for elem_id, analysis in (duplicate_analysis or {}).items()
+            if analysis.get('is_invalid_duplicate')
+        }
+
+    def _analyze_duplicate_openxml_elements(self, page_vis_payload):
+        element_entries = {}
+        page_heights = {}
+
         for page_num, payload in (page_vis_payload or {}).items():
+            parsed_page_num = self._try_parse_int_id(page_num)
+            if parsed_page_num is None:
+                continue
+            page_height = payload.get('page_height')
+            if page_height is not None:
+                try:
+                    page_heights[parsed_page_num] = float(page_height)
+                except (TypeError, ValueError):
+                    pass
             for alignment in payload.get('alignments') or []:
-                elem_id = alignment.get('element_id')
-                if elem_id is None:
+                elem_id = self._try_parse_int_id((alignment or {}).get('element_id'))
+                bbox = (alignment or {}).get('merged_bbox') or (alignment or {}).get('bbox')
+                if elem_id is None or not bbox or len(bbox) < 4:
                     continue
-                element_pages.setdefault(elem_id, set()).add(page_num)
-        return {elem_id for elem_id, pages in element_pages.items() if len(pages) > 1}
+                element_entries.setdefault(elem_id, []).append({
+                    'page': parsed_page_num,
+                    'bbox': bbox,
+                })
+
+        duplicate_analysis = {}
+        for elem_id, entries in element_entries.items():
+            analysis = analyze_cross_page_entries(entries, page_heights=page_heights)
+            if analysis.get('is_multi_page'):
+                duplicate_analysis[elem_id] = analysis
+        return duplicate_analysis
 
     def _get_alignment_sequence_value(self, alignment):
         seq = alignment.get('element_sequence') if alignment else None
@@ -912,6 +949,101 @@ class MergingExtractionService:
         label = str(result.get('label') or '').lower()
         docling_label = str(result.get('docling_label') or '').lower()
         return label == 'picture' or docling_label == 'picture'
+
+    def _is_caption_like_visual_result(self, result):
+        if not result:
+            return False
+        label = self._get_visual_label(result)
+        if label == 'caption':
+            return True
+        if result.get('is_chart_caption_text'):
+            return True
+        text = self._coerce_text(result.get('text')).strip()
+        if not text:
+            return False
+        return self.fusion_service._is_caption_candidate(text)
+
+    def _select_chart_visual_alignments(self, alignments):
+        selected = [
+            alignment for alignment in (alignments or [])
+            if (
+                alignment.get('is_image_part') or
+                alignment.get('is_openxml_chart') or
+                alignment.get('is_openxml_visual_slot') or
+                alignment.get('is_chart_visual_attachment') or
+                self._alignment_has_visual_units(alignment)
+            )
+        ]
+        return selected or list(alignments or [])
+
+    def _is_valid_same_page_chart_caption_pair(self, picture_result, caption_result):
+        if not self._is_picture_result(picture_result):
+            return False
+        if not self._is_caption_like_visual_result(caption_result):
+            return False
+        if not (
+            picture_result.get('is_openxml_chart') or
+            picture_result.get('repair_reason') == 'chart_visual_attach' or
+            picture_result.get('is_chart_visual_attachment')
+        ):
+            return False
+
+        picture_bbox = picture_result.get('bbox')
+        caption_bbox = caption_result.get('bbox')
+        if not picture_bbox or not caption_bbox:
+            return False
+        if len(picture_bbox) < 4 or len(caption_bbox) < 4:
+            return False
+
+        caption_gap = float(caption_bbox[1]) - float(picture_bbox[3])
+        if caption_gap < -4 or caption_gap > 80:
+            return False
+        x_overlap = self._bbox_x_overlap_ratio(picture_bbox, caption_bbox)
+        if x_overlap < 0.15:
+            return False
+        return True
+
+    def _select_valid_same_page_chart_caption_results(self, results):
+        if not results:
+            return []
+        picture_results = [result for result in results if self._is_picture_result(result)]
+        caption_results = [result for result in results if self._is_caption_like_visual_result(result)]
+        if not picture_results or not caption_results:
+            return []
+
+        best_pair = None
+        best_gap = None
+        for picture_result in picture_results:
+            picture_bbox = picture_result.get('bbox')
+            if not picture_bbox or len(picture_bbox) < 4:
+                continue
+            for caption_result in caption_results:
+                if caption_result is picture_result:
+                    continue
+                if not self._is_valid_same_page_chart_caption_pair(picture_result, caption_result):
+                    continue
+                caption_bbox = caption_result.get('bbox')
+                gap = max(0.0, float(caption_bbox[1]) - float(picture_bbox[3]))
+                if best_pair is None or gap < best_gap:
+                    best_pair = (picture_result, caption_result)
+                    best_gap = gap
+        if not best_pair:
+            return []
+        return [best_pair[0], best_pair[1]]
+
+    def _select_valid_same_page_chart_caption_claims(self, claims):
+        if not claims:
+            return []
+        pair_results = self._select_valid_same_page_chart_caption_results(
+            [claim.get('result') for claim in claims if claim.get('result')]
+        )
+        if not pair_results:
+            return []
+        allowed_result_ids = {id(result) for result in pair_results}
+        return [
+            claim for claim in claims
+            if id(claim.get('result')) in allowed_result_ids
+        ]
 
     def _is_figure_panel_marker_text(self, text):
         if not text:
@@ -1589,11 +1721,18 @@ class MergingExtractionService:
                     continue
 
             candidate_alignments = alignments_for_elem
-            if not is_picture and alignments_for_elem:
+            if is_picture and alignments_for_elem:
+                candidate_alignments = self._select_chart_visual_alignments(alignments_for_elem)
+            elif not is_picture and alignments_for_elem:
                 if result.get('is_text_part'):
                     candidate_alignments = [
                         alignment for alignment in alignments_for_elem
                         if alignment.get('is_text_part')
+                    ]
+                elif result.get('is_chart_caption_text'):
+                    candidate_alignments = [
+                        alignment for alignment in alignments_for_elem
+                        if alignment.get('is_chart_caption_text')
                     ]
                 elif result.get('is_image_part') is not True:
                     candidate_alignments = [
@@ -1710,10 +1849,16 @@ class MergingExtractionService:
         overlap = 0.0
         if docling_bbox:
             overlap = self.fusion_service.calculate_overlap(alignment.get('merged_bbox'), docling_bbox)
+        picture_text = alignment.get('element_text', '')
+        if (
+            alignment.get('is_openxml_chart') and
+            self.fusion_service._is_caption_candidate(self._coerce_text(picture_text))
+        ):
+            picture_text = ''
         return {
             'bbox': list(alignment.get('merged_bbox')),
             'label': 'picture',
-            'text': alignment.get('element_text', ''),
+            'text': picture_text,
             'overlap': overlap,
             'source': 'alignment',
             'element_id': alignment.get('element_id'),
@@ -1732,6 +1877,7 @@ class MergingExtractionService:
             'is_text_only_item': False,
             'is_openxml_chart': alignment.get('is_openxml_chart', False),
             'is_openxml_visual_slot': alignment.get('is_openxml_visual_slot', False),
+            'is_chart_caption_text': alignment.get('is_chart_caption_text', False),
             'visual_slot_promoted': alignment.get('visual_slot_promoted', False),
             'repair_reason': repair_reason or alignment.get('repair_reason'),
         }
@@ -1795,6 +1941,8 @@ class MergingExtractionService:
                 existing_result = None
                 for result in fused_results:
                     if result.get('element_id') == alignment.get('element_id'):
+                        if self._is_caption_like_visual_result(result) and not self._is_picture_result(result):
+                            continue
                         existing_result = result
                         break
                 if existing_result is not None:
@@ -1856,6 +2004,21 @@ class MergingExtractionService:
         height = max(0.0, float(bbox[3]) - float(bbox[1]))
         return width * height
 
+    @staticmethod
+    def _bbox_x_overlap_ratio(bbox_a, bbox_b):
+        if not bbox_a or not bbox_b or len(bbox_a) < 4 or len(bbox_b) < 4:
+            return 0.0
+        left = max(float(bbox_a[0]), float(bbox_b[0]))
+        right = min(float(bbox_a[2]), float(bbox_b[2]))
+        if right <= left:
+            return 0.0
+        width_a = max(0.0, float(bbox_a[2]) - float(bbox_a[0]))
+        width_b = max(0.0, float(bbox_b[2]) - float(bbox_b[0]))
+        min_width = min(width_a, width_b)
+        if min_width <= 0.0:
+            return 0.0
+        return (right - left) / min_width
+
     def _visual_result_claim_score(self, result):
         overlap = float((result or {}).get('overlap') or 0.0)
         area = self._bbox_area((result or {}).get('bbox'))
@@ -1903,7 +2066,17 @@ class MergingExtractionService:
                 'cleared_claims': 0,
                 'affected_pages': 0,
                 'same_page_cleared': 0,
-                'far_gap_cleared': 0
+                'far_gap_cleared': 0,
+                'cross_page_rescue_cleared': 0,
+            }
+
+        single_page_repair_reasons = set()
+        if self._is_env_enabled_default_true("ALIGNMENT_ENABLE_RESCUE_DUPLICATE_PRUNE"):
+            single_page_repair_reasons = {
+                'caption_suffix_inherit',
+                'image_placeholder_neighbor_inherit',
+                'caption_fragment_inherit',
+                'table_lead_inherit',
             }
 
         claims_by_element = {}
@@ -1929,6 +2102,7 @@ class MergingExtractionService:
         cleared_claims = 0
         same_page_cleared = 0
         far_gap_cleared = 0
+        cross_page_rescue_cleared = 0
         affected_pages = set()
 
         for elem_id, claims in claims_by_element.items():
@@ -1937,6 +2111,17 @@ class MergingExtractionService:
                 claims_by_page.setdefault(claim['page'], []).append(claim)
 
             for page, page_claims in sorted(claims_by_page.items()):
+                allowed_page_claims = self._select_valid_same_page_chart_caption_claims(page_claims)
+                if allowed_page_claims:
+                    allowed_ids = {id(claim) for claim in allowed_page_claims}
+                    for claim in page_claims:
+                        if id(claim) in allowed_ids:
+                            continue
+                        if self._clear_visual_result_claim(claim.get('result'), 'same_page_duplicate', allowed_page_claims[0]):
+                            cleared_claims += 1
+                            same_page_cleared += 1
+                            affected_pages.add(page)
+                    continue
                 winner_claim = max(page_claims, key=lambda claim: claim['score'])
                 for claim in page_claims:
                     if claim is winner_claim:
@@ -1946,11 +2131,45 @@ class MergingExtractionService:
                         same_page_cleared += 1
                         affected_pages.add(page)
 
+            active_claims = [
+                claim for claim in claims
+                if (claim.get('result') or {}).get('element_id') is not None
+            ]
+            if len(active_claims) <= 1:
+                continue
+
+            repair_claims = [
+                claim for claim in active_claims
+                if (claim.get('result') or {}).get('repair_reason') in single_page_repair_reasons
+            ]
+            if repair_claims:
+                non_repair_claims = [
+                    claim for claim in active_claims
+                    if claim not in repair_claims
+                ]
+                if non_repair_claims:
+                    winner_claim = max(non_repair_claims, key=lambda claim: claim['score'])
+                else:
+                    winner_claim = max(repair_claims, key=lambda claim: claim['score'])
+
+                for claim in repair_claims:
+                    if claim is winner_claim:
+                        continue
+                    page = claim.get('page')
+                    result = claim.get('result') or {}
+                    if self._clear_visual_result_claim(result, 'cross_page_rescue_duplicate', winner_claim):
+                        result['_drop_from_output'] = True
+                        cleared_claims += 1
+                    cross_page_rescue_cleared += 1
+                    if page is not None:
+                        affected_pages.add(page)
+
         return {
             'cleared_claims': cleared_claims,
             'affected_pages': len(affected_pages),
             'same_page_cleared': same_page_cleared,
-            'far_gap_cleared': far_gap_cleared
+            'far_gap_cleared': far_gap_cleared,
+            'cross_page_rescue_cleared': cross_page_rescue_cleared,
         }
 
     def _collect_existing_claims_by_element(self, db, canonical_ref_tipe, ref_id, page_num, element_ids):
@@ -2023,13 +2242,30 @@ class MergingExtractionService:
             if any(bool(claim.get('is_table_like')) for claim in far_claims):
                 continue
 
-            best_current_idx = max(indices, key=lambda i: self._visual_result_claim_score(fused_results[i]))
+            allowed_pair_results = self._select_valid_same_page_chart_caption_results(current_results)
+            allowed_pair_result_ids = {id(result) for result in allowed_pair_results}
+            scoring_indices = [
+                idx for idx in indices
+                if id(fused_results[idx]) not in allowed_pair_result_ids
+            ]
+            if not scoring_indices:
+                picture_indices = [
+                    idx for idx in indices
+                    if self._is_picture_result(fused_results[idx])
+                ]
+                scoring_indices = picture_indices or list(indices)
+
+            best_current_idx = max(scoring_indices, key=lambda i: self._visual_result_claim_score(fused_results[i]))
             best_current_score = self._visual_result_claim_score(fused_results[best_current_idx])
             best_existing_score = max((claim.get('score') or (0.0, 0.0, 0)) for claim in far_claims)
 
             if best_current_score > best_existing_score:
                 for idx in indices:
-                    if idx == best_current_idx or fused_results[idx].get('element_id') is None:
+                    if (
+                        idx == best_current_idx or
+                        id(fused_results[idx]) in allowed_pair_result_ids or
+                        fused_results[idx].get('element_id') is None
+                    ):
                         continue
                     fused_results[idx]['element_id'] = None
                     fused_results[idx]['duplicate_claim_conflict'] = True
@@ -2052,7 +2288,10 @@ class MergingExtractionService:
         if not db or ref_id is None or page_num is None:
             return list(fused_results or [])
         canonical_ref_tipe = self._canonical_ref_tipe(ref_tipe)
-        fused_results = list(fused_results or [])
+        fused_results = [
+            result for result in (fused_results or [])
+            if not (result or {}).get('_drop_from_output')
+        ]
 
         if apply_duplicate_claim_guard:
             claimed_element_ids = set()
@@ -2229,12 +2468,21 @@ class MergingExtractionService:
             return (seq - prev_seq) > threshold
         return (seq - prev_seq) > threshold or (next_seq - seq) > threshold
 
-    def _collect_duplicate_units_for_page(self, alignments, duplicate_element_ids):
-        if not alignments or not duplicate_element_ids:
+    def _collect_duplicate_units_for_page(self, alignments, duplicate_analysis, page_num):
+        if not alignments or not duplicate_analysis:
+            return []
+        current_page = self._try_parse_int_id(page_num)
+        if current_page is None:
             return []
         duplicates = []
         for alignment in alignments:
-            if alignment.get('element_id') not in duplicate_element_ids:
+            elem_id = self._try_parse_int_id(alignment.get('element_id'))
+            if elem_id is None:
+                continue
+            analysis = (duplicate_analysis or {}).get(elem_id) or {}
+            if not analysis.get('is_invalid_duplicate'):
+                continue
+            if current_page not in set(analysis.get('invalid_pages') or []):
                 continue
             if not self._is_duplicate_sequence_far(
                 alignments,

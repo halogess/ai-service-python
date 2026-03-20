@@ -37,3 +37,4 @@ Thumbs.db
 /src/visualization_output/
 /src/gap_analysis.log
 /tmp*
+/reports
