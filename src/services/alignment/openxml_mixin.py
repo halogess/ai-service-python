@@ -17,6 +17,7 @@ class AlignmentOpenXmlMixin:
         r'^\s*(?:gambar|figure|fig\.?|grafik|graph|chart|tabel|table)\s*\d',
         re.IGNORECASE
     )
+    TOC_BAB_STUB_RE = re.compile(r'^bab\s*(\d{1,2})$', re.IGNORECASE)
     CODE_FONT_MARKERS = (
         'courier',
         'lucida',
@@ -110,6 +111,77 @@ class AlignmentOpenXmlMixin:
                     start_idx, end_idx = end_idx, start_idx
                 return (all_sequences[start_idx], all_sequences[end_idx])
         return None
+
+    def _collect_toc_stub_sequences(self, elements):
+        if not elements:
+            return set()
+
+        infos = []
+        for element in elements:
+            if isinstance(element, dict):
+                seq = element.get('delemen_sequence', element.get('sequence'))
+                elem_type = element.get('delemen_type', element.get('type'))
+                raw_tree = element.get('delemen_json_tree')
+                text = element.get('openxml_text')
+            else:
+                seq = getattr(element, 'delemen_sequence', None)
+                elem_type = getattr(element, 'delemen_type', None)
+                raw_tree = getattr(element, 'delemen_json_tree', None)
+                text = None
+
+            try:
+                seq = int(seq) if seq is not None else None
+            except (TypeError, ValueError):
+                seq = None
+            if seq is None:
+                continue
+
+            if text is None:
+                text = self._extract_text_from_json_tree(self._parse_json_tree(raw_tree))
+            text_norm = self._normalize_text(text or '')
+            infos.append({
+                'seq': seq,
+                'type': str(elem_type or '').strip().lower(),
+                'text_norm': text_norm,
+            })
+
+        infos.sort(key=lambda item: item['seq'])
+        accepted = set()
+        run = []
+
+        def flush_run():
+            nonlocal run
+            if len(run) >= 4 and run[0]['num'] == 1 and run[0]['seq'] <= 12:
+                accepted.update(item['seq'] for item in run)
+            run = []
+
+        for info in infos:
+            if not info['type'].startswith('list-item'):
+                flush_run()
+                continue
+            match = self.TOC_BAB_STUB_RE.match(info['text_norm'])
+            if not match:
+                flush_run()
+                continue
+
+            item = {
+                'seq': info['seq'],
+                'num': int(match.group(1)),
+            }
+            if not run:
+                run = [item]
+                continue
+
+            prev = run[-1]
+            if item['seq'] == prev['seq'] + 1 and item['num'] == prev['num'] + 1:
+                run.append(item)
+                continue
+
+            flush_run()
+            run = [item]
+
+        flush_run()
+        return accepted
 
     def _has_shape_content(self, json_tree):
         if not json_tree:
@@ -567,6 +639,13 @@ class AlignmentOpenXmlMixin:
         units = []
         table_debug = []
         global_image_counter = 0
+        toc_stub_sequences = self._collect_toc_stub_sequences(elements)
+        block_state = {
+            'current_block': {},
+            'block_order': 0,
+            'last_key': None,
+            'last_kind': None,
+        }
         active_format_cache = format_cache
         if active_format_cache is None:
             active_format_cache = self._prefetch_format_cache(
@@ -577,7 +656,44 @@ class AlignmentOpenXmlMixin:
         text_format_cache = active_format_cache.get('text', {})
         paragraph_format_cache = active_format_cache.get('paragraph', {})
 
+        def apply_block_metadata(unit_payload, unit_text, **kwargs):
+            metadata = self._derive_block_metadata(
+                unit_text,
+                current_block=block_state.get('current_block'),
+                **kwargs,
+            )
+            current_key = metadata.get('block_key')
+            current_kind = metadata.get('block_kind')
+            current_role = metadata.get('content_role')
+            start_new_block = False
+            if current_role in {'heading', 'continuation_heading'}:
+                start_new_block = True
+            elif current_key and current_key != block_state.get('last_key'):
+                start_new_block = True
+            elif current_kind in {'table', 'figure', 'caption'} and current_kind != block_state.get('last_kind'):
+                start_new_block = True
+            elif block_state.get('block_order') <= 0:
+                start_new_block = True
+
+            if start_new_block:
+                block_state['block_order'] += 1
+            block_order = block_state['block_order']
+
+            block_state['current_block'] = metadata.get('current_block') or {}
+            if current_key:
+                block_state['last_key'] = current_key
+            if current_kind:
+                block_state['last_kind'] = current_kind
+
+            unit_payload['block_kind'] = current_kind
+            unit_payload['block_key'] = current_key
+            unit_payload['content_role'] = current_role
+            unit_payload['block_order'] = block_order
+            return unit_payload
+
         for elem in elements:
+            if elem.delemen_sequence in toc_stub_sequences:
+                continue
             json_tree = self._parse_json_tree(elem.delemen_json_tree)
 
             elem_has_shape = self._has_shape_content(json_tree)
@@ -629,6 +745,14 @@ class AlignmentOpenXmlMixin:
                             'is_openxml_chart': is_openxml_chart,
                             'is_openxml_visual_slot': False,
                         })
+                        units[-1] = apply_block_metadata(
+                            units[-1],
+                            text,
+                            elem_type=elem.delemen_type,
+                            style_ids=style_hints.get('style_ids', []),
+                            is_table=True,
+                            is_code_like=style_hints.get('is_code_like_openxml', False),
+                        )
                 elif elem_has_shape:
                     table_info['action'] = 'created shape placeholder'
                     table_info['units_created'] = 1
@@ -651,6 +775,14 @@ class AlignmentOpenXmlMixin:
                         'is_openxml_chart': is_openxml_chart,
                         'is_openxml_visual_slot': False,
                     })
+                    units[-1] = apply_block_metadata(
+                        units[-1],
+                        '',
+                        elem_type=elem.delemen_type,
+                        style_ids=style_hints.get('style_ids', []),
+                        is_table=True,
+                        is_code_like=style_hints.get('is_code_like_openxml', False),
+                    )
                 table_debug.append(table_info)
             else:
                 content = self._extract_text_and_images_separately(json_tree)
@@ -686,6 +818,16 @@ class AlignmentOpenXmlMixin:
                                 'is_openxml_chart': is_openxml_chart,
                                 'is_openxml_visual_slot': image_only_visual_slot,
                             })
+                            units[-1] = apply_block_metadata(
+                                units[-1],
+                                ph,
+                                elem_type=elem.delemen_type,
+                                style_ids=style_hints.get('style_ids', []),
+                                is_chart=is_openxml_chart,
+                                is_visual_slot=image_only_visual_slot,
+                                is_image_part=True,
+                                is_code_like=style_hints.get('is_code_like_openxml', False),
+                            )
                         elif item['type'] == 'text' and not text_unit_created:
                             if content['text_only']:
                                 units.append({
@@ -706,6 +848,13 @@ class AlignmentOpenXmlMixin:
                                     'is_openxml_chart': is_openxml_chart,
                                     'is_openxml_visual_slot': False,
                                 })
+                                units[-1] = apply_block_metadata(
+                                    units[-1],
+                                    content['text_only'],
+                                    elem_type=elem.delemen_type,
+                                    style_ids=style_hints.get('style_ids', []),
+                                    is_code_like=style_hints.get('is_code_like_openxml', False),
+                                )
                                 text_unit_created = True
                 else:
                     text = content['combined'] if content['combined'] else self._extract_text_from_json_tree(json_tree)
@@ -735,6 +884,15 @@ class AlignmentOpenXmlMixin:
                             'is_openxml_visual_slot': False,
                             'is_chart_caption_text': False,
                         })
+                        units[-1] = apply_block_metadata(
+                            units[-1],
+                            '',
+                            elem_type=elem.delemen_type,
+                            style_ids=style_hints.get('style_ids', []),
+                            is_chart=True,
+                            is_image_part=True,
+                            is_code_like=style_hints.get('is_code_like_openxml', False),
+                        )
                         units.append({
                             'unit_id': f"{elem.delemen_id}_caption",
                             'elem_id': elem.delemen_id,
@@ -754,6 +912,14 @@ class AlignmentOpenXmlMixin:
                             'is_openxml_visual_slot': False,
                             'is_chart_caption_text': True,
                         })
+                        units[-1] = apply_block_metadata(
+                            units[-1],
+                            text,
+                            elem_type=elem.delemen_type,
+                            style_ids=style_hints.get('style_ids', []),
+                            is_caption_text=True,
+                            is_code_like=style_hints.get('is_code_like_openxml', False),
+                        )
                     else:
                         units.append({
                             'unit_id': str(elem.delemen_id),
@@ -773,6 +939,15 @@ class AlignmentOpenXmlMixin:
                             'is_openxml_visual_slot': is_openxml_visual_slot,
                             'is_chart_caption_text': False,
                         })
+                        units[-1] = apply_block_metadata(
+                            units[-1],
+                            text,
+                            elem_type=elem.delemen_type,
+                            style_ids=style_hints.get('style_ids', []),
+                            is_chart=is_openxml_chart,
+                            is_visual_slot=is_openxml_visual_slot,
+                            is_code_like=style_hints.get('is_code_like_openxml', False),
+                        )
         return units, table_debug
 
     def _format_unaligned_openxml(self, all_units, indices):
@@ -794,6 +969,10 @@ class AlignmentOpenXmlMixin:
                 'is_code_like_openxml': all_units[i].get('is_code_like_openxml', False),
                 'is_openxml_chart': all_units[i].get('is_openxml_chart', False),
                 'is_openxml_visual_slot': all_units[i].get('is_openxml_visual_slot', False),
+                'block_kind': all_units[i].get('block_kind'),
+                'block_key': all_units[i].get('block_key'),
+                'content_role': all_units[i].get('content_role'),
+                'block_order': all_units[i].get('block_order'),
             }
             for i in indices
         ]

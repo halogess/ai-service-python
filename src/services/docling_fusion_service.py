@@ -665,6 +665,13 @@ class DoclingFusionService:
                             'is_chart_caption_text': bool(cell.get('is_chart_caption_text', False)),
                             'visual_slot_promoted': alignment.get('visual_slot_promoted', False),
                             'repair_reason': alignment.get('repair_reason'),
+                            'block_kind': cell.get('block_kind', alignment.get('block_kind')),
+                            'block_key': cell.get('block_key', alignment.get('block_key')),
+                            'content_role': cell.get('content_role', alignment.get('content_role')),
+                            'block_order': cell.get('block_order', alignment.get('block_order')),
+                            'alignment_confidence': alignment.get('alignment_confidence'),
+                            'candidate_source': alignment.get('candidate_source'),
+                            'matched_pdf_unit_count': len(matched_units),
                         })
             elif alignment.get('merged_bbox'):
                 # Non-table elements
@@ -707,6 +714,13 @@ class DoclingFusionService:
                     'is_chart_caption_text': alignment.get('is_chart_caption_text', False),
                     'visual_slot_promoted': alignment.get('visual_slot_promoted', False),
                     'repair_reason': alignment.get('repair_reason'),
+                    'block_kind': alignment.get('block_kind'),
+                    'block_key': alignment.get('block_key'),
+                    'content_role': alignment.get('content_role'),
+                    'block_order': alignment.get('block_order'),
+                    'alignment_confidence': alignment.get('alignment_confidence'),
+                    'candidate_source': alignment.get('candidate_source'),
+                    'matched_pdf_unit_count': len(matched_units),
                 })
         
         # Add header/footer units
@@ -725,6 +739,13 @@ class DoclingFusionService:
                     'is_openxml_visual_slot': False,
                     'visual_slot_promoted': False,
                     'repair_reason': None,
+                    'block_kind': 'header_footer',
+                    'block_key': None,
+                    'content_role': 'header_footer',
+                    'block_order': None,
+                    'alignment_confidence': 1.0,
+                    'candidate_source': 'header_footer_unit',
+                    'matched_pdf_unit_count': 1,
                 })
         
         # Track which aligned items have been used
@@ -803,6 +824,12 @@ class DoclingFusionService:
                         elem_ids = []
                         elem_types = []
                         openxml_indices = []
+                        block_kinds = []
+                        block_keys = []
+                        content_roles = []
+                        block_orders = []
+                        alignment_confidences = []
+                        candidate_sources = []
                         
                         for m in matching_items:
                             merged_bbox = self.merge_bboxes(merged_bbox, m['item']['bbox'])
@@ -817,6 +844,18 @@ class DoclingFusionService:
                                 elem_types.append(m['item']['element_type'])
                             if m['item'].get('openxml_idx') is not None:
                                 openxml_indices.append(m['item']['openxml_idx'])
+                            if m['item'].get('block_kind'):
+                                block_kinds.append(m['item'].get('block_kind'))
+                            if m['item'].get('block_key'):
+                                block_keys.append(m['item'].get('block_key'))
+                            if m['item'].get('content_role'):
+                                content_roles.append(m['item'].get('content_role'))
+                            if m['item'].get('block_order') is not None:
+                                block_orders.append(m['item'].get('block_order'))
+                            if m['item'].get('alignment_confidence') is not None:
+                                alignment_confidences.append(float(m['item'].get('alignment_confidence') or 0.0))
+                            if m['item'].get('candidate_source'):
+                                candidate_sources.append(m['item'].get('candidate_source'))
                         
                         avg_overlap /= len(matching_items)
                         
@@ -882,6 +921,16 @@ class DoclingFusionService:
                                 (m['item'].get('repair_reason') for m in matching_items if m['item'].get('repair_reason')),
                                 None
                             ),
+                            'block_kind': block_kinds[0] if block_kinds else None,
+                            'block_key': block_keys[0] if block_keys else None,
+                            'content_role': content_roles[0] if content_roles else None,
+                            'block_order': min(block_orders) if block_orders else None,
+                            'alignment_confidence': max(alignment_confidences) if alignment_confidences else None,
+                            'candidate_source': candidate_sources[0] if candidate_sources else None,
+                            'matched_pdf_unit_count': sum(
+                                int(m['item'].get('matched_pdf_unit_count') or 0)
+                                for m in matching_items
+                            ),
                         })
                     else:
                         # Don't merge - add each item separately
@@ -933,7 +982,14 @@ class DoclingFusionService:
                                 'visual_slot_promoted': item.get('visual_slot_promoted', False),
                                 'repair_reason': item.get('repair_reason'),
                                 'table_canonical_from_element_id': item.get('table_canonical_from_element_id'),
-                                'table_canonical_from_sequence': item.get('table_canonical_from_sequence')
+                                'table_canonical_from_sequence': item.get('table_canonical_from_sequence'),
+                                'block_kind': item.get('block_kind'),
+                                'block_key': item.get('block_key'),
+                                'content_role': item.get('content_role'),
+                                'block_order': item.get('block_order'),
+                                'alignment_confidence': item.get('alignment_confidence'),
+                                'candidate_source': item.get('candidate_source'),
+                                'matched_pdf_unit_count': item.get('matched_pdf_unit_count'),
                             })
         
         # Add remaining unmatched aligned items (no Docling match)
@@ -982,6 +1038,13 @@ class DoclingFusionService:
                 'is_chart_caption_text': item.get('is_chart_caption_text', False),
                 'visual_slot_promoted': item.get('visual_slot_promoted', False),
                 'repair_reason': item.get('repair_reason'),
+                'block_kind': item.get('block_kind'),
+                'block_key': item.get('block_key'),
+                'content_role': item.get('content_role'),
+                'block_order': item.get('block_order'),
+                'alignment_confidence': item.get('alignment_confidence'),
+                'candidate_source': item.get('candidate_source'),
+                'matched_pdf_unit_count': item.get('matched_pdf_unit_count'),
             })
         
         # Post-pass: force picture label for image/shape areas that overlap any picture prediction

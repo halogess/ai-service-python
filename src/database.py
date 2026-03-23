@@ -1,4 +1,5 @@
 import os
+import socket
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -6,8 +7,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _resolve_db_host() -> str:
+    db_host = os.getenv('DB_HOST', 'localhost')
+    db_port = int(os.getenv('DB_PORT', '3306'))
+    if db_host == 'host.docker.internal' and _port_open('localhost', db_port):
+        os.environ['DB_HOST'] = 'localhost'
+        return 'localhost'
+    return db_host
+
 # Database configuration
-DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_HOST = _resolve_db_host()
 DB_PORT = os.getenv('DB_PORT', '3306')
 DB_NAME = os.getenv('DB_NAME')
 DB_USER = os.getenv('DB_USER')

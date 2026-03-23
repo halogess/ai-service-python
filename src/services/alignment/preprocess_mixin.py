@@ -164,6 +164,56 @@ class AlignmentPreprocessMixin:
         pdf_units = []
         unit_counter = 0
         img_counter = 0
+        block_state = {
+            'current_block': {},
+            'block_order': 0,
+            'last_key': None,
+            'last_kind': None,
+        }
+
+        def apply_block_metadata(unit_payload):
+            metadata = self._derive_block_metadata(
+                unit_payload.get('text'),
+                item_type=unit_payload.get('item_type'),
+                is_code_like=self._looks_like_code_line_text(
+                    unit_payload.get('text') or unit_payload.get('text_normalized')
+                ) if hasattr(self, '_looks_like_code_line_text') else False,
+                is_table=unit_payload.get('item_type') in {'table', 'hline_table'},
+                is_chart=unit_payload.get('is_chart_visual', False),
+                is_visual_slot=bool(unit_payload.get('text_normalized') == '[img]'),
+                is_image_part=unit_payload.get('is_image', False) or unit_payload.get('text_normalized') == '[img]',
+                current_block=block_state.get('current_block'),
+                is_header_footer=unit_payload.get('is_header_footer', False),
+            )
+            current_key = metadata.get('block_key')
+            current_kind = metadata.get('block_kind')
+            current_role = metadata.get('content_role')
+            start_new_block = False
+            if current_role in {'heading', 'continuation_heading'}:
+                start_new_block = True
+            elif current_key and current_key != block_state.get('last_key'):
+                start_new_block = True
+            elif current_kind in {'table', 'figure', 'caption'} and current_kind != block_state.get('last_kind'):
+                start_new_block = True
+            elif block_state.get('block_order') <= 0:
+                start_new_block = True
+
+            if start_new_block:
+                block_state['block_order'] += 1
+            block_order = block_state['block_order']
+
+            block_state['current_block'] = metadata.get('current_block') or {}
+            if current_key:
+                block_state['last_key'] = current_key
+            if current_kind:
+                block_state['last_kind'] = current_kind
+
+            unit_payload['block_kind'] = current_kind
+            unit_payload['block_key'] = current_key
+            unit_payload['content_role'] = current_role
+            unit_payload['block_order'] = block_order
+            return unit_payload
+
         for item in collected:
             if item.get('is_image'):
                 img_counter += 1
@@ -182,6 +232,7 @@ class AlignmentPreprocessMixin:
                     'docling_picture_overlap': item.get('docling_picture_overlap'),
                     'suppress_text_alignment': item.get('suppress_text_alignment', False),
                 })
+                pdf_units[-1] = apply_block_metadata(pdf_units[-1])
             else:
                 txt = item['text']
                 pdf_units.append({
@@ -201,6 +252,7 @@ class AlignmentPreprocessMixin:
                     'docling_picture_overlap': item.get('docling_picture_overlap'),
                     'suppress_text_alignment': item.get('suppress_text_alignment', False),
                 })
+                pdf_units[-1] = apply_block_metadata(pdf_units[-1])
             unit_counter += 1
         return pdf_units
 

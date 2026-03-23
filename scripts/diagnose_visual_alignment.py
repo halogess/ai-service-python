@@ -63,7 +63,11 @@ def collect_ref_diagnosis(conn, ref_row: dict) -> dict:
         element_id = int(mapping["delemen_id"])
         openxml_text = evalmod.extract_openxml_text(mapping["delemen_json_tree"])
         openxml_text_norm = evalmod.normalize_text(openxml_text)
-        if evalmod.should_ignore_body_element(mapping["delemen_type"], openxml_text_norm):
+        if evalmod.should_ignore_body_element(
+            mapping["delemen_type"],
+            openxml_text_norm,
+            mapping["delemen_json_tree"],
+        ):
             continue
         body_elements[element_id] = {
             "sequence": int(mapping["delemen_sequence"]) if mapping["delemen_sequence"] is not None else None,

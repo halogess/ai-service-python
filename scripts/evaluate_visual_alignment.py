@@ -244,12 +244,67 @@ def is_valid_same_page_chart_caption_pair(rows: List[dict]) -> bool:
     return True
 
 
+def is_table_like_row(row: dict) -> bool:
+    if not row:
+        return False
+    if get_visual_label(row) == "table":
+        return True
+    if row.get("has_table_units"):
+        return True
+    element_type = str(row.get("element_type") or "").strip().lower()
+    return "table" in element_type
+
+
+def is_valid_same_page_table_claim_set(rows: List[dict]) -> bool:
+    if len(rows) <= 1:
+        return False
+    return all(is_table_like_row(row) for row in rows)
+
+
 def parse_json_tree(raw_value):
     return ALIGNER._parse_json_tree(raw_value)
 
 
 def extract_openxml_text(raw_value) -> str:
     return ALIGNER._extract_text_from_json_tree(parse_json_tree(raw_value))
+
+
+def json_tree_has_visual_bearing_content(raw_value) -> bool:
+    tree = parse_json_tree(raw_value)
+    found = False
+
+    def walk(node):
+        nonlocal found
+        if found:
+            return
+        if isinstance(node, dict):
+            node_type = str(node.get("type") or "").strip().lower()
+            if node_type in {"image", "chart", "table", "drawing"}:
+                found = True
+                return
+            if node_type == "text":
+                raw_value = node.get("value")
+                if raw_value is None:
+                    raw_value = node.get("text")
+                if raw_value is None:
+                    raw_value = node.get("t")
+                value = normalize_text(str(raw_value or "").strip())
+                if value:
+                    found = True
+                    return
+            for key, value in node.items():
+                if key in {"type", "value", "text", "t"}:
+                    continue
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, str):
+            if normalize_text(node):
+                found = True
+
+    walk(tree)
+    return found
 
 
 def bbox_area(bbox: Optional[List[float]]) -> float:
@@ -295,6 +350,16 @@ def word_overlap_ratio(word_bbox: List[float], outer_bbox: List[float]) -> float
     if area <= 0:
         return 0.0
     return intersection_area(word_bbox, outer_bbox) / area
+
+
+def word_is_covered_by_rows(word_bbox: List[float], page_rows: List[dict]) -> bool:
+    for row in page_rows or []:
+        bbox = row.get("bbox")
+        if not bbox or len(bbox) < 4:
+            continue
+        if center_in_bbox(word_bbox, bbox) or word_overlap_ratio(word_bbox, bbox) >= 0.5:
+            return True
+    return False
 
 
 def text_similarity(a: str, b: str) -> Optional[float]:
@@ -370,6 +435,33 @@ def choose_representative_row(rows: List[dict]) -> dict:
     return min(rows, key=sort_key)
 
 
+def choose_order_anchor_row(
+    rows: List[dict],
+    page_heights: Optional[Dict[int, float]] = None,
+) -> dict:
+    if not rows:
+        raise ValueError("rows must not be empty")
+
+    def sort_key(row: dict):
+        bbox = row["bbox"]
+        center_y = ((bbox[1] + bbox[3]) / 2) if bbox else 0.0
+        return (
+            row["page"],
+            center_y,
+            bbox[0] if bbox else 0.0,
+            bbox_area(bbox),
+            row["dev_id"],
+        )
+
+    pages = {row["page"] for row in rows if row.get("page") is not None}
+    if len(pages) > 1:
+        duplicate_analysis = analyze_element_rows_for_duplicates(rows, page_heights=page_heights)
+        if duplicate_analysis.get("is_valid_continuation"):
+            return max(rows, key=sort_key)
+
+    return min(rows, key=sort_key)
+
+
 def group_rows_by_element(rows: List[dict], body_element_ids: set[int]) -> Dict[int, List[dict]]:
     grouped: Dict[int, List[dict]] = defaultdict(list)
     for row in rows:
@@ -386,10 +478,19 @@ def analyze_element_rows_for_duplicates(
     return analyze_cross_page_entries(rows, page_heights=page_heights)
 
 
-def should_ignore_body_element(element_type: Optional[str], openxml_text_norm: str) -> bool:
-    return (element_type == "paragraph" and not openxml_text_norm) or (
-        element_type in {"h1", "h2"} and not openxml_text_norm
-    )
+def should_ignore_body_element(
+    element_type: Optional[str],
+    openxml_text_norm: str,
+    raw_value=None,
+) -> bool:
+    normalized_type = str(element_type or "").strip().lower()
+    if normalized_type == "bookmarkend":
+        return False
+    if openxml_text_norm:
+        return False
+    if raw_value is not None and json_tree_has_visual_bearing_content(raw_value):
+        return False
+    return True
 
 
 def evaluate_element_on_pdf(
@@ -434,12 +535,22 @@ def evaluate_ref(conn, ref_row: dict) -> dict:
     body_element_ids = set()
     ignored_empty_paragraph_ids = set()
     ignored_empty_heading_ids = set()
-    for row in conn.execute(BODY_ELEMENTS_QUERY, {"ref_type": ref_type, "ref_id": ref_id}):
-        mapping = dict(row._mapping)
+    body_rows = [dict(row._mapping) for row in conn.execute(BODY_ELEMENTS_QUERY, {"ref_type": ref_type, "ref_id": ref_id})]
+    ignored_toc_stub_sequences = ALIGNER._collect_toc_stub_sequences(body_rows)
+    for mapping in body_rows:
         element_id = int(mapping["delemen_id"])
         openxml_text = extract_openxml_text(mapping["delemen_json_tree"])
         openxml_text_norm = normalize_text(openxml_text)
-        if should_ignore_body_element(mapping["delemen_type"], openxml_text_norm):
+        if (
+            mapping["delemen_sequence"] is not None and
+            int(mapping["delemen_sequence"]) in ignored_toc_stub_sequences
+        ):
+            continue
+        if should_ignore_body_element(
+            mapping["delemen_type"],
+            openxml_text_norm,
+            mapping["delemen_json_tree"],
+        ):
             if mapping["delemen_type"] == "paragraph":
                 ignored_empty_paragraph_ids.add(element_id)
             elif mapping["delemen_type"] in {"h1", "h2"}:
@@ -516,6 +627,8 @@ def evaluate_ref(conn, ref_row: dict) -> dict:
             else:
                 cross_page_duplicates += 1
         elif len(rows) > 1:
+            if is_valid_same_page_table_claim_set(rows):
+                continue
             if is_valid_same_page_chart_caption_pair(rows):
                 continue
             same_page_fragments += 1
@@ -528,7 +641,7 @@ def evaluate_ref(conn, ref_row: dict) -> dict:
         sequence = body_elements[element_id]["sequence"]
         if sequence is None:
             continue
-        representative = choose_representative_row(rows)
+        representative = choose_order_anchor_row(rows, page_heights=page_heights)
         bbox = representative["bbox"]
         ordered_body.append(
             (
@@ -581,12 +694,37 @@ def evaluate_ref(conn, ref_row: dict) -> dict:
         actionable_orphan_visual_rows / total_visual_rows
     ) if total_visual_rows else 0.0
 
+    total_pdf_words = 0
+    uncovered_pdf_words = 0
+    pages_with_uncovered_pdf_words = 0
+    uncovered_pdf_word_rate = 0.0
     support_scores: List[float] = []
     bbox_tightness_scores: List[float] = []
     support_details = []
 
     if pdf_cache is not None:
         try:
+            visual_rows_by_page: Dict[int, List[dict]] = defaultdict(list)
+            for row in visual_rows:
+                if row["page"] is not None and row.get("bbox"):
+                    visual_rows_by_page[row["page"]].append(row)
+
+            for page_num in range(1, pdf_cache.doc.page_count + 1):
+                page_words = pdf_cache.get_page_words(page_num)
+                total_pdf_words += len(page_words)
+                page_uncovered = sum(
+                    1
+                    for word in page_words
+                    if not word_is_covered_by_rows(word["bbox"], visual_rows_by_page.get(page_num, []))
+                )
+                uncovered_pdf_words += page_uncovered
+                if page_uncovered > 0:
+                    pages_with_uncovered_pdf_words += 1
+
+            uncovered_pdf_word_rate = (
+                uncovered_pdf_words / total_pdf_words
+            ) if total_pdf_words else 0.0
+
             for element_id, rows in body_groups.items():
                 openxml_text = body_elements[element_id]["openxml_text"]
                 if len(body_elements[element_id]["openxml_text_norm"]) < 8:
@@ -721,6 +859,10 @@ def evaluate_ref(conn, ref_row: dict) -> dict:
         "actionable_foreign_claim_rows": actionable_foreign_claim_rows,
         "actionable_orphan_visual_rows": actionable_orphan_visual_rows,
         "actionable_orphan_visual_rate": actionable_orphan_visual_rate,
+        "total_pdf_words": total_pdf_words,
+        "uncovered_pdf_words": uncovered_pdf_words,
+        "uncovered_pdf_word_rate": uncovered_pdf_word_rate,
+        "pages_with_uncovered_pdf_words": pages_with_uncovered_pdf_words,
         "checks_passed": sum(1 for passed in check_results.values() if passed),
         "check_results": check_results,
         "overall_score": overall_score,
@@ -802,6 +944,10 @@ def write_csv(path: Path, rows: List[dict]):
         "actionable_foreign_claim_rows",
         "actionable_orphan_visual_rows",
         "actionable_orphan_visual_rate",
+        "total_pdf_words",
+        "uncovered_pdf_words",
+        "uncovered_pdf_word_rate",
+        "pages_with_uncovered_pdf_words",
         "checks_passed",
         "overall_score",
     ]
@@ -903,12 +1049,19 @@ def render_table_rows(rows: List[dict]) -> str:
             bad_threshold=0.05,
             lower_is_better=True,
         )
+        uncovered_pdf_class = metric_class(
+            row.get("uncovered_pdf_word_rate"),
+            good_threshold=0.01,
+            bad_threshold=0.05,
+            lower_is_better=True,
+        )
         row_class = (
             "row-issue"
             if (
                 row.get("checks_passed", 0) < 6 or
                 row.get("actionable_orphan_visual_rows", 0) > 0 or
-                row.get("total_visual_rows", 0) == 0
+                row.get("total_visual_rows", 0) == 0 or
+                row.get("uncovered_pdf_words", 0) > 0
             )
             else ""
         )
@@ -932,6 +1085,8 @@ def render_table_rows(rows: List[dict]) -> str:
             f'<td>{fmt_number(row.get("actionable_orphan_visual_rows"))}</td>'
             f'<td class="{orphan_class}">{fmt_percent(row.get("orphan_visual_rate"))}</td>'
             f'<td>{fmt_number(row.get("orphan_visual_rows"))}</td>'
+            f'<td class="{uncovered_pdf_class}">{fmt_percent(row.get("uncovered_pdf_word_rate"))}</td>'
+            f'<td>{fmt_number(row.get("uncovered_pdf_words"))}</td>'
             f'<td>{fmt_number(row.get("total_visual_rows"))}</td>'
             f'<td>{fmt_number(row.get("ignored_empty_paragraphs"))}</td>'
             f'<td>{fmt_number(row.get("ignored_empty_headings"))}</td>'
@@ -1031,6 +1186,18 @@ def write_html(
                 "warn" if (summary.get("documents_with_orphan_visual_rows") or 0) > 0 else "good",
             ),
             render_summary_card(
+                "Uncovered PDF Words",
+                fmt_number(summary.get("total_uncovered_pdf_words")),
+                "Word bbox PyMuPDF yang belum tertutup visual rows",
+                "warn" if (summary.get("total_uncovered_pdf_words") or 0) > 0 else "good",
+            ),
+            render_summary_card(
+                "Avg Uncovered PDF",
+                fmt_percent(summary.get("average_uncovered_pdf_word_rate")),
+                "Rata-rata word bbox PDF yang belum tertutup",
+                "warn" if (summary.get("average_uncovered_pdf_word_rate") or 0) > 0.01 else "good",
+            ),
+            render_summary_card(
                 "Unscoped Visual Rows",
                 fmt_number(payload.get("unscoped_visual_rows")),
                 "Row visual global yang tidak punya scope ref",
@@ -1070,6 +1237,12 @@ def write_html(
                 summary.get("top_5_highest_actionable_orphan_rate", []),
                 "actionable_orphan_visual_rate",
                 "Actionable Orphan Tertinggi",
+                percent=True,
+            ),
+            render_top_list(
+                summary.get("top_5_highest_uncovered_pdf_word_rate", []),
+                "uncovered_pdf_word_rate",
+                "Uncovered PDF Words Tertinggi",
                 percent=True,
             ),
         ]
@@ -1320,7 +1493,7 @@ def write_html(
   <main class="wrap">
     <section class="hero">
       <h1>{html.escape(report_title)}</h1>
-      <p>Aspek utama yang dievaluasi: coverage setelah paragraf kosong dan heading kosong dibuang, duplicate invalid lintas halaman, order consistency, null/foreign claim, raw orphan visual rows, actionable orphan tanpa header/footer, serta breakdown missing non-bookmark vs bookmarkEnd.</p>
+      <p>Aspek utama yang dievaluasi: coverage setelah paragraf kosong dan heading kosong dibuang, duplicate invalid lintas halaman, order consistency, null/foreign claim, raw orphan visual rows, actionable orphan tanpa header/footer, breakdown missing non-bookmark vs bookmarkEnd, serta uncovered PDF words yang belum tertutup visual rows.</p>
       <p>Dihasilkan pada {generated_at} dari DB host {db_host}.</p>
       <div class="hero-links">
         <a href="{html.escape(json_filename)}">Buka JSON</a>
@@ -1339,7 +1512,7 @@ def write_html(
     <section class="table-wrap">
       <div class="table-head">
         <h2>Semua Dokumen</h2>
-        <p>Tabel ini difokuskan ke metrik yang benar-benar dipakai saat ini. Coverage sudah mengecualikan paragraf kosong dan h1/h2 kosong. Actionable orphan mengabaikan page_header/page_footer agar noise header tidak terlihat seperti failure body alignment.</p>
+        <p>Tabel ini difokuskan ke metrik yang benar-benar dipakai saat ini. Coverage sudah mengecualikan paragraf kosong dan h1/h2 kosong. Actionable orphan mengabaikan page_header/page_footer agar noise header tidak terlihat seperti failure body alignment. Uncovered PDF words menunjukkan word bbox PyMuPDF yang belum tertutup visual rows sama sekali.</p>
         <div class="legend">
           <span class="chip"><span class="dot dot-good"></span> sehat</span>
           <span class="chip"><span class="dot dot-warn"></span> perlu perhatian</span>
@@ -1368,6 +1541,8 @@ def write_html(
               <th>Act Orphan Rows</th>
               <th>Orphan</th>
               <th>Orphan Rows</th>
+              <th>PDF Uncov</th>
+              <th>Uncov Words</th>
               <th>Visual Rows</th>
               <th>Ignored Empty P</th>
               <th>Ignored Empty H</th>
@@ -1430,6 +1605,14 @@ def summarize(results: List[dict]) -> dict:
             ),
             "average_actionable_orphan_visual_rate": (
                 sum(row["actionable_orphan_visual_rate"] for row in rows) / len(rows)
+            ) if rows else None,
+            "total_pdf_words": sum(row["total_pdf_words"] for row in rows),
+            "total_uncovered_pdf_words": sum(row["uncovered_pdf_words"] for row in rows),
+            "documents_with_uncovered_pdf_words": sum(
+                1 for row in rows if row["uncovered_pdf_words"] > 0
+            ),
+            "average_uncovered_pdf_word_rate": (
+                sum(row["uncovered_pdf_word_rate"] for row in rows) / len(rows)
             ) if rows else None,
             "average_duplicate_rate": (
                 sum(row["duplicate_rate"] for row in rows) / len(rows)
@@ -1585,6 +1768,17 @@ def summarize(results: List[dict]) -> dict:
             }
             for row in sorted(results, key=lambda item: item["actionable_orphan_visual_rate"], reverse=True)[:5]
         ],
+        "top_5_highest_uncovered_pdf_word_rate": [
+            {
+                "ref_type": row["ref_type"],
+                "ref_id": row["ref_id"],
+                "filename": row["filename"],
+                "uncovered_pdf_words": row["uncovered_pdf_words"],
+                "uncovered_pdf_word_rate": round_metric(row["uncovered_pdf_word_rate"]),
+                "total_pdf_words": row["total_pdf_words"],
+            }
+            for row in sorted(results, key=lambda item: item["uncovered_pdf_word_rate"], reverse=True)[:5]
+        ],
         "top_5_lowest_support": [
             {
                 "ref_type": row["ref_type"],
@@ -1724,6 +1918,15 @@ def main():
     print(f"Median bbox tightness median: {round_metric(summary['median_bbox_tightness_median'])}")
     print(f"Average duplicate rate: {round_metric(summary['average_duplicate_rate'])}")
     print(f"Average null claim rate: {round_metric(summary['average_null_claim_rate'])}")
+    print(f"Total uncovered PDF words: {summary['total_uncovered_pdf_words']}")
+    print(
+        "Average uncovered PDF word rate: "
+        f"{round_metric(summary['average_uncovered_pdf_word_rate'])}"
+    )
+    print(
+        "Documents with uncovered PDF words: "
+        f"{summary['documents_with_uncovered_pdf_words']}"
+    )
     print(f"Total orphan visual rows: {summary['total_orphan_visual_rows']}")
     print(f"Total actionable orphan visual rows: {summary['total_actionable_orphan_visual_rows']}")
     print(f"Documents with orphan visual rows: {summary['documents_with_orphan_visual_rows']}")

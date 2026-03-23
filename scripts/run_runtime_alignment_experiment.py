@@ -82,7 +82,11 @@ def evaluate_runtime_doc(conn, ref_row: dict, visual_rows: List[dict]) -> dict:
         element_id = int(mapping["delemen_id"])
         openxml_text = evalmod.extract_openxml_text(mapping["delemen_json_tree"])
         openxml_text_norm = evalmod.normalize_text(openxml_text)
-        if evalmod.should_ignore_body_element(mapping["delemen_type"], openxml_text_norm):
+        if evalmod.should_ignore_body_element(
+            mapping["delemen_type"],
+            openxml_text_norm,
+            mapping["delemen_json_tree"],
+        ):
             continue
         body_elements[element_id] = {
             "sequence": int(mapping["delemen_sequence"]) if mapping["delemen_sequence"] is not None else None,
@@ -147,7 +151,7 @@ def evaluate_runtime_doc(conn, ref_row: dict, visual_rows: List[dict]) -> dict:
         sequence = body_elements[element_id]["sequence"]
         if sequence is None:
             continue
-        representative = evalmod.choose_representative_row(rows)
+        representative = evalmod.choose_order_anchor_row(rows, page_heights=page_heights)
         bbox = representative["bbox"]
         ordered_body.append(
             (

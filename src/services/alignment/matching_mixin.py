@@ -149,6 +149,143 @@ class AlignmentMatchingMixin:
         )
         return bool(heading)
 
+    def _normalize_block_key(self, key):
+        if not key:
+            return None
+        normalized = re.sub(r'\s+', ' ', str(key).strip().lower())
+        return normalized or None
+
+    def _extract_caption_block_heading(self, text):
+        if not text:
+            return None
+        if not hasattr(self, '_extract_figure_key'):
+            return None
+        key = self._extract_figure_key(text)
+        key = self._normalize_block_key(key)
+        if not key:
+            return None
+        prefix = key.split(':', 1)[0]
+        parent_kind = 'table' if prefix == 'table' else 'figure'
+        return {
+            'kind': 'caption',
+            'number': key.split(':', 1)[1] if ':' in key else None,
+            'key': key,
+            'parent_kind': parent_kind,
+            'text': str(text),
+        }
+
+    def _is_caption_block_text(self, text):
+        return bool(self._extract_caption_block_heading(text))
+
+    def _derive_block_metadata(
+        self,
+        text,
+        *,
+        item_type=None,
+        elem_type=None,
+        style_ids=None,
+        is_code_like=False,
+        is_table=False,
+        is_chart=False,
+        is_visual_slot=False,
+        is_image_part=False,
+        is_caption_text=False,
+        is_header_footer=False,
+        current_block=None,
+    ):
+        current_block = dict(current_block or {})
+        raw_text = str(text or '').strip()
+        normalized_text = self._normalize_pointer_text(raw_text)
+        normalized_item_type = str(item_type or elem_type or '').strip().lower()
+        normalized_elem_type = str(elem_type or '').strip().lower()
+        style_tokens = {
+            str(style_id or '').strip().lower()
+            for style_id in (style_ids or [])
+            if style_id is not None
+        }
+
+        block_kind = 'narrative'
+        block_key = None
+        content_role = 'body'
+        opens_block = False
+        activates_block = False
+
+        structured_heading = self._extract_structured_block_heading(raw_text)
+        caption_heading = self._extract_caption_block_heading(raw_text) if (raw_text or is_caption_text) else None
+
+        if is_header_footer:
+            block_kind = 'header_footer'
+            content_role = 'header_footer'
+        elif structured_heading:
+            block_kind = 'algorithm' if structured_heading['kind'] == 'algoritma' else 'code'
+            block_key = structured_heading['key']
+            content_role = 'continuation_heading' if structured_heading['is_continuation'] else 'heading'
+            opens_block = True
+            activates_block = True
+        elif caption_heading or is_caption_text:
+            block_kind = 'caption'
+            block_key = caption_heading['key'] if caption_heading else None
+            content_role = 'caption'
+        elif is_table or normalized_item_type in {'table', 'hline_table', 'grid_table'} or 'table' in normalized_elem_type:
+            block_kind = 'table'
+            content_role = 'body'
+            if caption_heading and caption_heading.get('parent_kind') == 'table':
+                block_key = caption_heading['key']
+        elif is_chart or is_visual_slot or is_image_part or normalized_item_type in {'image', 'shape'}:
+            block_kind = 'figure'
+            if is_visual_slot or is_image_part or normalized_text == '[img]':
+                content_role = 'placeholder'
+            else:
+                content_role = 'body'
+            if caption_heading and caption_heading.get('parent_kind') == 'figure':
+                block_key = caption_heading['key']
+        elif (
+            is_code_like or
+            normalized_item_type == 'code' or
+            normalized_elem_type == 'code' or
+            normalized_elem_type.startswith('list-item')
+        ):
+            if current_block.get('kind') in {'code', 'algorithm'}:
+                block_kind = current_block['kind']
+                block_key = current_block.get('key')
+            else:
+                block_kind = 'code'
+            content_role = 'continuation_body' if current_block.get('is_continuation') else 'body'
+        elif current_block.get('kind') in {'code', 'algorithm'}:
+            looks_like_bridge = (
+                normalized_text.startswith('segmenprogram') or
+                normalized_text.startswith('algoritma') or
+                any(token in normalized_text for token in ('function', 'return', 'class', 'void', 'const', 'public', 'private', 'algoritma'))
+            )
+            if looks_like_bridge:
+                block_kind = current_block['kind']
+                block_key = current_block.get('key')
+                content_role = 'continuation_body' if current_block.get('is_continuation') else 'body'
+
+        if block_kind == 'narrative' and current_block.get('kind') in {'code', 'algorithm'}:
+            # Narrative text breaks active code/algorithm blocks.
+            current_block = {}
+
+        if opens_block:
+            current_block = {
+                'kind': block_kind,
+                'key': block_key,
+                'is_continuation': content_role == 'continuation_heading',
+            }
+        elif activates_block and block_kind in {'figure', 'table'}:
+            current_block = {
+                'kind': block_kind,
+                'key': block_key,
+                'is_continuation': False,
+            }
+
+        return {
+            'block_kind': block_kind,
+            'block_key': self._normalize_block_key(block_key),
+            'content_role': content_role,
+            'current_block': current_block,
+        }
+
     def _extract_structured_block_heading(self, text, allowed_kinds=None):
         if not text:
             return None
@@ -206,28 +343,6 @@ class AlignmentMatchingMixin:
             if self._looks_like_code_line_text(unit.get('text') or unit.get('text_normalized')):
                 count += 1
         return count
-
-    def _candidate_context_has_program_heading(self, pdf_units, candidate_context):
-        for unit in pdf_units or []:
-            if self._is_program_segment_heading_text(unit.get('text') or unit.get('text_normalized')):
-                return True
-        for hit in (candidate_context or {}).get('anchor_hits') or []:
-            if self._is_program_segment_heading_text(hit.get('pdf_text')) or self._is_program_segment_heading_text(hit.get('openxml_text')):
-                return True
-        return False
-
-    def _should_use_program_segment_local_band(self, pdf_units, candidate_context):
-        if not candidate_context or not candidate_context.get('indices'):
-            return False
-        if candidate_context.get('source') not in {'sequence_anchor_cluster', 'page_sequence_range'}:
-            return False
-        if not self._candidate_context_has_program_heading(pdf_units, candidate_context):
-            return False
-        min_code_like_lines = self._read_positive_int_env(
-            'ALIGNMENT_PROGRAM_SEGMENT_MIN_CODE_LINES',
-            8,
-        )
-        return self._count_code_like_pdf_units(pdf_units) >= min_code_like_lines
 
     def _collect_alignment_pdf_text(self, alignment):
         if not isinstance(alignment, dict):
@@ -287,6 +402,227 @@ class AlignmentMatchingMixin:
                     return False
 
         return True
+
+    def _compute_alignment_confidence(self, alignment):
+        support = self._compute_alignment_support_metrics(alignment)
+        matched_chars = float(support.get('matched_chars') or 0.0)
+        match_ratio = float(support.get('match_ratio') or 0.0)
+        unit_count = float(support.get('unit_count') or 0.0)
+        score = min(1.0, (match_ratio * 0.55) + (min(matched_chars, 80.0) / 80.0 * 0.35) + (min(unit_count, 4.0) / 4.0 * 0.10))
+
+        if self._alignment_has_figure_key_mismatch(alignment):
+            score -= 0.35
+
+        block_kind = str(alignment.get('block_kind') or '').strip().lower()
+        content_role = str(alignment.get('content_role') or '').strip().lower()
+        if block_kind in {'caption', 'figure'} and matched_chars < 12:
+            score -= 0.10
+        if content_role == 'placeholder' and unit_count <= 1:
+            score -= 0.08
+
+        return max(0.0, min(1.0, round(score, 4)))
+
+    def _annotate_alignment_confidence(self, alignments, candidate_source=None):
+        for alignment in alignments or []:
+            if not isinstance(alignment, dict):
+                continue
+            alignment['alignment_confidence'] = self._compute_alignment_confidence(alignment)
+            if candidate_source is not None:
+                alignment['candidate_source'] = candidate_source
+        return alignments
+
+    @staticmethod
+    def _alignment_top_y(alignment):
+        bbox = (alignment or {}).get('merged_bbox')
+        if bbox and len(bbox) >= 4:
+            try:
+                return float(bbox[1])
+            except (TypeError, ValueError):
+                pass
+        tops = []
+        for unit in (alignment or {}).get('matched_pdf_units') or []:
+            bbox = unit.get('bbox')
+            if bbox and len(bbox) >= 4:
+                try:
+                    tops.append(float(bbox[1]))
+                except (TypeError, ValueError):
+                    continue
+        return min(tops) if tops else None
+
+    def _is_heading_context_alignment(self, alignment):
+        if not isinstance(alignment, dict):
+            return False
+        if alignment.get('is_table') or alignment.get('is_image_part'):
+            return False
+        block_kind = str(alignment.get('block_kind') or '').strip().lower()
+        content_role = str(alignment.get('content_role') or '').strip().lower()
+        if block_kind not in {'code', 'algorithm'}:
+            return False
+        if content_role not in {'heading', 'continuation_heading'}:
+            return False
+        support = self._compute_alignment_support_metrics(alignment)
+        return int(support.get('matched_chars') or 0) >= 12
+
+    def _is_block_context_body_alignment(self, alignment):
+        if not isinstance(alignment, dict):
+            return False
+        if alignment.get('is_table') or alignment.get('is_image_part'):
+            return False
+        if self._is_heading_context_alignment(alignment):
+            return False
+        block_kind = str(alignment.get('block_kind') or '').strip().lower()
+        elem_type = str(alignment.get('element_type') or '').strip().lower()
+        if block_kind in {'code', 'algorithm'}:
+            return True
+        if bool(alignment.get('is_code_like_openxml')) or bool(alignment.get('is_code_font')) or bool(alignment.get('is_code_style')):
+            return True
+        return elem_type.startswith('list-item')
+
+    def _rebind_alignment_to_openxml_unit(self, alignment, openxml_unit, openxml_idx):
+        if not isinstance(alignment, dict) or not isinstance(openxml_unit, dict):
+            return alignment
+        alignment['element_id'] = openxml_unit.get('elem_id')
+        alignment['element_sequence'] = openxml_unit.get('elem_seq')
+        alignment['element_type'] = openxml_unit.get('elem_type')
+        alignment['element_text'] = openxml_unit.get('text')
+        alignment['unit_id'] = str(openxml_unit.get('elem_id') or alignment.get('unit_id') or '')
+        alignment['openxml_idx'] = openxml_idx
+        alignment['openxml_indices'] = [openxml_idx]
+        alignment['image_index'] = openxml_unit.get('image_index')
+        alignment['font_families'] = openxml_unit.get('font_families', [])
+        alignment['style_ids'] = openxml_unit.get('style_ids', [])
+        alignment['is_code_font'] = openxml_unit.get('is_code_font', False)
+        alignment['is_code_style'] = openxml_unit.get('is_code_style', False)
+        alignment['is_code_like_openxml'] = openxml_unit.get('is_code_like_openxml', False)
+        alignment['is_openxml_chart'] = openxml_unit.get('is_openxml_chart', False)
+        alignment['is_openxml_visual_slot'] = openxml_unit.get('is_openxml_visual_slot', False)
+        alignment['is_chart_caption_text'] = openxml_unit.get('is_chart_caption_text', False)
+        alignment['block_kind'] = openxml_unit.get('block_kind')
+        alignment['block_key'] = openxml_unit.get('block_key')
+        alignment['content_role'] = openxml_unit.get('content_role')
+        alignment['block_order'] = openxml_unit.get('block_order')
+        return alignment
+
+    def _remap_block_context_drift_alignments(self, alignments, openxml_units):
+        if not alignments or not openxml_units:
+            return alignments, []
+
+        headings = []
+        for alignment in alignments:
+            if not self._is_heading_context_alignment(alignment):
+                continue
+            top_y = self._alignment_top_y(alignment)
+            block_order = self._try_parse_int(alignment.get('block_order'))
+            element_seq = self._try_parse_int(alignment.get('element_sequence'))
+            if top_y is None or block_order is None or element_seq is None:
+                continue
+            headings.append({
+                'alignment': alignment,
+                'top_y': top_y,
+                'block_order': block_order,
+                'element_sequence': element_seq,
+            })
+
+        if not headings:
+            return alignments, []
+
+        headings.sort(key=lambda item: (item['top_y'], item['element_sequence']))
+        block_text_lookup = {}
+        for openxml_idx, unit in enumerate(openxml_units or []):
+            block_order = self._try_parse_int(unit.get('block_order'))
+            if block_order is None:
+                continue
+            block_kind = str(unit.get('block_kind') or '').strip().lower()
+            if block_kind not in {'code', 'algorithm'}:
+                continue
+            text_norm = self._normalize_pointer_text(unit.get('text_normalized') or unit.get('text'))
+            if not text_norm:
+                continue
+            block_text_lookup.setdefault((block_order, text_norm), []).append((openxml_idx, unit))
+
+        if not block_text_lookup:
+            return alignments, []
+
+        used_element_ids = {
+            alignment.get('element_id')
+            for alignment in alignments
+            if alignment.get('element_id') is not None
+        }
+        debug_entries = []
+
+        for alignment in alignments:
+            if not self._is_block_context_body_alignment(alignment):
+                continue
+            top_y = self._alignment_top_y(alignment)
+            if top_y is None:
+                continue
+
+            heading_idx = None
+            for idx, heading in enumerate(headings):
+                if top_y > heading['top_y']:
+                    heading_idx = idx
+                else:
+                    break
+            if heading_idx is None:
+                continue
+
+            heading = headings[heading_idx]
+            next_heading = headings[heading_idx + 1] if heading_idx + 1 < len(headings) else None
+            if next_heading and top_y >= next_heading['top_y']:
+                continue
+
+            target_block_order = heading['block_order']
+            current_block_order = self._try_parse_int(alignment.get('block_order'))
+            if current_block_order == target_block_order:
+                continue
+
+            text_norm = self._normalize_pointer_text(alignment.get('element_text') or '')
+            if len(text_norm) < 3:
+                continue
+
+            candidates = block_text_lookup.get((target_block_order, text_norm), [])
+            if not candidates:
+                continue
+
+            heading_seq = heading['element_sequence']
+            next_heading_seq = next_heading['element_sequence'] if next_heading else None
+            filtered_candidates = []
+            for openxml_idx, unit in candidates:
+                elem_id = unit.get('elem_id')
+                elem_seq = self._try_parse_int(unit.get('elem_seq'))
+                if elem_id is None or elem_id in used_element_ids:
+                    continue
+                if elem_seq is None or elem_seq < heading_seq:
+                    continue
+                if next_heading_seq is not None and elem_seq >= next_heading_seq:
+                    continue
+                filtered_candidates.append((openxml_idx, unit))
+
+            if not filtered_candidates:
+                continue
+
+            target_openxml_idx, target_unit = min(
+                filtered_candidates,
+                key=lambda item: abs((self._try_parse_int(item[1].get('elem_seq')) or heading_seq) - heading_seq)
+            )
+            old_element_id = alignment.get('element_id')
+            old_element_sequence = alignment.get('element_sequence')
+            self._rebind_alignment_to_openxml_unit(alignment, target_unit, target_openxml_idx)
+            used_element_ids.discard(old_element_id)
+            used_element_ids.add(alignment.get('element_id'))
+            debug_entries.append({
+                'from_element_id': old_element_id,
+                'from_sequence': old_element_sequence,
+                'to_element_id': alignment.get('element_id'),
+                'to_sequence': alignment.get('element_sequence'),
+                'heading_sequence': heading_seq,
+                'target_block_order': target_block_order,
+                'text': (alignment.get('element_text') or '')[:120],
+            })
+
+        if debug_entries:
+            alignments.sort(key=lambda item: item.get('element_sequence') or 0)
+        return alignments, debug_entries
 
     @classmethod
     def _estimate_unit_match_chars(cls, unit):
@@ -587,6 +923,10 @@ class AlignmentMatchingMixin:
                 'tokens': self._extract_anchor_tokens(normalized_text),
                 'bbox': unit.get('bbox'),
                 'text_len': len(normalized_text),
+                'block_kind': unit.get('block_kind'),
+                'block_key': unit.get('block_key'),
+                'content_role': unit.get('content_role'),
+                'block_order': unit.get('block_order'),
             })
 
         if not candidates:
@@ -652,6 +992,10 @@ class AlignmentMatchingMixin:
                     'bbox': candidate.get('bbox'),
                     'text_len': len(block_norm),
                     'block_size': block_size,
+                    'block_kind': block_units[0].get('block_kind'),
+                    'block_key': block_units[0].get('block_key'),
+                    'content_role': block_units[0].get('content_role'),
+                    'block_order': block_units[0].get('block_order'),
                 })
 
         block_candidates.sort(key=lambda item: (-item['block_size'], -item['text_len'], item['local_idx']))
@@ -664,6 +1008,10 @@ class AlignmentMatchingMixin:
         text_parts = []
         end_idx = start_idx
         added_units = 0
+        block_kind = None
+        block_key = None
+        content_role = None
+        block_order = None
         for idx in range(start_idx, len(openxml_units)):
             unit = openxml_units[idx]
             if not self._is_openxml_anchor_candidate(unit):
@@ -675,6 +1023,14 @@ class AlignmentMatchingMixin:
                 text_parts.append(text)
             added_units += 1
             end_idx = idx
+            if block_kind is None:
+                block_kind = unit.get('block_kind')
+            if block_key is None:
+                block_key = unit.get('block_key')
+            if content_role is None:
+                content_role = unit.get('content_role')
+            if block_order is None:
+                block_order = unit.get('block_order')
             if added_units >= max_units:
                 break
             if sum(len(part) for part in text_parts) >= max_chars:
@@ -686,6 +1042,10 @@ class AlignmentMatchingMixin:
             'text': block_text,
             'text_normalized': block_norm,
             'end_idx': end_idx,
+            'block_kind': block_kind,
+            'block_key': block_key,
+            'content_role': content_role,
+            'block_order': block_order,
         }
 
     def _score_anchor_similarity(self, pdf_text, openxml_text):
@@ -709,6 +1069,46 @@ class AlignmentMatchingMixin:
             containment_bonus = 0.10
 
         return (char_ratio * 0.65) + (token_overlap * 0.35) + containment_bonus
+
+    def _score_anchor_candidate(self, anchor, openxml_unit, openxml_block):
+        base_score = self._score_anchor_similarity(
+            (anchor or {}).get('text_normalized') or (anchor or {}).get('text'),
+            (openxml_block or {}).get('text_normalized') or (openxml_block or {}).get('text'),
+        )
+        if base_score <= 0:
+            return 0.0
+
+        score = base_score
+        anchor_kind = str((anchor or {}).get('block_kind') or '').strip().lower()
+        openxml_kind = str((openxml_block or {}).get('block_kind') or (openxml_unit or {}).get('block_kind') or '').strip().lower()
+        anchor_key = self._normalize_block_key((anchor or {}).get('block_key'))
+        openxml_key = self._normalize_block_key((openxml_block or {}).get('block_key') or (openxml_unit or {}).get('block_key'))
+        anchor_role = str((anchor or {}).get('content_role') or '').strip().lower()
+        openxml_role = str((openxml_block or {}).get('content_role') or (openxml_unit or {}).get('content_role') or '').strip().lower()
+
+        if anchor_kind and openxml_kind:
+            if anchor_kind == openxml_kind:
+                score += 0.10
+            elif {anchor_kind, openxml_kind} <= {'caption', 'figure'}:
+                score += 0.04
+            elif {anchor_kind, openxml_kind} <= {'caption', 'table'}:
+                score += 0.04
+            else:
+                score -= 0.05
+
+        if anchor_key and openxml_key:
+            if anchor_key == openxml_key:
+                score += 0.30
+            else:
+                score -= 0.18
+
+        if anchor_role and openxml_role:
+            if anchor_role == openxml_role:
+                score += 0.06
+            elif 'heading' in anchor_role and 'heading' in openxml_role:
+                score += 0.04
+
+        return max(0.0, score)
 
     @staticmethod
     def _normalize_sequence_range(seq_range):
@@ -739,6 +1139,7 @@ class AlignmentMatchingMixin:
             idx for idx, unit in enumerate(openxml_units or [])
             if unit.get('elem_seq') is not None and seq_min <= unit.get('elem_seq') <= seq_max
         ]
+
 
     def _select_sequence_local_openxml_indices(
         self,
@@ -830,9 +1231,10 @@ class AlignmentMatchingMixin:
                     openxml_idx,
                     max_units=block_unit_limit
                 )
-                base_score = self._score_anchor_similarity(
-                    anchor.get('text_normalized'),
-                    openxml_block.get('text_normalized')
+                base_score = self._score_anchor_candidate(
+                    anchor,
+                    unit,
+                    openxml_block,
                 )
                 if base_score <= 0:
                     continue
@@ -864,6 +1266,15 @@ class AlignmentMatchingMixin:
                     'pdf_text': (anchor.get('text') or '')[:80],
                     'openxml_text': (openxml_block.get('text') or unit.get('text') or '')[:80],
                     'openxml_block_size': block_unit_limit,
+                    'block_kind': openxml_block.get('block_kind') or unit.get('block_kind'),
+                    'block_key': openxml_block.get('block_key') or unit.get('block_key'),
+                    'content_role': openxml_block.get('content_role') or unit.get('content_role'),
+                    'block_order': openxml_block.get('block_order') or unit.get('block_order'),
+                    'exact_block_key_match': bool(
+                        self._normalize_block_key(anchor.get('block_key')) and
+                        self._normalize_block_key(anchor.get('block_key')) ==
+                        self._normalize_block_key(openxml_block.get('block_key') or unit.get('block_key'))
+                    ),
                 }
                 if best_hit is None or hit['score'] > best_hit['score']:
                     best_hit = hit
@@ -906,12 +1317,14 @@ class AlignmentMatchingMixin:
 
             def cluster_score(cluster):
                 preferred_hits = sum(1 for hit in cluster if hit.get('in_preferred_range'))
+                exact_block_hits = sum(1 for hit in cluster if hit.get('block_key'))
                 min_distance = min(
                     abs((hit.get('openxml_idx') or 0) - int(min_openxml_idx or 0))
                     for hit in cluster
                 ) if cluster else 10 ** 9
                 return (
                     round(sum(hit.get('score', 0.0) for hit in cluster), 6),
+                    exact_block_hits,
                     len(cluster),
                     preferred_hits,
                     -min_distance
@@ -1342,6 +1755,10 @@ class AlignmentMatchingMixin:
         p1_align = selected_candidate['alignments']
         p1_un_pdf = selected_candidate['unaligned_pdf']
         p1_debug = dict(selected_candidate['debug'] or {})
+        self._annotate_alignment_confidence(
+            p1_align,
+            candidate_source=selected_candidate.get('candidate_openxml_source'),
+        )
         p1_debug['pass1_retry_used'] = selected_candidate['attempt'] > 0
         p1_debug['pass1_retry_min_openxml_idx'] = (
             selected_candidate['min_openxml_idx'] if selected_candidate['attempt'] > 0 else None
@@ -1437,6 +1854,10 @@ class AlignmentMatchingMixin:
             trace_context=trace_context,
             page_sequence_range=page_sequence_range
         )
+        final_align, block_context_remap_debug = self._remap_block_context_drift_alignments(
+            final_align,
+            openxml_units
+        )
 
         pre_cleanup_keys = self._collect_alignment_unit_keys(final_align)
 
@@ -1498,6 +1919,11 @@ class AlignmentMatchingMixin:
         if self._is_env_enabled_default_true("ALIGNMENT_ENABLE_Y_OVERLAP_ABSORB"):
             final_align, final_un_pdf = self._absorb_unaligned_by_y_overlap(final_align, final_un_pdf, pdf_units)
 
+        self._annotate_alignment_confidence(
+            final_align,
+            candidate_source=selected_candidate.get('candidate_openxml_source'),
+        )
+
         # Legacy debug fields
         p1_debug['pass2_shape_debug'] = []
         p1_debug['pass2_shape_matched'] = 0
@@ -1520,6 +1946,8 @@ class AlignmentMatchingMixin:
         p1_debug['backward_alignment_prune_count'] = len(backward_alignment_prune_debug)
         p1_debug['chart_rescue_debug'] = chart_rescue_debug
         p1_debug['chart_rescue_count'] = len(chart_rescue_debug)
+        p1_debug['block_context_remap_debug'] = block_context_remap_debug
+        p1_debug['block_context_remap_count'] = len(block_context_remap_debug)
         p1_debug['paragraph_rescue_debug'] = paragraph_rescue_debug
         p1_debug['paragraph_rescue_count'] = len(paragraph_rescue_debug)
         p1_debug['fragment_rescue_debug'] = fragment_rescue_debug
@@ -1593,6 +2021,11 @@ class AlignmentMatchingMixin:
             return False
         return bool(self.MARKER_ONLY_TEXT_RE.match(str(text).strip()))
 
+    def _is_bookmark_end_unit(self, unit):
+        if not unit:
+            return False
+        return str(unit.get('elem_type') or '').strip().lower() == 'bookmarkend'
+
     def _repair_marker_only_alignment_gaps(self, alignments, openxml_units):
         if not alignments or not openxml_units:
             return alignments
@@ -1620,16 +2053,35 @@ class AlignmentMatchingMixin:
         min_seq = min(seq_to_alignment.keys())
         max_seq = max(seq_to_alignment.keys())
         missing_marker_seqs = [
-            seq for seq in range(min_seq, max_seq + 1)
+            seq for seq in range(max(0, min_seq - 2), max_seq + 3)
             if seq not in seq_to_alignment
             and seq in seq_to_openxml
-            and self._is_marker_only_text(seq_to_openxml[seq][1].get('text', ''))
+            and (
+                self._is_marker_only_text(seq_to_openxml[seq][1].get('text', ''))
+                or self._is_bookmark_end_unit(seq_to_openxml[seq][1])
+            )
         ]
         if not missing_marker_seqs:
             return alignments
 
         created = []
         for missing_seq in missing_marker_seqs:
+            openxml_idx, openxml_unit = seq_to_openxml[missing_seq]
+            is_bookmark_proxy = self._is_bookmark_end_unit(openxml_unit)
+
+            prev_candidates = sorted(
+                [
+                    a for a in alignments
+                    if a.get('element_sequence') is not None
+                    and a.get('element_sequence') < missing_seq
+                    and (missing_seq - a.get('element_sequence')) <= 2
+                    and not a.get('is_table')
+                    and not a.get('is_image_part')
+                    and a.get('matched_pdf_units')
+                ],
+                key=lambda a: a.get('element_sequence'),
+                reverse=True
+            )
             next_candidates = sorted(
                 [
                     a for a in alignments
@@ -1647,53 +2099,73 @@ class AlignmentMatchingMixin:
             donor_alignment = None
             donor_unit = None
 
-            for candidate in next_candidates:
-                units = sorted(
-                    candidate.get('matched_pdf_units', []),
-                    key=lambda u: u.get('item_idx', -1)
-                )
-                if len(units) < 2:
-                    continue
-
-                leading_markers = []
-                for unit in units:
-                    if self._is_marker_only_text(unit.get('text', '')):
-                        leading_markers.append(unit)
+            if is_bookmark_proxy:
+                proxy_candidates = []
+                for candidate in prev_candidates:
+                    units = sorted(
+                        candidate.get('matched_pdf_units', []),
+                        key=lambda u: u.get('item_idx', -1)
+                    )
+                    if units:
+                        proxy_candidates.append((candidate, units[-1]))
+                for candidate in next_candidates:
+                    units = sorted(
+                        candidate.get('matched_pdf_units', []),
+                        key=lambda u: u.get('item_idx', -1)
+                    )
+                    if units:
+                        proxy_candidates.append((candidate, units[0]))
+                if proxy_candidates:
+                    donor_alignment, donor_unit = proxy_candidates[0]
+            else:
+                for candidate in next_candidates:
+                    units = sorted(
+                        candidate.get('matched_pdf_units', []),
+                        key=lambda u: u.get('item_idx', -1)
+                    )
+                    if len(units) < 2:
                         continue
-                    break
 
-                if len(leading_markers) >= 2:
-                    donor_alignment = candidate
-                    donor_unit = leading_markers[0]
-                    break
+                    leading_markers = []
+                    for unit in units:
+                        if self._is_marker_only_text(unit.get('text', '')):
+                            leading_markers.append(unit)
+                            continue
+                        break
+
+                    if len(leading_markers) >= 2:
+                        donor_alignment = candidate
+                        donor_unit = leading_markers[0]
+                        break
 
             if donor_alignment is None or donor_unit is None:
                 continue
 
-            donor_key = self._matched_unit_key(donor_unit)
-            donor_units = donor_alignment.get('matched_pdf_units', [])
-            consumed = False
-            kept_units = []
-            for unit in donor_units:
-                unit_key = self._matched_unit_key(unit)
-                if not consumed and donor_key is not None and unit_key == donor_key:
-                    consumed = True
+            if not is_bookmark_proxy:
+                donor_key = self._matched_unit_key(donor_unit)
+                donor_units = donor_alignment.get('matched_pdf_units', [])
+                consumed = False
+                kept_units = []
+                for unit in donor_units:
+                    unit_key = self._matched_unit_key(unit)
+                    if not consumed and donor_key is not None and unit_key == donor_key:
+                        consumed = True
+                        continue
+                    kept_units.append(unit)
+
+                if not consumed:
                     continue
-                kept_units.append(unit)
 
-            if not consumed:
-                continue
+                donor_alignment['matched_pdf_units'] = kept_units
+                self._recompute_alignment_bboxes(donor_alignment)
 
-            donor_alignment['matched_pdf_units'] = kept_units
-            self._recompute_alignment_bboxes(donor_alignment)
-
-            openxml_idx, openxml_unit = seq_to_openxml[missing_seq]
             restored = {
                 'element_id': openxml_unit['elem_id'],
                 'element_sequence': openxml_unit['elem_seq'],
                 'element_type': openxml_unit['elem_type'],
                 'is_table': False,
                 'is_synthetic_marker_repair': True,
+                'is_synthetic_bookmark_proxy': is_bookmark_proxy,
                 'element_text': openxml_unit.get('text', ''),
                 'matched_pdf_units': [donor_unit],
                 'merged_bbox': list(donor_unit.get('bbox')) if donor_unit.get('bbox') else None,
@@ -1967,20 +2439,12 @@ class AlignmentMatchingMixin:
             page_sequence_range=page_sequence_range
         )
         suggested_openxml_indices = sorted(set(candidate_context.get('indices') or []))
+        candidate_openxml_source = candidate_context.get('source')
         if filter_by_seq_range and seq_min is not None and seq_max is not None:
             candidate_openxml_indices = [
                 idx for idx, unit in enumerate(openxml_units)
                 if unit.get('elem_seq') is not None and seq_min <= unit.get('elem_seq') <= seq_max
             ]
-        elif (
-            suggested_openxml_indices
-            and self._should_use_program_segment_local_band(pdf_units, candidate_context)
-        ):
-            # Repeated code blocks across "Segmen Program" sections are highly ambiguous
-            # at full-document scope. On code-heavy pages with an explicit program heading,
-            # prefer the page-local anchor band instead of letting identical lines match
-            # against an earlier segment.
-            candidate_openxml_indices = suggested_openxml_indices
         else:
             candidate_openxml_indices = list(range(len(openxml_units)))
 
@@ -2035,31 +2499,32 @@ class AlignmentMatchingMixin:
         matching_blocks = sm.get_matching_blocks()
         sorted_blocks = sorted(matching_blocks, key=lambda x: x.b)
 
-        # Log gap analysis to file (legacy behavior)
-        with open('gap_analysis.log', 'w', encoding='utf-8') as gap_log:
-            gap_log.write("=" * 80 + "\n")
-            gap_log.write("GAP ANALYSIS - What OpenXML content is NOT being matched\n")
-            gap_log.write("=" * 80 + "\n\n")
+        gap_analysis_path = trace_context.get('gap_analysis_path') if trace_context else None
+        if trace_context and gap_analysis_path:
+            with open(gap_analysis_path, 'w', encoding='utf-8') as gap_log:
+                gap_log.write("=" * 80 + "\n")
+                gap_log.write("GAP ANALYSIS - What OpenXML content is NOT being matched\n")
+                gap_log.write("=" * 80 + "\n\n")
 
-            prev_end_ox = 0
-            for i, block in enumerate(sorted_blocks):
-                if block.size == 0:
-                    continue
-                gap = block.b - prev_end_ox
-                if gap > 50:
-                    gap_log.write(f"\n[GAP {i}] OX positions {prev_end_ox} to {block.b} (size: {gap} chars)\n")
-                    gap_content = openxml_concat[prev_end_ox:block.b]
-                    gap_log.write(f"  Content: \"{gap_content[:200]}...\"\n")
-                    gap_units = []
-                    for unit_range in openxml_unit_ranges:
-                        if unit_range['start'] < block.b and unit_range['end'] > prev_end_ox:
-                            gap_units.append(unit_range)
-                    gap_log.write(f"  Units in gap: {len(gap_units)}\n")
-                    for u in gap_units[:5]:
-                        gap_log.write(f"    U{u['unit_idx']}: {u['elem_type']} \"{u['text'][:40]}...\"\n")
-                gap_log.write(f"\nBlock {i}: OX[{block.b}], PDF[{block.a}], size={block.size}\n")
-                gap_log.write(f"  Matched text: \"{pdf_concat[block.a:block.a + min(block.size, 50)]}...\"\n")
-                prev_end_ox = block.b + block.size
+                prev_end_ox = 0
+                for i, block in enumerate(sorted_blocks):
+                    if block.size == 0:
+                        continue
+                    gap = block.b - prev_end_ox
+                    if gap > 50:
+                        gap_log.write(f"\n[GAP {i}] OX positions {prev_end_ox} to {block.b} (size: {gap} chars)\n")
+                        gap_content = openxml_concat[prev_end_ox:block.b]
+                        gap_log.write(f"  Content: \"{gap_content[:200]}...\"\n")
+                        gap_units = []
+                        for unit_range in openxml_unit_ranges:
+                            if unit_range['start'] < block.b and unit_range['end'] > prev_end_ox:
+                                gap_units.append(unit_range)
+                        gap_log.write(f"  Units in gap: {len(gap_units)}\n")
+                        for u in gap_units[:5]:
+                            gap_log.write(f"    U{u['unit_idx']}: {u['elem_type']} \"{u['text'][:40]}...\"\n")
+                    gap_log.write(f"\nBlock {i}: OX[{block.b}], PDF[{block.a}], size={block.size}\n")
+                    gap_log.write(f"  Matched text: \"{pdf_concat[block.a:block.a + min(block.size, 50)]}...\"\n")
+                    prev_end_ox = block.b + block.size
 
         consumed_openxml_positions = set()
         pdf_unit_assignment = {}
@@ -2272,7 +2737,7 @@ class AlignmentMatchingMixin:
             'median_cross_page_skip_openxml_idx': cross_page_skip_metrics['median_cross_page_skip_openxml_idx'],
             'early_cross_page_skip_count': cross_page_skip_metrics['early_cross_page_skip_count'],
             'early_cross_page_skip_ratio': cross_page_skip_metrics['early_cross_page_skip_ratio'],
-            'candidate_openxml_source': candidate_context.get('source'),
+            'candidate_openxml_source': candidate_openxml_source,
             'candidate_openxml_anchor_hit_count': candidate_context.get('anchor_hit_count', 0),
             'candidate_openxml_anchor_count': candidate_context.get('anchor_count', 0),
             'candidate_openxml_anchor_hits': candidate_context.get('anchor_hits', []),
@@ -2390,6 +2855,10 @@ class AlignmentMatchingMixin:
                         'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                         'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                         'is_chart_caption_text': openxml_unit.get('is_chart_caption_text', False),
+                        'block_kind': openxml_unit.get('block_kind'),
+                        'block_key': openxml_unit.get('block_key'),
+                        'content_role': openxml_unit.get('content_role'),
+                        'block_order': openxml_unit.get('block_order'),
                     }
                 continue
 
@@ -2419,6 +2888,10 @@ class AlignmentMatchingMixin:
                         'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                         'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                         'is_chart_caption_text': openxml_unit.get('is_chart_caption_text', False),
+                        'block_kind': openxml_unit.get('block_kind'),
+                        'block_key': openxml_unit.get('block_key'),
+                        'content_role': openxml_unit.get('content_role'),
+                        'block_order': openxml_unit.get('block_order'),
                     }
 
                 cell = {
@@ -2436,6 +2909,10 @@ class AlignmentMatchingMixin:
                     'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                     'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                     'is_chart_caption_text': openxml_unit.get('is_chart_caption_text', False),
+                    'block_kind': openxml_unit.get('block_kind'),
+                    'block_key': openxml_unit.get('block_key'),
+                    'content_role': openxml_unit.get('content_role'),
+                    'block_order': openxml_unit.get('block_order'),
                 }
                 elem_alignments[elem_id]['cells'].append(cell)
                 elem_alignments[elem_id]['openxml_indices'].append(openxml_idx)
@@ -2463,6 +2940,10 @@ class AlignmentMatchingMixin:
                     'is_openxml_chart': openxml_unit.get('is_openxml_chart', False),
                     'is_openxml_visual_slot': openxml_unit.get('is_openxml_visual_slot', False),
                     'is_chart_caption_text': openxml_unit.get('is_chart_caption_text', False),
+                    'block_kind': openxml_unit.get('block_kind'),
+                    'block_key': openxml_unit.get('block_key'),
+                    'content_role': openxml_unit.get('content_role'),
+                    'block_order': openxml_unit.get('block_order'),
                 }
 
         alignments = list(elem_alignments.values()) + list(non_table_units.values())
