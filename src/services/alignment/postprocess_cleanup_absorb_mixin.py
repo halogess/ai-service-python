@@ -1,0 +1,442 @@
+from copy import deepcopy
+import os
+import re
+
+
+class AlignmentPostprocessCleanupAbsorbMixin:
+
+
+    def _add_units_to_unaligned(self, unaligned_set, pdf_idx_by_unit_id, units):
+        for unit in units or []:
+            unit_id = unit.get('pdf_unit_id')
+            if unit_id and unit_id in pdf_idx_by_unit_id:
+                unaligned_set.add(pdf_idx_by_unit_id[unit_id])
+
+    def _filter_units_by_item_gap(self, units, alignment=None):
+        if not units or len(units) < 2:
+            return units, [], False
+
+        units_sorted = sorted(units, key=lambda u: u.get('item_idx', -1))
+        item_indices = [u.get('item_idx') for u in units_sorted if u.get('item_idx') is not None]
+        if len(item_indices) < 2:
+            return units_sorted, [], False
+
+        max_item_gap = self._paragraph_gap_threshold(alignment, units_sorted)
+        clusters = []
+        cluster = [units_sorted[0]]
+        prev_idx = units_sorted[0].get('item_idx')
+        for unit in units_sorted[1:]:
+            idx = unit.get('item_idx')
+            if idx is None or prev_idx is None:
+                cluster.append(unit)
+            elif (idx - prev_idx) <= max_item_gap:
+                cluster.append(unit)
+            else:
+                clusters.append(cluster)
+                cluster = [unit]
+            prev_idx = idx
+        if cluster:
+            clusters.append(cluster)
+
+        if len(clusters) <= 1:
+            return units_sorted, [], False
+
+        def cluster_score(items):
+            score = sum(u.get('matched_count') or 0 for u in items)
+            if score == 0:
+                score = sum(u.get('score') or 0 for u in items)
+            if score == 0:
+                score = len(items)
+            return (score, len(items))
+
+        best_cluster = max(clusters, key=cluster_score)
+        if self._is_paragraph_like_alignment(alignment):
+            keep_ratio = self._read_float_env(
+                'ALIGNMENT_PARAGRAPH_SECONDARY_CLUSTER_RATIO',
+                0.35,
+                min_value=0.0,
+                max_value=1.0
+            )
+            max_clusters = self._read_positive_int_env('ALIGNMENT_PARAGRAPH_MAX_CLUSTERS_TO_KEEP', 4)
+            if len(clusters) <= max_clusters:
+                best_score_value = cluster_score(best_cluster)[0] or 1
+                min_cluster_size = self._read_positive_int_env(
+                    'ALIGNMENT_PARAGRAPH_SECONDARY_CLUSTER_MIN_SIZE',
+                    2
+                )
+                kept_clusters = []
+                for cluster_items in clusters:
+                    cluster_value, cluster_len = cluster_score(cluster_items)
+                    if cluster_items is best_cluster:
+                        kept_clusters.append(cluster_items)
+                        continue
+                    if cluster_len < min_cluster_size:
+                        continue
+                    if cluster_value >= (best_score_value * keep_ratio):
+                        kept_clusters.append(cluster_items)
+                if len(kept_clusters) > 1:
+                    kept_units = sorted(
+                        [unit for cluster_items in kept_clusters for unit in cluster_items],
+                        key=lambda u: u.get('item_idx', -1)
+                    )
+                    removed = [u for u in units_sorted if u not in kept_units]
+                    return kept_units, removed, False
+
+        removed = [u for u in units_sorted if u not in best_cluster]
+
+        if len(best_cluster) < self.MATCHED_UNIT_MIN_CLUSTER_SIZE:
+            return [], removed, True
+        return best_cluster, removed, False
+
+    def _filter_sparse_matched_units(self, alignments, unaligned_pdf_indices, pdf_units):
+        if not alignments:
+            return alignments, unaligned_pdf_indices
+
+        pdf_idx_by_unit_id = {
+            u.get('unit_id'): idx
+            for idx, u in enumerate(pdf_units or [])
+            if u.get('unit_id')
+        }
+        unaligned_set = set(unaligned_pdf_indices or [])
+        filtered = []
+
+        for alignment in alignments:
+            if alignment.get('is_table') and alignment.get('cells'):
+                new_cells = []
+                for cell in alignment.get('cells') or []:
+                    units = cell.get('matched_pdf_units', [])
+                    kept, removed, drop = self._filter_units_by_item_gap(units)
+                    if drop:
+                        self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
+                        continue
+                    if removed:
+                        self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, removed)
+                    cell['matched_pdf_units'] = kept
+                    if kept:
+                        new_cells.append(cell)
+                alignment['cells'] = new_cells
+                if not new_cells:
+                    continue
+                self._recompute_alignment_bboxes(alignment)
+                filtered.append(alignment)
+            else:
+                units = alignment.get('matched_pdf_units', [])
+                if self._should_relax_gap_filter(alignment, units):
+                    alignment['matched_pdf_units'] = sorted(units, key=lambda u: u.get('item_idx', -1))
+                    self._recompute_alignment_bboxes(alignment)
+                    filtered.append(alignment)
+                    continue
+                kept, removed, drop = self._filter_units_by_item_gap(units, alignment=alignment)
+                if drop:
+                    self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
+                    continue
+                if removed:
+                    self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, removed)
+                alignment['matched_pdf_units'] = kept
+                self._recompute_alignment_bboxes(alignment)
+                filtered.append(alignment)
+
+        return filtered, sorted(unaligned_set)
+
+    def _filter_low_match_alignments(self, alignments, unaligned_pdf_indices, pdf_units):
+        min_chars_raw = os.getenv("ALIGNMENT_MIN_MATCH_CHARS", "").strip()
+        min_ratio_raw = os.getenv("ALIGNMENT_MIN_MATCH_RATIO", "").strip()
+
+        min_chars = int(min_chars_raw) if min_chars_raw.isdigit() else 6
+        try:
+            min_ratio = float(min_ratio_raw) if min_ratio_raw else 0.15
+        except ValueError:
+            min_ratio = 0.15
+
+        if min_chars <= 0 and min_ratio <= 0:
+            return alignments, unaligned_pdf_indices
+
+        if not alignments:
+            return alignments, unaligned_pdf_indices
+
+        pdf_idx_by_unit_id = {
+            u.get('unit_id'): idx
+            for idx, u in enumerate(pdf_units or [])
+            if u.get('unit_id')
+        }
+        unaligned_set = set(unaligned_pdf_indices or [])
+
+        def should_skip_threshold(units):
+            for u in units or []:
+                if u.get('item_type') in ('image', 'shape', 'table', 'hline_table'):
+                    return True
+            return False
+
+        def match_stats(text, units):
+            matched_chars = sum(u.get('matched_count') or 0 for u in units or [])
+            norm_len = len(self._normalize_text(text or ''))
+            ratio = (matched_chars / norm_len) if norm_len > 0 else 0.0
+            return matched_chars, ratio, norm_len
+
+        filtered = []
+        for alignment in alignments:
+            if alignment.get('is_table') and alignment.get('cells'):
+                new_cells = []
+                for cell in alignment.get('cells') or []:
+                    units = cell.get('matched_pdf_units', [])
+                    if should_skip_threshold(units):
+                        new_cells.append(cell)
+                        continue
+                    matched_chars, ratio, norm_len = match_stats(cell.get('text', ''), units)
+                    if norm_len == 0:
+                        new_cells.append(cell)
+                        continue
+                    if matched_chars < min_chars and ratio < min_ratio:
+                        self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
+                        continue
+                    new_cells.append(cell)
+                alignment['cells'] = new_cells
+                if not new_cells:
+                    continue
+                self._recompute_alignment_bboxes(alignment)
+                filtered.append(alignment)
+            else:
+                units = alignment.get('matched_pdf_units', [])
+                if should_skip_threshold(units):
+                    filtered.append(alignment)
+                    continue
+                matched_chars, ratio, norm_len = match_stats(alignment.get('element_text', ''), units)
+                if norm_len == 0:
+                    filtered.append(alignment)
+                    continue
+                local_min_chars = min_chars
+                local_min_ratio = min_ratio
+                if self._is_paragraph_like_alignment(alignment) and len(units) >= 2:
+                    if norm_len >= self._read_positive_int_env('ALIGNMENT_PARAGRAPH_RELAX_TEXT_LEN', 100):
+                        local_min_chars = min(
+                            min_chars,
+                            self._read_positive_int_env('ALIGNMENT_PARAGRAPH_MIN_MATCH_CHARS', 4)
+                        )
+                        local_min_ratio = min(
+                            min_ratio,
+                            self._read_float_env(
+                                'ALIGNMENT_PARAGRAPH_MIN_MATCH_RATIO',
+                                0.08,
+                                min_value=0.0,
+                                max_value=1.0
+                            )
+                        )
+                if matched_chars < local_min_chars and ratio < local_min_ratio:
+                    self._add_units_to_unaligned(unaligned_set, pdf_idx_by_unit_id, units)
+                    continue
+                filtered.append(alignment)
+
+        return filtered, sorted(unaligned_set)
+
+    def _absorb_unaligned_by_y_overlap(self, alignments, unaligned_pdf_indices, pdf_units):
+        if not alignments or not unaligned_pdf_indices:
+            return alignments, unaligned_pdf_indices
+
+        candidates = []
+        for alignment in alignments:
+            if alignment.get('is_table'):
+                continue
+            bbox = alignment.get('merged_bbox')
+            if not bbox or len(bbox) < 4:
+                continue
+            center_y = (bbox[1] + bbox[3]) / 2
+            candidates.append((alignment, bbox, center_y))
+
+        if not candidates:
+            return alignments, unaligned_pdf_indices
+
+        absorbed = set()
+        touched = set()
+        for idx in unaligned_pdf_indices:
+            unit = pdf_units[idx]
+            if not self._is_line_text_unit(unit):
+                continue
+            bbox = unit.get('bbox')
+            if not bbox or len(bbox) < 4:
+                continue
+            unit_center_y = (bbox[1] + bbox[3]) / 2
+
+            best = None
+            best_score = None
+            for alignment, abox, ay in candidates:
+                overlap = self._bbox_y_overlap_ratio(bbox, abox)
+                if overlap < self.LINE_OVERLAP_MIN_RATIO:
+                    continue
+                score = (abs(unit_center_y - ay), -overlap)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best = alignment
+
+            if not best:
+                continue
+
+            existing_keys = {
+                self._matched_unit_key(u)
+                for u in best.get('matched_pdf_units', [])
+                if self._matched_unit_key(u) is not None
+            }
+            unit_entry = {
+                'pdf_unit_id': unit['unit_id'],
+                'item_idx': unit['item_idx'],
+                'item_type': unit['item_type'],
+                'text': unit['text'],
+                'bbox': unit['bbox'],
+                'matched_count': 0,
+                'score': 0,
+                'is_cell': unit['is_cell'],
+                'is_hline_table_unit': unit.get('is_hline_table_unit', False),
+                'row': unit.get('row'),
+                'col': unit.get('col'),
+                'absorbed': True,
+                'absorbed_by_overlap': True,
+                'debug': {}
+            }
+            unit_key = self._matched_unit_key(unit_entry)
+            if unit_key is None or unit_key in existing_keys:
+                continue
+            best.setdefault('matched_pdf_units', []).append(unit_entry)
+            best['matched_pdf_units'].sort(key=lambda u: u.get('item_idx', -1))
+            touched.add(id(best))
+            absorbed.add(idx)
+
+        if absorbed:
+            for alignment in alignments:
+                if id(alignment) in touched:
+                    self._recompute_alignment_bboxes(alignment)
+
+        remaining = [i for i in unaligned_pdf_indices if i not in absorbed]
+        return alignments, remaining
+
+    def _absorb_unaligned_into_alignments(self, alignments, unaligned_indices, pdf_units):
+        if not alignments or not unaligned_indices:
+            return alignments, unaligned_indices
+
+        absorbed = set()
+        for alignment in alignments:
+            if alignment.get('is_table'):
+                continue
+            bbox = alignment.get('merged_bbox')
+            if not bbox or len(bbox) < 4:
+                continue
+            candidates = []
+            for idx in unaligned_indices:
+                unit = pdf_units[idx]
+                unit_bbox = unit.get('bbox')
+                if not unit_bbox or len(unit_bbox) < 4:
+                    continue
+                if self._is_bbox_inside(unit_bbox, bbox, tol=5):
+                    candidates.append(unit)
+                    absorbed.add(idx)
+            if candidates:
+                new_units = [
+                    {
+                        'pdf_unit_id': u['unit_id'],
+                        'item_idx': u['item_idx'],
+                        'item_type': u['item_type'],
+                        'text': u['text'],
+                        'bbox': u['bbox'],
+                        'matched_count': 0,
+                        'score': 0,
+                        'is_cell': u['is_cell'],
+                        'is_hline_table_unit': u.get('is_hline_table_unit', False),
+                        'row': u.get('row'),
+                        'col': u.get('col'),
+                        'absorbed': True,
+                        'debug': {}
+                    }
+                    for u in candidates
+                ]
+                alignment.setdefault('matched_pdf_units', []).extend(new_units)
+                alignment['matched_pdf_units'].sort(key=lambda x: x.get('item_idx'))
+
+                if alignment.get('merged_bbox'):
+                    merged_bbox = alignment.get('merged_bbox')
+                    for u in candidates:
+                        unit_bbox = u.get('bbox')
+                        if unit_bbox and len(unit_bbox) >= 4:
+                            merged_bbox[0] = min(merged_bbox[0], unit_bbox[0])
+                            merged_bbox[1] = min(merged_bbox[1], unit_bbox[1])
+                            merged_bbox[2] = max(merged_bbox[2], unit_bbox[2])
+                            merged_bbox[3] = max(merged_bbox[3], unit_bbox[3])
+
+        remaining = [i for i in unaligned_indices if i not in absorbed]
+        print(
+            f"[Absorb] Absorbed {len(absorbed)} unaligned PDF units into alignments, "
+            f"{len(remaining)} remaining unaligned"
+        )
+        return alignments, remaining
+
+    def _is_bbox_inside(self, inner, outer, tol=5):
+        if not inner or not outer:
+            return False
+        cx = (inner[0] + inner[2]) / 2
+        cy = (inner[1] + inner[3]) / 2
+        return (outer[0] - tol <= cx <= outer[2] + tol) and (outer[1] - tol <= cy <= outer[3] + tol)
+
+    def _get_alignment_min_item_idx(self, alignment):
+        indices = []
+        if alignment.get('is_table') and alignment.get('cells'):
+            for cell in alignment['cells']:
+                for u in cell.get('matched_pdf_units', []):
+                    idx = u.get('item_idx')
+                    if idx is not None:
+                        indices.append(idx)
+        else:
+            for u in alignment.get('matched_pdf_units', []):
+                idx = u.get('item_idx')
+                if idx is not None:
+                    indices.append(idx)
+        return min(indices) if indices else None
+
+    def _get_alignment_sequence(self, alignment):
+        seq = alignment.get('element_sequence')
+        if seq is None:
+            return 0
+        try:
+            return int(seq)
+        except (TypeError, ValueError):
+            return 0
+
+    def _is_bbox_fully_contained(self, inner_bbox, outer_bbox, tolerance=2):
+        if not inner_bbox or not outer_bbox or len(inner_bbox) < 4 or len(outer_bbox) < 4:
+            return False
+        if (
+            abs(inner_bbox[0] - outer_bbox[0]) < tolerance and
+            abs(inner_bbox[1] - outer_bbox[1]) < tolerance and
+            abs(inner_bbox[2] - outer_bbox[2]) < tolerance and
+            abs(inner_bbox[3] - outer_bbox[3]) < tolerance
+        ):
+            return False
+        return (
+            inner_bbox[0] >= outer_bbox[0] - tolerance and
+            inner_bbox[1] >= outer_bbox[1] - tolerance and
+            inner_bbox[2] <= outer_bbox[2] + tolerance and
+            inner_bbox[3] <= outer_bbox[3] + tolerance
+        )
+
+    def _is_punctuation_only(self, text):
+        if not text:
+            return False
+        for ch in text:
+            if ch.isalnum():
+                return False
+        return True
+
+    def _cleanup_punctuation_alignments(self, alignments):
+        if not alignments:
+            return alignments
+
+        cleaned = []
+        for alignment in alignments:
+            if alignment.get('is_table') or alignment.get('is_image_part'):
+                cleaned.append(alignment)
+                continue
+            text = alignment.get('element_text') or ''
+            if self._is_punctuation_only(text):
+                stripped = ''.join(text.split())
+                if len(stripped) <= 1:
+                    continue
+                if not alignment.get('matched_pdf_units'):
+                    continue
+            cleaned.append(alignment)
+        return cleaned
