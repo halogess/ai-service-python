@@ -27,6 +27,47 @@ if str(SRC_ROOT) not in sys.path:
 
 from utils.cross_page_claims import analyze_cross_page_entries
 
+from evaluate_visual_alignment_lib.helpers import (
+    PdfWordCache,
+    analyze_element_rows_for_duplicates,
+    bbox_area,
+    bbox_x_overlap_ratio,
+    center_in_bbox,
+    choose_order_anchor_row,
+    choose_representative_row,
+    evaluate_element_on_pdf,
+    extract_openxml_text,
+    get_visual_label,
+    group_rows_by_element,
+    intersection_area,
+    is_actionable_orphan_label,
+    is_caption_like_text,
+    is_table_like_row,
+    is_valid_same_page_chart_caption_pair,
+    is_valid_same_page_table_claim_set,
+    json_tree_has_visual_bearing_content,
+    merge_bboxes,
+    normalize_text,
+    parse_json_tree,
+    percentile,
+    should_ignore_body_element,
+    text_similarity,
+    word_is_covered_by_rows,
+    word_overlap_ratio,
+)
+from evaluate_visual_alignment_lib.reporting import (
+    fmt_number,
+    fmt_percent,
+    metric_class,
+    render_summary_card,
+    render_table_rows,
+    render_top_list,
+    round_metric,
+    round_nested,
+    write_csv,
+    write_html,
+)
+
 
 def port_open(host: str, port: int, timeout: float = 1.0) -> bool:
     try:
@@ -55,14 +96,9 @@ DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD = configure_env()
 
 from services.alignment_service import AlignmentService  # noqa: E402
 
-
 ALIGNER = AlignmentService()
 VOLUME_BASE = Path(os.getenv("VOLUME_BASE_PATH", ""))
-CAPTION_TEXT_RE = re.compile(
-    r"^\s*(?:gambar|figure|fig\.?|grafik|graph|chart|tabel|table)\s*\d",
-    re.IGNORECASE,
-)
-ACTIONABLE_ORPHAN_EXCLUDED_LABELS = {"page_header", "page_footer"}
+
 
 
 REF_QUERIES = {
@@ -185,342 +221,56 @@ def build_engine():
     return create_engine(url)
 
 
-def normalize_text(value: Optional[str]) -> str:
-    return ALIGNER._normalize_text(value or "")
-
-
-def get_visual_label(row: dict) -> str:
-    return str(row.get("label") or "").strip().lower()
-
-
-def is_actionable_orphan_label(label: Optional[str]) -> bool:
-    return str(label or "").strip().lower() not in ACTIONABLE_ORPHAN_EXCLUDED_LABELS
-
-
-def is_caption_like_text(text: Optional[str]) -> bool:
-    if not text:
-        return False
-    return bool(CAPTION_TEXT_RE.match(str(text).strip()))
-
-
-def bbox_x_overlap_ratio(a: Optional[List[float]], b: Optional[List[float]]) -> float:
-    if not a or not b or len(a) < 4 or len(b) < 4:
-        return 0.0
-    left = max(float(a[0]), float(b[0]))
-    right = min(float(a[2]), float(b[2]))
-    if right <= left:
-        return 0.0
-    width_a = max(0.0, float(a[2]) - float(a[0]))
-    width_b = max(0.0, float(b[2]) - float(b[0]))
-    min_width = min(width_a, width_b)
-    if min_width <= 0:
-        return 0.0
-    return (right - left) / min_width
-
-
-def is_valid_same_page_chart_caption_pair(rows: List[dict]) -> bool:
-    if len(rows) != 2:
-        return False
-    picture_rows = [row for row in rows if get_visual_label(row) == "picture"]
-    caption_rows = [
-        row for row in rows
-        if get_visual_label(row) == "caption" or is_caption_like_text(row.get("text"))
-    ]
-    if len(picture_rows) != 1 or len(caption_rows) != 1:
-        return False
-
-    picture_row = picture_rows[0]
-    caption_row = caption_rows[0]
-    picture_bbox = picture_row.get("bbox")
-    caption_bbox = caption_row.get("bbox")
-    if not picture_bbox or not caption_bbox:
-        return False
-
-    gap = float(caption_bbox[1]) - float(picture_bbox[3])
-    if gap < -4 or gap > 80:
-        return False
-    if bbox_x_overlap_ratio(picture_bbox, caption_bbox) < 0.15:
-        return False
-    return True
-
-
-def is_table_like_row(row: dict) -> bool:
-    if not row:
-        return False
-    if get_visual_label(row) == "table":
-        return True
-    if row.get("has_table_units"):
-        return True
-    element_type = str(row.get("element_type") or "").strip().lower()
-    return "table" in element_type
-
-
-def is_valid_same_page_table_claim_set(rows: List[dict]) -> bool:
-    if len(rows) <= 1:
-        return False
-    return all(is_table_like_row(row) for row in rows)
-
-
-def parse_json_tree(raw_value):
-    return ALIGNER._parse_json_tree(raw_value)
-
-
-def extract_openxml_text(raw_value) -> str:
-    return ALIGNER._extract_text_from_json_tree(parse_json_tree(raw_value))
-
-
-def json_tree_has_visual_bearing_content(raw_value) -> bool:
-    tree = parse_json_tree(raw_value)
-    found = False
-
-    def walk(node):
-        nonlocal found
-        if found:
-            return
-        if isinstance(node, dict):
-            node_type = str(node.get("type") or "").strip().lower()
-            if node_type in {"image", "chart", "table", "drawing"}:
-                found = True
-                return
-            if node_type == "text":
-                raw_value = node.get("value")
-                if raw_value is None:
-                    raw_value = node.get("text")
-                if raw_value is None:
-                    raw_value = node.get("t")
-                value = normalize_text(str(raw_value or "").strip())
-                if value:
-                    found = True
-                    return
-            for key, value in node.items():
-                if key in {"type", "value", "text", "t"}:
-                    continue
-                walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-        elif isinstance(node, str):
-            if normalize_text(node):
-                found = True
-
-    walk(tree)
-    return found
-
-
-def bbox_area(bbox: Optional[List[float]]) -> float:
-    if not bbox or len(bbox) < 4:
-        return 0.0
-    width = max(0.0, float(bbox[2]) - float(bbox[0]))
-    height = max(0.0, float(bbox[3]) - float(bbox[1]))
-    return width * height
-
-
-def merge_bboxes(bboxes: Iterable[Optional[List[float]]]) -> Optional[List[float]]:
-    valid = [bbox for bbox in bboxes if bbox and len(bbox) >= 4]
-    if not valid:
-        return None
-    return [
-        min(bbox[0] for bbox in valid),
-        min(bbox[1] for bbox in valid),
-        max(bbox[2] for bbox in valid),
-        max(bbox[3] for bbox in valid),
-    ]
-
-
-def intersection_area(a: Optional[List[float]], b: Optional[List[float]]) -> float:
-    if not a or not b or len(a) < 4 or len(b) < 4:
-        return 0.0
-    x0 = max(a[0], b[0])
-    y0 = max(a[1], b[1])
-    x1 = min(a[2], b[2])
-    y1 = min(a[3], b[3])
-    if x0 >= x1 or y0 >= y1:
-        return 0.0
-    return (x1 - x0) * (y1 - y0)
-
-
-def center_in_bbox(inner_bbox: List[float], outer_bbox: List[float]) -> bool:
-    cx = (inner_bbox[0] + inner_bbox[2]) / 2
-    cy = (inner_bbox[1] + inner_bbox[3]) / 2
-    return outer_bbox[0] <= cx <= outer_bbox[2] and outer_bbox[1] <= cy <= outer_bbox[3]
-
-
-def word_overlap_ratio(word_bbox: List[float], outer_bbox: List[float]) -> float:
-    area = bbox_area(word_bbox)
-    if area <= 0:
-        return 0.0
-    return intersection_area(word_bbox, outer_bbox) / area
-
-
-def word_is_covered_by_rows(word_bbox: List[float], page_rows: List[dict]) -> bool:
-    for row in page_rows or []:
-        bbox = row.get("bbox")
-        if not bbox or len(bbox) < 4:
-            continue
-        if center_in_bbox(word_bbox, bbox) or word_overlap_ratio(word_bbox, bbox) >= 0.5:
-            return True
-    return False
-
-
-def text_similarity(a: str, b: str) -> Optional[float]:
-    norm_a = normalize_text(a)
-    norm_b = normalize_text(b)
-    if not norm_a or not norm_b:
-        return None
-    ratio = fuzz.ratio(norm_a, norm_b) / 100.0
-    partial = fuzz.partial_ratio(norm_a, norm_b) / 100.0
-    if norm_a in norm_b or norm_b in norm_a:
-        contained = min(len(norm_a), len(norm_b)) / max(len(norm_a), len(norm_b))
-        return max(ratio, partial, contained)
-    return max(ratio, partial)
-
-
-def percentile(values: List[float], q: float) -> Optional[float]:
-    if not values:
-        return None
-    ordered = sorted(values)
-    idx = max(0, min(len(ordered) - 1, int(round((len(ordered) - 1) * q))))
-    return ordered[idx]
-
-
-class PdfWordCache:
-    def __init__(self, pdf_path: Path):
-        self.pdf_path = pdf_path
-        self.doc = fitz.open(pdf_path)
-        self.cache: Dict[int, List[dict]] = {}
-        self.page_height_cache: Dict[int, float] = {}
-
-    def close(self):
-        self.doc.close()
-
-    def get_page_words(self, page_num: int) -> List[dict]:
-        if page_num in self.cache:
-            return self.cache[page_num]
-        page = self.doc[page_num - 1]
-        words = []
-        for entry in page.get_text("words"):
-            x0, y0, x1, y1, text_value = entry[:5]
-            if not text_value or not str(text_value).strip():
-                continue
-            words.append(
-                {
-                    "bbox": [float(x0), float(y0), float(x1), float(y1)],
-                    "text": str(text_value),
-                }
-            )
-        self.cache[page_num] = words
-        return words
-
-    def get_page_height(self, page_num: int) -> float:
-        if page_num in self.page_height_cache:
-            return self.page_height_cache[page_num]
-        page = self.doc[page_num - 1]
-        height = float(page.rect.height)
-        self.page_height_cache[page_num] = height
-        return height
-
-
-def choose_representative_row(rows: List[dict]) -> dict:
-    def sort_key(row: dict):
-        bbox = row["bbox"]
-        center_y = ((bbox[1] + bbox[3]) / 2) if bbox else 0.0
-        return (
-            row["page"],
-            center_y,
-            bbox[0] if bbox else 0.0,
-            bbox_area(bbox),
-            row["dev_id"],
-        )
-
-    return min(rows, key=sort_key)
-
-
-def choose_order_anchor_row(
-    rows: List[dict],
-    page_heights: Optional[Dict[int, float]] = None,
-) -> dict:
-    if not rows:
-        raise ValueError("rows must not be empty")
-
-    def sort_key(row: dict):
-        bbox = row["bbox"]
-        center_y = ((bbox[1] + bbox[3]) / 2) if bbox else 0.0
-        return (
-            row["page"],
-            center_y,
-            bbox[0] if bbox else 0.0,
-            bbox_area(bbox),
-            row["dev_id"],
-        )
-
-    pages = {row["page"] for row in rows if row.get("page") is not None}
-    if len(pages) > 1:
-        duplicate_analysis = analyze_element_rows_for_duplicates(rows, page_heights=page_heights)
-        if duplicate_analysis.get("is_valid_continuation"):
-            return max(rows, key=sort_key)
-
-    return min(rows, key=sort_key)
-
-
-def group_rows_by_element(rows: List[dict], body_element_ids: set[int]) -> Dict[int, List[dict]]:
-    grouped: Dict[int, List[dict]] = defaultdict(list)
-    for row in rows:
-        element_id = row["element_id"]
-        if element_id in body_element_ids:
-            grouped[element_id].append(row)
-    return grouped
-
-
-def analyze_element_rows_for_duplicates(
-    rows: List[dict],
-    page_heights: Optional[Dict[int, float]] = None,
-) -> Dict:
-    return analyze_cross_page_entries(rows, page_heights=page_heights)
-
-
-def should_ignore_body_element(
-    element_type: Optional[str],
-    openxml_text_norm: str,
-    raw_value=None,
-) -> bool:
-    normalized_type = str(element_type or "").strip().lower()
-    if normalized_type == "bookmarkend":
-        return False
-    if openxml_text_norm:
-        return False
-    if raw_value is not None and json_tree_has_visual_bearing_content(raw_value):
-        return False
-    return True
-
-
-def evaluate_element_on_pdf(
-    page_rows: List[dict],
-    openxml_text: str,
-    pdf_words: List[dict],
-) -> Tuple[Optional[float], Optional[float], str]:
-    merged_bbox = merge_bboxes(row["bbox"] for row in page_rows)
-    if not merged_bbox:
-        return None, None, ""
-
-    overlapping_words = []
-    for word in pdf_words:
-        word_bbox = word["bbox"]
-        if center_in_bbox(word_bbox, merged_bbox) or word_overlap_ratio(word_bbox, merged_bbox) >= 0.5:
-            overlapping_words.append(word)
-
-    pdf_text = " ".join(word["text"] for word in overlapping_words).strip()
-    similarity = text_similarity(openxml_text, pdf_text)
-
-    if not overlapping_words:
-        return similarity, 0.0, pdf_text
-
-    merged_word_bbox = merge_bboxes(word["bbox"] for word in overlapping_words)
-    tightness = 0.0
-    merged_area = bbox_area(merged_bbox)
-    if merged_area > 0 and merged_word_bbox:
-        tightness = intersection_area(merged_bbox, merged_word_bbox) / merged_area
-
-    return similarity, max(0.0, min(1.0, tightness)), pdf_text
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def evaluate_ref(conn, ref_row: dict) -> dict:
@@ -878,18 +628,8 @@ def evaluate_ref(conn, ref_row: dict) -> dict:
     }
 
 
-def round_metric(value):
-    if isinstance(value, float):
-        return round(value, 4)
-    return value
 
 
-def round_nested(value):
-    if isinstance(value, dict):
-        return {key: round_nested(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [round_nested(item) for item in value]
-    return round_metric(value)
 
 
 def build_payload(results, summary, orphan_visual_refs, unscoped_visual_rows):
@@ -903,664 +643,20 @@ def build_payload(results, summary, orphan_visual_refs, unscoped_visual_rows):
     }
 
 
-def write_csv(path: Path, rows: List[dict]):
-    if not rows:
-        return
-    fields = [
-        "ref_type",
-        "ref_id",
-        "owner_key",
-        "filename",
-        "ignored_empty_paragraphs",
-        "ignored_empty_headings",
-        "total_body_elements",
-        "claimed_body_elements",
-        "missing_body_elements",
-        "missing_bookmark_end",
-        "missing_non_bookmark",
-        "coverage",
-        "cross_page_duplicates",
-        "valid_cross_page_continuations",
-        "duplicate_rate",
-        "same_page_fragments",
-        "fragment_rate",
-        "order_consistency",
-        "order_violations",
-        "support_sample_count",
-        "support_median",
-        "support_p10",
-        "bbox_tightness_sample_count",
-        "bbox_tightness_median",
-        "bbox_tightness_p10",
-        "total_visual_rows",
-        "null_claim_rows",
-        "null_claim_rate",
-        "note_claim_rows",
-        "foreign_claim_rows",
-        "foreign_claim_rate",
-        "orphan_visual_rows",
-        "orphan_visual_rate",
-        "actionable_null_claim_rows",
-        "actionable_foreign_claim_rows",
-        "actionable_orphan_visual_rows",
-        "actionable_orphan_visual_rate",
-        "total_pdf_words",
-        "uncovered_pdf_words",
-        "uncovered_pdf_word_rate",
-        "pages_with_uncovered_pdf_words",
-        "checks_passed",
-        "overall_score",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: round_metric(row.get(field)) for field in fields})
 
 
-def fmt_number(value) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, int):
-        return f"{value:,}"
-    if isinstance(value, float):
-        return f"{value:,.4f}"
-    return html.escape(str(value))
 
 
-def fmt_percent(value) -> str:
-    if value is None:
-        return "—"
-    return f"{value * 100:.2f}%"
 
 
-def metric_class(
-    value,
-    *,
-    good_threshold: Optional[float] = None,
-    bad_threshold: Optional[float] = None,
-    lower_is_better: bool = False,
-) -> str:
-    if value is None:
-        return "metric-na"
-    if lower_is_better:
-        if good_threshold is not None and value <= good_threshold:
-            return "metric-good"
-        if bad_threshold is not None and value > bad_threshold:
-            return "metric-bad"
-        return "metric-warn"
-    if good_threshold is not None and value >= good_threshold:
-        return "metric-good"
-    if bad_threshold is not None and value < bad_threshold:
-        return "metric-bad"
-    return "metric-warn"
 
 
-def render_summary_card(title: str, value: str, note: str, tone: str = "neutral") -> str:
-    return (
-        f'<section class="summary-card summary-{tone}">'
-        f'<div class="summary-title">{html.escape(title)}</div>'
-        f'<div class="summary-value">{value}</div>'
-        f'<div class="summary-note">{html.escape(note)}</div>'
-        "</section>"
-    )
 
 
-def render_top_list(items: List[dict], metric_key: str, title: str, percent: bool = False) -> str:
-    rows = []
-    for item in items:
-        metric_value = item.get(metric_key)
-        metric_text = fmt_percent(metric_value) if percent else fmt_number(metric_value)
-        rows.append(
-            "<li>"
-            f'<span class="top-file">{html.escape(str(item.get("filename", "")))}</span>'
-            f'<span class="top-metric">{metric_text}</span>'
-            f'<span class="top-meta">ref {html.escape(str(item.get("ref_id", "")))}</span>'
-            "</li>"
-        )
-    return (
-        '<section class="panel">'
-        f"<h2>{html.escape(title)}</h2>"
-        f"<ol class=\"top-list\">{''.join(rows) if rows else '<li>Tidak ada data</li>'}</ol>"
-        "</section>"
-    )
 
 
-def render_table_rows(rows: List[dict]) -> str:
-    rendered_rows = []
-    for row in rows:
-        coverage_class = metric_class(row.get("coverage"), good_threshold=0.98, bad_threshold=0.90)
-        duplicate_class = metric_class(
-            row.get("duplicate_rate"), good_threshold=0.03, bad_threshold=0.05, lower_is_better=True
-        )
-        order_class = metric_class(row.get("order_consistency"), good_threshold=0.99, bad_threshold=0.95)
-        null_class = metric_class(
-            row.get("null_claim_rate"), good_threshold=0.01, bad_threshold=0.05, lower_is_better=True
-        )
-        foreign_class = metric_class(
-            row.get("foreign_claim_rate"), good_threshold=0.0, bad_threshold=0.0, lower_is_better=True
-        )
-        orphan_class = metric_class(
-            row.get("orphan_visual_rate"), good_threshold=0.01, bad_threshold=0.05, lower_is_better=True
-        )
-        actionable_orphan_class = metric_class(
-            row.get("actionable_orphan_visual_rate"),
-            good_threshold=0.01,
-            bad_threshold=0.05,
-            lower_is_better=True,
-        )
-        uncovered_pdf_class = metric_class(
-            row.get("uncovered_pdf_word_rate"),
-            good_threshold=0.01,
-            bad_threshold=0.05,
-            lower_is_better=True,
-        )
-        row_class = (
-            "row-issue"
-            if (
-                row.get("checks_passed", 0) < 6 or
-                row.get("actionable_orphan_visual_rows", 0) > 0 or
-                row.get("total_visual_rows", 0) == 0 or
-                row.get("uncovered_pdf_words", 0) > 0
-            )
-            else ""
-        )
-        rendered_rows.append(
-            f'<tr class="{row_class}">'
-            f'<td>{html.escape(str(row.get("ref_id", "")))}</td>'
-            f'<td class="cell-file">{html.escape(str(row.get("filename", "")))}</td>'
-            f'<td>{html.escape(str(row.get("owner_key", "")))}</td>'
-            f'<td class="{coverage_class}">{fmt_percent(row.get("coverage"))}</td>'
-            f'<td>{fmt_number(row.get("missing_body_elements"))}</td>'
-            f'<td>{fmt_number(row.get("missing_non_bookmark"))}</td>'
-            f'<td>{fmt_number(row.get("missing_bookmark_end"))}</td>'
-            f'<td class="{duplicate_class}">{fmt_percent(row.get("duplicate_rate"))}</td>'
-            f'<td>{fmt_number(row.get("cross_page_duplicates"))}</td>'
-            f'<td>{fmt_number(row.get("valid_cross_page_continuations"))}</td>'
-            f'<td>{fmt_number(row.get("same_page_fragments"))}</td>'
-            f'<td class="{order_class}">{fmt_percent(row.get("order_consistency"))}</td>'
-            f'<td class="{null_class}">{fmt_percent(row.get("null_claim_rate"))}</td>'
-            f'<td class="{foreign_class}">{fmt_percent(row.get("foreign_claim_rate"))}</td>'
-            f'<td class="{actionable_orphan_class}">{fmt_percent(row.get("actionable_orphan_visual_rate"))}</td>'
-            f'<td>{fmt_number(row.get("actionable_orphan_visual_rows"))}</td>'
-            f'<td class="{orphan_class}">{fmt_percent(row.get("orphan_visual_rate"))}</td>'
-            f'<td>{fmt_number(row.get("orphan_visual_rows"))}</td>'
-            f'<td class="{uncovered_pdf_class}">{fmt_percent(row.get("uncovered_pdf_word_rate"))}</td>'
-            f'<td>{fmt_number(row.get("uncovered_pdf_words"))}</td>'
-            f'<td>{fmt_number(row.get("total_visual_rows"))}</td>'
-            f'<td>{fmt_number(row.get("ignored_empty_paragraphs"))}</td>'
-            f'<td>{fmt_number(row.get("ignored_empty_headings"))}</td>'
-            f'<td>{fmt_number(row.get("checks_passed"))}/6</td>'
-            "</tr>"
-        )
-    return "".join(rendered_rows)
 
 
-def write_html(
-    path: Path,
-    payload: dict,
-    *,
-    report_title: str,
-    json_filename: str,
-    csv_filename: str,
-):
-    summary = payload["summary"]
-    refs = payload["refs"]
-
-    summary_cards = "".join(
-        [
-            render_summary_card(
-                "Dokumen",
-                fmt_number(summary.get("documents")),
-                "Jumlah ref dokumen yang dievaluasi",
-            ),
-            render_summary_card(
-                "Processed Docs",
-                fmt_number((summary.get("processed_docs_only") or {}).get("documents")),
-                "Ref yang sudah punya visual rows",
-                "good",
-            ),
-            render_summary_card(
-                "Zero Visual Docs",
-                fmt_number(summary.get("documents_with_zero_visual_rows")),
-                "Ref yang masih 0 visual row",
-                "warn" if (summary.get("documents_with_zero_visual_rows") or 0) > 0 else "good",
-            ),
-            render_summary_card(
-                "Coverage Global",
-                fmt_percent(summary.get("global_coverage")),
-                "Coverage setelah paragraf kosong diabaikan",
-                "good" if (summary.get("global_coverage") or 0) >= 0.98 else "warn",
-            ),
-            render_summary_card(
-                "Missing Non-Bookmark",
-                fmt_number(summary.get("missing_non_bookmark")),
-                "Missing actionable di luar bookmarkEnd",
-                "warn" if (summary.get("missing_non_bookmark") or 0) > 0 else "good",
-            ),
-            render_summary_card(
-                "Missing BookmarkEnd",
-                fmt_number(summary.get("missing_bookmark_end")),
-                "Tetap dihitung, tapi bukan fokus perbaikan",
-            ),
-            render_summary_card(
-                "Duplicate Rate",
-                fmt_percent(summary.get("average_duplicate_rate")),
-                "Rata-rata invalid cross-page duplicate per dokumen",
-                "warn" if (summary.get("average_duplicate_rate") or 0) > 0.05 else "good",
-            ),
-            render_summary_card(
-                "Valid Continuations",
-                fmt_number(summary.get("total_valid_cross_page_continuations")),
-                "Cross-page claim valid yang diabaikan dari duplicate",
-                "good",
-            ),
-            render_summary_card(
-                "Order Consistency",
-                fmt_percent(summary.get("median_order_consistency")),
-                "Median konsistensi urutan elemen",
-                "good" if (summary.get("median_order_consistency") or 0) >= 0.99 else "warn",
-            ),
-            render_summary_card(
-                "Null Claim Rate",
-                fmt_percent(summary.get("average_null_claim_rate")),
-                "Rata-rata row visual tanpa element_id",
-                "good" if (summary.get("average_null_claim_rate") or 0) <= 0.01 else "warn",
-            ),
-            render_summary_card(
-                "Orphan Visual Rows",
-                fmt_number(summary.get("total_orphan_visual_rows")),
-                "Total row visual in-scope yang null/foreign",
-                "warn" if (summary.get("total_orphan_visual_rows") or 0) > 0 else "good",
-            ),
-            render_summary_card(
-                "Actionable Orphan",
-                fmt_number(summary.get("total_actionable_orphan_visual_rows")),
-                "Orphan tanpa page_header/page_footer",
-                "warn" if (summary.get("total_actionable_orphan_visual_rows") or 0) > 0 else "good",
-            ),
-            render_summary_card(
-                "Docs With Orphan",
-                fmt_number(summary.get("documents_with_orphan_visual_rows")),
-                "Dokumen yang masih punya orphan visual row",
-                "warn" if (summary.get("documents_with_orphan_visual_rows") or 0) > 0 else "good",
-            ),
-            render_summary_card(
-                "Uncovered PDF Words",
-                fmt_number(summary.get("total_uncovered_pdf_words")),
-                "Word bbox PyMuPDF yang belum tertutup visual rows",
-                "warn" if (summary.get("total_uncovered_pdf_words") or 0) > 0 else "good",
-            ),
-            render_summary_card(
-                "Avg Uncovered PDF",
-                fmt_percent(summary.get("average_uncovered_pdf_word_rate")),
-                "Rata-rata word bbox PDF yang belum tertutup",
-                "warn" if (summary.get("average_uncovered_pdf_word_rate") or 0) > 0.01 else "good",
-            ),
-            render_summary_card(
-                "Unscoped Visual Rows",
-                fmt_number(payload.get("unscoped_visual_rows")),
-                "Row visual global yang tidak punya scope ref",
-                "warn" if (payload.get("unscoped_visual_rows") or 0) > 0 else "good",
-            ),
-        ]
-    )
-
-    panels = "".join(
-        [
-            render_top_list(summary.get("top_5_lowest_coverage", []), "coverage", "Coverage Terendah", percent=True),
-            render_top_list(
-                summary.get("top_5_highest_missing_non_bookmark", []),
-                "missing_non_bookmark",
-                "Missing Non-Bookmark Tertinggi",
-                percent=False,
-            ),
-            render_top_list(
-                summary.get("top_5_highest_duplicate_rate", []),
-                "duplicate_rate",
-                "Duplicate Tertinggi",
-                percent=True,
-            ),
-            render_top_list(
-                summary.get("top_5_docs_with_zero_visual_rows", []),
-                "total_body_elements",
-                "Zero Visual Rows",
-                percent=False,
-            ),
-            render_top_list(
-                summary.get("top_5_highest_orphan_visual_rate", []),
-                "orphan_visual_rate",
-                "Orphan Visual Tertinggi",
-                percent=True,
-            ),
-            render_top_list(
-                summary.get("top_5_highest_actionable_orphan_rate", []),
-                "actionable_orphan_visual_rate",
-                "Actionable Orphan Tertinggi",
-                percent=True,
-            ),
-            render_top_list(
-                summary.get("top_5_highest_uncovered_pdf_word_rate", []),
-                "uncovered_pdf_word_rate",
-                "Uncovered PDF Words Tertinggi",
-                percent=True,
-            ),
-        ]
-    )
-
-    table_rows = render_table_rows(refs)
-    generated_at = html.escape(str(payload.get("generated_at", "")))
-    db_host = html.escape(str(payload.get("db_host_used", "")))
-
-    document = f"""<!doctype html>
-<html lang="id">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(report_title)}</title>
-  <style>
-    :root {{
-      --bg: #f4efe6;
-      --paper: #fffaf2;
-      --ink: #1f2937;
-      --muted: #6b7280;
-      --line: #d6cbb7;
-      --accent: #0f4c5c;
-      --accent-soft: #d8ecef;
-      --good: #1d6f42;
-      --good-soft: #dff3e6;
-      --warn: #a15c00;
-      --warn-soft: #fff0d6;
-      --bad: #9b2226;
-      --bad-soft: #fde7e6;
-      --shadow: 0 18px 40px rgba(31, 41, 55, 0.08);
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at top left, rgba(15, 76, 92, 0.12), transparent 28rem),
-        linear-gradient(180deg, #f7f1e7 0%, #f4efe6 100%);
-    }}
-    .wrap {{
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 32px 24px 48px;
-    }}
-    .hero {{
-      background: linear-gradient(135deg, rgba(15, 76, 92, 0.95), rgba(34, 55, 90, 0.92));
-      color: white;
-      padding: 28px 32px;
-      border-radius: 24px;
-      box-shadow: var(--shadow);
-      margin-bottom: 24px;
-    }}
-    .hero h1 {{
-      margin: 0 0 10px;
-      font-size: 32px;
-      line-height: 1.1;
-    }}
-    .hero p {{
-      margin: 4px 0;
-      color: rgba(255, 255, 255, 0.84);
-      max-width: 72rem;
-    }}
-    .hero-links {{
-      margin-top: 14px;
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }}
-    .hero-links a {{
-      color: white;
-      text-decoration: none;
-      border: 1px solid rgba(255, 255, 255, 0.28);
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
-    }}
-    .summary-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 14px;
-      margin-bottom: 24px;
-    }}
-    .summary-card {{
-      background: var(--paper);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: var(--shadow);
-      min-height: 132px;
-    }}
-    .summary-good {{ border-color: rgba(29, 111, 66, 0.35); }}
-    .summary-warn {{ border-color: rgba(161, 92, 0, 0.35); }}
-    .summary-title {{
-      color: var(--muted);
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 10px;
-    }}
-    .summary-value {{
-      font-size: 32px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }}
-    .summary-note {{
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.4;
-    }}
-    .panel-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }}
-    .panel {{
-      background: var(--paper);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: var(--shadow);
-    }}
-    .panel h2 {{
-      margin: 0 0 14px;
-      font-size: 18px;
-    }}
-    .top-list {{
-      margin: 0;
-      padding-left: 20px;
-      display: grid;
-      gap: 10px;
-    }}
-    .top-list li {{
-      display: grid;
-      gap: 2px;
-    }}
-    .top-file {{
-      font-weight: 600;
-    }}
-    .top-metric {{
-      font-family: "Cascadia Code", "Consolas", monospace;
-      color: var(--accent);
-    }}
-    .top-meta {{
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .table-wrap {{
-      background: var(--paper);
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      overflow: hidden;
-      box-shadow: var(--shadow);
-    }}
-    .table-head {{
-      padding: 18px 20px 8px;
-      border-bottom: 1px solid var(--line);
-    }}
-    .table-head h2 {{
-      margin: 0 0 8px;
-      font-size: 20px;
-    }}
-    .table-head p {{
-      margin: 0;
-      color: var(--muted);
-    }}
-    .scroll {{
-      overflow: auto;
-    }}
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 1380px;
-    }}
-    th, td {{
-      padding: 11px 12px;
-      border-bottom: 1px solid rgba(214, 203, 183, 0.72);
-      text-align: left;
-      vertical-align: top;
-      font-size: 14px;
-    }}
-    th {{
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: #f0e8dc;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      font-size: 12px;
-    }}
-    .cell-file {{
-      min-width: 280px;
-      font-weight: 600;
-    }}
-    .metric-good {{
-      background: var(--good-soft);
-      color: var(--good);
-      font-weight: 700;
-    }}
-    .metric-warn {{
-      background: var(--warn-soft);
-      color: var(--warn);
-      font-weight: 700;
-    }}
-    .metric-bad {{
-      background: var(--bad-soft);
-      color: var(--bad);
-      font-weight: 700;
-    }}
-    .metric-na {{
-      color: var(--muted);
-    }}
-    .row-issue {{
-      background: rgba(255, 242, 219, 0.35);
-    }}
-    .legend {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .chip {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.55);
-    }}
-    .dot {{
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      display: inline-block;
-    }}
-    .dot-good {{ background: var(--good); }}
-    .dot-warn {{ background: var(--warn); }}
-    .dot-bad {{ background: var(--bad); }}
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <section class="hero">
-      <h1>{html.escape(report_title)}</h1>
-      <p>Aspek utama yang dievaluasi: coverage setelah paragraf kosong dan heading kosong dibuang, duplicate invalid lintas halaman, order consistency, null/foreign claim, raw orphan visual rows, actionable orphan tanpa header/footer, breakdown missing non-bookmark vs bookmarkEnd, serta uncovered PDF words yang belum tertutup visual rows.</p>
-      <p>Dihasilkan pada {generated_at} dari DB host {db_host}.</p>
-      <div class="hero-links">
-        <a href="{html.escape(json_filename)}">Buka JSON</a>
-        <a href="{html.escape(csv_filename)}">Buka CSV</a>
-      </div>
-    </section>
-
-    <section class="summary-grid">
-      {summary_cards}
-    </section>
-
-    <section class="panel-grid">
-      {panels}
-    </section>
-
-    <section class="table-wrap">
-      <div class="table-head">
-        <h2>Semua Dokumen</h2>
-        <p>Tabel ini difokuskan ke metrik yang benar-benar dipakai saat ini. Coverage sudah mengecualikan paragraf kosong dan h1/h2 kosong. Actionable orphan mengabaikan page_header/page_footer agar noise header tidak terlihat seperti failure body alignment. Uncovered PDF words menunjukkan word bbox PyMuPDF yang belum tertutup visual rows sama sekali.</p>
-        <div class="legend">
-          <span class="chip"><span class="dot dot-good"></span> sehat</span>
-          <span class="chip"><span class="dot dot-warn"></span> perlu perhatian</span>
-          <span class="chip"><span class="dot dot-bad"></span> bermasalah</span>
-        </div>
-      </div>
-      <div class="scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Ref</th>
-              <th>Filename</th>
-              <th>Owner</th>
-              <th>Coverage</th>
-              <th>Missing</th>
-              <th>Missing Non-BM</th>
-              <th>Missing BM</th>
-              <th>Duplicate</th>
-              <th>Cross-page Dup</th>
-              <th>Valid Cont</th>
-              <th>Fragments</th>
-              <th>Order</th>
-              <th>Null</th>
-              <th>Foreign</th>
-              <th>Act Orphan</th>
-              <th>Act Orphan Rows</th>
-              <th>Orphan</th>
-              <th>Orphan Rows</th>
-              <th>PDF Uncov</th>
-              <th>Uncov Words</th>
-              <th>Visual Rows</th>
-              <th>Ignored Empty P</th>
-              <th>Ignored Empty H</th>
-              <th>Checks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {table_rows}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-</body>
-</html>
-"""
-
-    path.write_text(document, encoding="utf-8")
 
 
 def summarize(results: List[dict]) -> dict:

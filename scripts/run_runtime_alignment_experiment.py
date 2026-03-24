@@ -46,6 +46,8 @@ def load_visual_rows(doc_dir: Path) -> List[dict]:
         data = json.loads(path.read_text(encoding="utf-8"))
         page = int(data.get("page"))
         for result in data.get("fused_results") or []:
+            if (result or {}).get("_drop_from_output"):
+                continue
             bbox = result.get("bbox") or []
             if len(bbox) != 4:
                 continue

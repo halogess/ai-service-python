@@ -1,0 +1,5 @@
+from .claim_repair_mixin import MergingExtractionClaimRepairMixin
+from .fusion_repairs_mixin import MergingExtractionFusionRepairsMixin
+from .persistence_mixin import MergingExtractionPersistenceMixin
+from .structural_labels_mixin import MergingExtractionStructuralLabelsMixin
+from .target_assignment_mixin import MergingExtractionTargetAssignmentMixin
