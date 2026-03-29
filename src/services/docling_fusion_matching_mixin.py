@@ -2,6 +2,16 @@ from typing import Dict, List
 
 
 class DoclingFusionMatchingMixin:
+    @staticmethod
+    def _is_synthetic_caption_repair_item(item: Dict) -> bool:
+        return (
+            bool((item or {}).get('is_chart_caption_text')) and
+            str((item or {}).get('repair_reason') or '').strip().lower() in {
+                'caption_suffix_inherit',
+                'caption_fragment_inherit',
+            }
+        )
+
     def _collect_docling_matching_items(self, all_aligned_items: List[Dict], doc_bbox, used_indices) -> List[Dict]:
         matching_items = []
         for idx, item in enumerate(all_aligned_items):
@@ -101,7 +111,7 @@ class DoclingFusionMatchingMixin:
                 candidate_sources.append(item.get('candidate_source'))
 
         avg_overlap /= len(matching_items)
-        merged_label = doc_item.get('label')
+        merged_label = self._canonicalize_label(doc_item.get('label'))
         if merged_label == 'picture':
             if context['has_chart_caption_text']:
                 merged_label = 'caption'
@@ -141,7 +151,7 @@ class DoclingFusionMatchingMixin:
             'element_type': ref_elem_type,
             'openxml_idx': ref_openxml_idx,
             'is_picture_merge': context['should_merge_picture'],
-            'docling_label': doc_item.get('label'),
+            'docling_label': self._canonicalize_label(doc_item.get('label')),
             'is_picture_area': any(m['item'].get('is_picture_area') for m in matching_items),
             'has_shape_units': context['has_shape_units'],
             'has_pdf_image': context['has_pdf_image'],
@@ -168,7 +178,9 @@ class DoclingFusionMatchingMixin:
         }
 
     def _resolve_item_docling_label(self, doc_item: Dict, item: Dict) -> str:
-        final_label = doc_item.get('label')
+        final_label = self._canonicalize_label(doc_item.get('label'))
+        if self._is_synthetic_caption_repair_item(item):
+            return self.correct_header_footer_label('caption', item['bbox'])
         if final_label == 'picture':
             if item.get('is_chart_caption_text'):
                 final_label = 'caption'
@@ -200,7 +212,7 @@ class DoclingFusionMatchingMixin:
                 'element_sequence': item.get('element_sequence'),
                 'openxml_idx': item.get('openxml_idx'),
                 'zone': item.get('zone'),
-                'docling_label': doc_item.get('label'),
+                'docling_label': self._canonicalize_label(doc_item.get('label')),
                 'is_text_part': item.get('is_text_part'),
                 'is_image_part': item.get('is_image_part'),
                 'unit_id': item.get('unit_id'),
@@ -243,6 +255,8 @@ class DoclingFusionMatchingMixin:
                 label = 'picture'
             elif item.get('is_image_part'):
                 label = self.fallback_label(item)
+            elif self._is_synthetic_caption_repair_item(item):
+                label = 'caption'
             elif item.get('is_chart_caption_text') and self._is_caption_candidate(item.get('text')):
                 label = 'caption'
 

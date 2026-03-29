@@ -131,6 +131,18 @@ class AlignmentPostprocessParagraphContextMixin:
             for unit in (alignment.get('matched_pdf_units') or [])
         )
 
+    def _alignment_text_looks_like_caption(self, alignment):
+        if not alignment:
+            return False
+        text = self._normalize_text((alignment or {}).get('element_text') or '').strip()
+        if not text:
+            return False
+        return bool(
+            alignment.get('is_chart_caption_text') or
+            self._extract_figure_key(text) or
+            self._is_caption_like_text(text)
+        )
+
     def _alignment_visual_bbox(self, alignment):
         visual_bboxes = [
             unit.get('bbox')
@@ -421,6 +433,8 @@ class AlignmentPostprocessParagraphContextMixin:
     def _build_inherited_alignment(self, source_alignment, openxml_unit, openxml_idx, reason):
         if not source_alignment or not openxml_unit:
             return None
+        synthetic_caption_repair = reason in {'caption_suffix_inherit', 'caption_fragment_inherit'}
+        caption_like_source = synthetic_caption_repair and self._alignment_text_looks_like_caption(source_alignment)
 
         inherited = {
             'element_id': openxml_unit.get('elem_id'),
@@ -444,7 +458,10 @@ class AlignmentPostprocessParagraphContextMixin:
             'is_code_like_openxml': openxml_unit.get('is_code_like_openxml', False),
             'is_openxml_chart': bool(openxml_unit.get('is_openxml_chart', False)),
             'is_openxml_visual_slot': bool(openxml_unit.get('is_openxml_visual_slot', False)),
-            'is_chart_caption_text': bool(openxml_unit.get('is_chart_caption_text', False)),
+            'is_chart_caption_text': bool(
+                openxml_unit.get('is_chart_caption_text', False) or
+                caption_like_source
+            ),
             'is_chart_visual_attachment': bool(source_alignment.get('is_chart_visual_attachment', False)),
             'matched_by_visual_only': bool(source_alignment.get('matched_by_visual_only', False)),
             'repair_reason': reason,

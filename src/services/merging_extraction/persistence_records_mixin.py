@@ -261,7 +261,7 @@ class MergingExtractionPersistenceRecordsMixin:
                 dev_bbox_y0=float(y0),
                 dev_bbox_x1=float(x1),
                 dev_bbox_y1=float(y1),
-                dev_label=result.get('label') or result.get('docling_label'),
+                dev_label=self._get_visual_label(result) or None,
                 dev_label_struktural=result.get('dev_label_struktural'),
                 dev_text=text_content
             )

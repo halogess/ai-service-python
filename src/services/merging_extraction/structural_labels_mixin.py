@@ -24,6 +24,23 @@ logger = logging.getLogger(__name__)
 
 
 class MergingExtractionStructuralLabelsMixin:
+    def _is_caption_continuation_candidate(self, result):
+        visual_label = self._get_visual_label(result)
+        if visual_label not in ('text', 'section_header'):
+            return False
+        text = self._coerce_text((result or {}).get('text')).strip()
+        if not text:
+            return False
+        if self._text_starts_with_bab(text) or self._is_subchapter_title(text):
+            return False
+        if self._get_text_list_marker(text):
+            return False
+        if visual_label == 'section_header':
+            text_norm = ' '.join(text.split())
+            if len(text_norm) > 48 or len(text_norm.split()) > 7:
+                return False
+        return True
+
     def _extract_text_run_ids(self, json_tree):
         ids = []
         def walk(node):
@@ -218,16 +235,19 @@ class MergingExtractionStructuralLabelsMixin:
                 structural_label = 'judul_subbab'
 
             is_bab_heading_text = self._text_starts_with_bab(text)
-            if (
-                not structural_label
-                and is_section_header
-                and not is_subchapter_text
-                and not is_bab_heading_text
-            ):
-                code_like_lines = self._count_following_code_like_lines(fused_results, idx)
-                if code_like_lines >= 2:
+            if not structural_label and not is_subchapter_text and not is_bab_heading_text:
+                code_like_lines = self._count_following_code_like_lines(
+                    fused_results,
+                    idx,
+                    allow_title_bridges=visual_label in ('caption', 'text', 'section_header'),
+                )
+                if is_section_header and code_like_lines >= 2:
                     structural_label = 'judul_kode'
-                elif code_like_lines >= 1 and self.CODE_TITLE_HEADER_REGEX.search(text):
+                elif (
+                    visual_label in ('caption', 'text', 'section_header')
+                    and code_like_lines >= 1
+                    and self._is_code_title_like_text(text)
+                ):
                     structural_label = 'judul_kode'
 
             if not structural_label:
@@ -263,9 +283,19 @@ class MergingExtractionStructuralLabelsMixin:
             if not structural_label:
                 is_list_candidate = False
                 is_list_item_type = bool(elem_type_norm and elem_type_norm.startswith('list-item-'))
+                is_heading_like_type = bool(
+                    elem_type_norm and (
+                        re.fullmatch(r'h\d+', elem_type_norm) or
+                        'heading' in elem_type_norm or
+                        'header' in elem_type_norm or
+                        'title' in elem_type_norm
+                    )
+                )
                 if is_list_item_type:
                     is_list_candidate = True
                 elif visual_label in ('section_header', 'list_item'):
+                    is_list_candidate = True
+                elif visual_label == 'text' and is_heading_like_type and self._get_text_list_marker(text):
                     is_list_candidate = True
 
                 if is_list_candidate:
@@ -353,7 +383,7 @@ class MergingExtractionStructuralLabelsMixin:
                     if next_visual in ('page_header', 'page_footer'):
                         j += 1
                         continue
-                    if next_visual not in ('section_header', 'text'):
+                    if not self._is_caption_continuation_candidate(next_result):
                         break
                     next_elem_id = next_result.get('element_id')
                     next_element = element_map.get(next_elem_id)

@@ -64,7 +64,13 @@ class MergingExtractionService(
     SUBCHAPTER_TITLE_REGEX = re.compile(r'^\s*\d+(?:\s*\.\s*\d+)+\.?(?:\s+.+)?$', re.IGNORECASE)
 
     CODE_TITLE_HEADER_REGEX = re.compile(
-        r'\b(?:segmen\s*program|listing|algoritma|algorithm|kode\s*program|script)\b',
+        r'^\s*(?:segmen\s*program|listing|algoritma|algorithm|kode\s*program|script)\b',
+        re.IGNORECASE
+    )
+
+    CODE_TITLE_FLEX_REGEX = re.compile(
+        r'^\s*(?:program|segmen\s*progr?am|listing|algoritma|algorithm|kode\s*program|script)\s*'
+        r'\d+(?:\.\d+)*(?:\s*[:.)-])?(?:\s+.+)?$',
         re.IGNORECASE
     )
 

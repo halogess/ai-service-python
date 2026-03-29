@@ -5,7 +5,7 @@ class DokumenSection(Base):
     __tablename__ = "dokumen_section"
     
     dsec_id = Column(Integer, primary_key=True, autoincrement=True)
-    dsec_ref_tipe = Column(Enum('dokumen', 'buku', 'bab'), nullable=True)
+    dsec_ref_tipe = Column(Enum('dokumen', 'buku', 'bab', 'aturan'), nullable=True)
     dsec_ref_id = Column(Integer, nullable=True)
     dsec_index = Column(Integer, nullable=True)
     dsec_type = Column(String(50), nullable=True)

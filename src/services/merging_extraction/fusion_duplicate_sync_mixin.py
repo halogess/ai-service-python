@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 class MergingExtractionFusionDuplicateSyncMixin:
+    @staticmethod
+    def _is_synthetic_caption_repair_result(result):
+        return str((result or {}).get('repair_reason') or '').strip().lower() in {
+            'caption_suffix_inherit',
+            'caption_fragment_inherit',
+        }
 
 
     def _merge_duplicate_units_with_neighbors(self, alignments, duplicate_element_ids):
@@ -272,6 +278,11 @@ class MergingExtractionFusionDuplicateSyncMixin:
                 updated_results.append(result)
                 continue
             bbox = result.get('bbox')
+            if self._is_synthetic_caption_repair_result(result):
+                if not bbox or len(bbox) < 4:
+                    result['bbox'] = list(align_bbox)
+                updated_results.append(result)
+                continue
             if not bbox or len(bbox) < 4:
                 result['bbox'] = list(align_bbox)
                 updated_results.append(result)

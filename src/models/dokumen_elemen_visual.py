@@ -5,7 +5,7 @@ class DokumenElemenVisual(Base):
     __tablename__ = "dokumen_elemen_visual"
 
     dev_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    dev_ref_tipe = Column(Enum('dokumen', 'buku', 'bab'))
+    dev_ref_tipe = Column(Enum('dokumen', 'buku', 'bab', 'aturan'))
     dev_ref_id = Column(Integer)
     dev_page = Column(Integer)
     dokumen_elemen_id = Column(BigInteger)

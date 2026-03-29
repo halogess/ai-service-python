@@ -6,7 +6,7 @@ import difflib
 import re
 from datetime import datetime
 from sqlalchemy.orm import Session
-from models import Bab, Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote, DokumenFormatText, DokumenFormatParagraf
+from models import Aturan, Bab, Dokumen, DokumenSection, DokumenPart, DokumenElemen, DokumenElemenVisual, DokumenNote, DokumenFormatText, DokumenFormatParagraf
 from services.pdf_extraction_service import PDFExtractor
 from services.alignment_service import AlignmentService
 from services.docling_service import DoclingService
@@ -76,6 +76,12 @@ class MergingExtractionProcessPipelineMixin:
                     logger.error(f"Bab {ref_id} not found")
                     return False
                 relative_pdf_path = bab.bab_pdf_path
+            elif canonical_ref_tipe == 'aturan':
+                aturan = db.query(Aturan).get(ref_id)
+                if not aturan:
+                    logger.error(f"Aturan {ref_id} not found")
+                    return False
+                relative_pdf_path = aturan.aturan_template_pdf_path
             else:
                 logger.error(f"Unknown ref_tipe: {ref_tipe}")
                 return False

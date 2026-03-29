@@ -6,9 +6,10 @@ Handles processing tasks from the antrian table
 import os
 import logging
 from typing import Optional, Tuple
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from models import Antrian, Dokumen, Bab
+from models import Antrian, Dokumen, Bab, Aturan
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +32,31 @@ class AntrianService:
         """
         Get the next labeling task in queue.
         """
-        task = self.db.query(Antrian).filter(
+        in_queue_query = self.db.query(Antrian).filter(
             Antrian.antrian_labeling_status == 'in_queue'
+        )
+
+        active_buku_ids_subquery = self.db.query(Antrian.buku_id).filter(
+            Antrian.antrian_tipe == 'buku',
+            Antrian.buku_id.isnot(None),
+            or_(
+                Antrian.antrian_labeling_status.in_(['processing', 'completed']),
+                Antrian.antrian_extraction_status == 'completed'
+            )
+        ).distinct().subquery()
+
+        task = in_queue_query.filter(
+            Antrian.antrian_tipe == 'buku',
+            Antrian.buku_id.in_(active_buku_ids_subquery)
         ).order_by(Antrian.antrian_created_at).first()
+
+        if task is None:
+            task = in_queue_query.filter(
+                Antrian.antrian_tipe == 'aturan'
+            ).order_by(Antrian.antrian_created_at).first()
+
+        if task is None:
+            task = in_queue_query.order_by(Antrian.antrian_created_at).first()
         
         if task:
             logger.info(f"Found labeling task in queue: ID {task.antrian_id}")
@@ -83,6 +106,11 @@ class AntrianService:
                 raise ValueError(f"Task {task.antrian_id} has no bab_id")
             return 'bab', task.bab_id
 
+        if task.antrian_tipe == 'aturan':
+            if not task.aturan_id:
+                raise ValueError(f"Task {task.antrian_id} has no aturan_id")
+            return 'aturan', task.aturan_id
+
         raise ValueError(f"Unknown antrian_tipe: {task.antrian_tipe}")
 
         
@@ -114,6 +142,14 @@ class AntrianService:
             if not bab or not bab.bab_pdf_path:
                 raise ValueError(f"PDF path not found for bab_id: {task.bab_id}")
             return bab.bab_pdf_path
+
+        elif task.antrian_tipe == 'aturan':
+            aturan = self.db.query(Aturan).filter(
+                Aturan.aturan_id == task.aturan_id
+            ).first()
+            if not aturan or not aturan.aturan_template_pdf_path:
+                raise ValueError(f"PDF path not found for aturan_id: {task.aturan_id}")
+            return aturan.aturan_template_pdf_path
             
         else:
             raise ValueError(f"Unknown antrian_tipe: {task.antrian_tipe}")

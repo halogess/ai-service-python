@@ -63,8 +63,17 @@ class MergingExtractionLabelingMixin:
             return 'bullet_symbol'
         return None
 
+    @staticmethod
+    def _canonicalize_visual_label(label):
+        normalized = str(label or '').strip().lower()
+        if normalized == 'paragraph':
+            return 'text'
+        return normalized
+
     def _get_visual_label(self, result):
-        return str(result.get('label') or result.get('docling_label') or '').lower()
+        return self._canonicalize_visual_label(
+            result.get('label') or result.get('docling_label')
+        )
 
     def _is_picture_result(self, result):
         if not result:
@@ -215,8 +224,17 @@ class MergingExtractionLabelingMixin:
         symbol_count = sum(1 for ch in text if ch in '{}[]();=<>:+-*/%#\\')
         return symbol_count >= 3
 
-    def _count_following_code_like_lines(self, fused_results, start_idx):
+    def _is_code_title_like_text(self, text):
+        text = self._coerce_text(text).strip()
+        if not text:
+            return False
+        if self.CODE_TITLE_HEADER_REGEX.search(text):
+            return True
+        return bool(self.CODE_TITLE_FLEX_REGEX.match(text))
+
+    def _count_following_code_like_lines(self, fused_results, start_idx, allow_title_bridges=False):
         count = 0
+        title_bridge_count = 0
         for i in range(start_idx + 1, len(fused_results)):
             candidate = fused_results[i]
             visual_label = self._get_visual_label(candidate)
@@ -227,6 +245,15 @@ class MergingExtractionLabelingMixin:
                 continue
             if visual_label == 'text' and self._looks_like_code_line_text(candidate.get('text')):
                 count += 1
+                continue
+            if (
+                allow_title_bridges
+                and count == 0
+                and title_bridge_count < 3
+                and visual_label in ('caption', 'text', 'section_header')
+                and self._is_code_title_like_text(candidate.get('text'))
+            ):
+                title_bridge_count += 1
                 continue
             break
         return count

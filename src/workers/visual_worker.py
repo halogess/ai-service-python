@@ -13,7 +13,7 @@ import time
 import logging
 import os
 from database import SessionLocal, engine
-from models import Base, Bab, Dokumen
+from models import Base, Bab, Dokumen, Aturan
 from services.antrian_service import AntrianService, STORAGE_BASE
 from services.merging_extraction_service import MergingExtractionService
 from services.pdf_image_service import convert_pdf_to_images
@@ -172,6 +172,11 @@ def process_visual_task():
                 return True
             else:
                 logger.error(f"Labeling flow failed for {ref_tipe}:{ref_id}")
+                if ref_tipe == 'aturan':
+                    aturan = db.query(Aturan).get(ref_id)
+                    if aturan:
+                        aturan.aturan_status = 'gagal'
+                        db.commit()
                 antrian_service.update_labeling_status(task, 'failed', "MergingExtractionService returned failure")
                 return False
             
@@ -190,6 +195,11 @@ def process_visual_task():
             logger.error(f"Visual task {task.antrian_id} failed: {str(e)}", exc_info=True)
             try:
                 db.rollback()
+                if task.antrian_tipe == 'aturan' and task.aturan_id:
+                    aturan = db.query(Aturan).get(task.aturan_id)
+                    if aturan:
+                        aturan.aturan_status = 'gagal'
+                        db.commit()
                 antrian_service.update_labeling_status(task, 'failed', str(e))
             except Exception as commit_error:
                 logger.error(f"Failed to update error status: {commit_error}")

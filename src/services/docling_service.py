@@ -12,6 +12,13 @@ class DoclingService:
     def __init__(self):
         pass
 
+    @staticmethod
+    def _canonicalize_prediction_label(label: str) -> str:
+        normalized = str(label or '').strip().lower()
+        if normalized == 'paragraph':
+            return 'text'
+        return normalized
+
     def classify_document(self, doc_id: int) -> Dict[str, Any]:
         """
         Run Docling classification on ENTIRE document (all pages at once).
@@ -70,6 +77,7 @@ class DoclingService:
                 label = label_override
                 if not label:
                     label = str(item.label).split('.')[-1].lower() if hasattr(item, 'label') else 'text'
+                label = self._canonicalize_prediction_label(label)
 
                 text_content = ''
                 if label == 'table':

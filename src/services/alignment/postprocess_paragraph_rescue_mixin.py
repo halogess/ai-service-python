@@ -6,6 +6,50 @@ import re
 class AlignmentPostprocessParagraphRescueMixin:
 
 
+    def _is_caption_fragment_source_alignment(self, alignment, fragment_text=None):
+        if not self._alignment_text_looks_like_caption(alignment):
+            return False
+        fragment_norm = self._normalize_text(fragment_text or '').strip()
+        if not fragment_norm:
+            return True
+        source_norm = self._normalize_text((alignment or {}).get('element_text') or '').strip()
+        if not source_norm:
+            return False
+        if fragment_norm in source_norm and fragment_norm != source_norm:
+            return True
+        return bool(self._extract_figure_key(source_norm) and self._alignment_has_visual_units(alignment))
+
+    def _select_caption_fragment_source_alignment(self, fragment_text, prev_alignment, next_alignment):
+        fragment_norm = self._normalize_text(fragment_text or '').strip()
+        candidates = []
+        for order, alignment in enumerate((prev_alignment, next_alignment)):
+            if not self._is_caption_fragment_source_alignment(alignment, fragment_norm):
+                continue
+            source_norm = self._normalize_text((alignment or {}).get('element_text') or '').strip()
+            score = 0
+            if fragment_norm and source_norm and fragment_norm in source_norm and fragment_norm != source_norm:
+                score += 4
+            if self._extract_figure_key(source_norm):
+                score += 2
+            if alignment.get('is_chart_caption_text'):
+                score += 1
+            if self._alignment_has_visual_units(alignment):
+                score += 1
+            candidates.append((score, -order, alignment))
+        if not candidates:
+            return None
+        candidates.sort(reverse=True)
+        return candidates[0][2]
+
+    def _is_redundant_caption_fragment_alignment(self, fragment_text, source_alignment):
+        if not self._alignment_text_looks_like_caption(source_alignment):
+            return False
+        fragment_norm = self._normalize_text(fragment_text or '').strip()
+        source_norm = self._normalize_text((source_alignment or {}).get('element_text') or '').strip()
+        if not fragment_norm or not source_norm or fragment_norm == source_norm:
+            return False
+        return fragment_norm in source_norm
+
     def _rescue_paragraph_alignments(self, rescue_candidates, alignments, unaligned_pdf_indices, pdf_units):
         if not rescue_candidates or not unaligned_pdf_indices:
             return alignments, unaligned_pdf_indices, []
@@ -199,11 +243,13 @@ class AlignmentPostprocessParagraphRescueMixin:
                     source_alignment = prev_alignment
                 reason = 'image_placeholder_neighbor_inherit'
             elif self._is_short_caption_fragment_text(text):
-                if next_alignment is not None:
-                    source_alignment = next_alignment
-                elif prev_alignment is not None:
-                    source_alignment = prev_alignment
-                reason = 'caption_fragment_inherit'
+                source_alignment = self._select_caption_fragment_source_alignment(
+                    text,
+                    prev_alignment,
+                    next_alignment
+                )
+                if source_alignment is not None:
+                    reason = 'caption_fragment_inherit'
             elif next_alignment is not None and next_alignment.get('is_table'):
                 _, prev_unit = self._find_prev_meaningful_openxml_unit(
                     openxml_units,
@@ -217,6 +263,11 @@ class AlignmentPostprocessParagraphRescueMixin:
                     reason = 'table_lead_inherit'
 
             if source_alignment is None or not reason:
+                continue
+            if (
+                reason in {'caption_suffix_inherit', 'caption_fragment_inherit'} and
+                self._is_redundant_caption_fragment_alignment(text, source_alignment)
+            ):
                 continue
 
             inherited_alignment = self._build_inherited_alignment(

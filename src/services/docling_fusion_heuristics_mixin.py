@@ -5,6 +5,13 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 class DoclingFusionHeuristicsMixin:
+    @staticmethod
+    def _canonicalize_label(label: str) -> str:
+        normalized = str(label or '').strip().lower()
+        if normalized == 'paragraph':
+            return 'text'
+        return normalized
+
     def fallback_label(self, item: Dict) -> str:
         """
         Generate fallback label from alignment element_type when no Docling match.
@@ -41,8 +48,8 @@ class DoclingFusionHeuristicsMixin:
         if 'code' in element_type:
             return 'code'
         if 'paragraph' in element_type:
-            return 'paragraph'
-        
+            return 'text'
+
         return 'text'
 
     def is_picture_area(self, item: Dict) -> bool:
@@ -338,7 +345,7 @@ class DoclingFusionHeuristicsMixin:
         1) real table element -> table
         2) image/picture element -> picture
         3) list element -> list_item
-        4) otherwise -> paragraph
+        4) otherwise -> text
         """
         items = []
         for matched in (matching_items or []):
@@ -348,7 +355,7 @@ class DoclingFusionHeuristicsMixin:
                 items.append(matched)
 
         if not items:
-            return 'paragraph'
+            return 'text'
 
         if any(self._is_table_element_item(item) for item in items):
             return 'table'
@@ -356,4 +363,4 @@ class DoclingFusionHeuristicsMixin:
             return 'picture'
         if any(self._is_list_element_item(item) for item in items):
             return 'list_item'
-        return 'paragraph'
+        return 'text'
