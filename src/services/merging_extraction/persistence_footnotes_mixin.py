@@ -26,22 +26,23 @@ logger = logging.getLogger(__name__)
 class MergingExtractionPersistenceFootnotesMixin:
 
 
-    def _assign_docling_footnotes(self, db, doc_id, page_num, docling_predictions, footnote_groups):
+    def _assign_docling_footnotes(self, db, ref_tipe, ref_id, page_num, docling_predictions, footnote_groups):
         if not docling_predictions:
-            self._append_footnote_log(doc_id, page_num, "no_docling_predictions")
+            self._append_footnote_log(ref_tipe, ref_id, page_num, "no_docling_predictions")
             return docling_predictions, []
 
         if not footnote_groups:
-            self._append_footnote_log(doc_id, page_num, "no_docling_footnotes")
+            self._append_footnote_log(ref_tipe, ref_id, page_num, "no_docling_footnotes")
             return docling_predictions, []
 
         notes = db.query(DokumenNote).filter(
-            DokumenNote.dokumen_id == doc_id,
+            DokumenNote.dnote_ref_tipe == ref_tipe,
+            DokumenNote.dnote_ref_id == ref_id,
             DokumenNote.dnote_kind == "footnote"
         ).all()
 
         if not notes:
-            self._append_footnote_log(doc_id, page_num, "no_dokumen_note")
+            self._append_footnote_log(ref_tipe, ref_id, page_num, "no_ref_note")
             return docling_predictions, []
 
         note_candidates = []
@@ -49,7 +50,8 @@ class MergingExtractionPersistenceFootnotesMixin:
             dnote_type = (note.dnote_type or '').lower()
             if dnote_type in ("separator", "continuationseparator"):
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "skip_note",
                     note_id=note.dnote_id,
@@ -64,7 +66,8 @@ class MergingExtractionPersistenceFootnotesMixin:
                     tree = json.loads(raw_tree)
                 except Exception:
                     self._append_footnote_log(
-                        doc_id,
+                        ref_tipe,
+                        ref_id,
                         page_num,
                         "skip_note",
                         note_id=note.dnote_id,
@@ -77,7 +80,8 @@ class MergingExtractionPersistenceFootnotesMixin:
                 tree = raw_tree or {}
             if not isinstance(tree, dict):
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "skip_note",
                     note_id=note.dnote_id,
@@ -90,7 +94,8 @@ class MergingExtractionPersistenceFootnotesMixin:
             text_norm = self.alignment_service._normalize_text(text)
             if not text_norm:
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "skip_note",
                     note_id=note.dnote_id,
@@ -106,7 +111,8 @@ class MergingExtractionPersistenceFootnotesMixin:
                 "text_norm": text_norm
             })
             self._append_footnote_log(
-                doc_id,
+                ref_tipe,
+                ref_id,
                 page_num,
                 "note_candidate",
                 note_id=note.dnote_id,
@@ -116,7 +122,7 @@ class MergingExtractionPersistenceFootnotesMixin:
             )
 
         if not note_candidates:
-            self._append_footnote_log(doc_id, page_num, "no_note_candidates")
+            self._append_footnote_log(ref_tipe, ref_id, page_num, "no_note_candidates")
             return docling_predictions, []
 
         best_scores = {}
@@ -133,7 +139,8 @@ class MergingExtractionPersistenceFootnotesMixin:
                 text_norm = self.alignment_service._normalize_text(str(doc_text))
             if len(text_norm) < 3:
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "skip_group",
                     docling_idx=group.get('docling_idx'),
@@ -143,7 +150,7 @@ class MergingExtractionPersistenceFootnotesMixin:
             group_norms[group_idx] = text_norm
 
         if not group_norms:
-            self._append_footnote_log(doc_id, page_num, "no_group_candidates")
+            self._append_footnote_log(ref_tipe, ref_id, page_num, "no_group_candidates")
             return docling_predictions, []
 
         for group_idx, text_norm in group_norms.items():
@@ -151,7 +158,8 @@ class MergingExtractionPersistenceFootnotesMixin:
                 score = self._compute_text_similarity(text_norm, note_entry["text_norm"])
                 best_scores[group_idx] = max(best_scores.get(group_idx, 0.0), score)
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "candidate_score",
                     docling_idx=footnote_groups[group_idx].get('docling_idx'),
@@ -167,7 +175,8 @@ class MergingExtractionPersistenceFootnotesMixin:
         if not candidates:
             for group_idx in group_norms:
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "no_candidate_above_threshold",
                     docling_idx=footnote_groups[group_idx].get('docling_idx'),
@@ -188,7 +197,8 @@ class MergingExtractionPersistenceFootnotesMixin:
             group = footnote_groups[group_idx]
             note_entry = note_candidates[note_idx]
             self._append_footnote_log(
-                doc_id,
+                ref_tipe,
+                ref_id,
                 page_num,
                 "match",
                 docling_idx=group.get('docling_idx'),
@@ -207,7 +217,8 @@ class MergingExtractionPersistenceFootnotesMixin:
         for group_idx in group_norms:
             if group_idx not in matched_groups:
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "no_match",
                     docling_idx=footnote_groups[group_idx].get('docling_idx'),
@@ -224,14 +235,15 @@ class MergingExtractionPersistenceFootnotesMixin:
         filtered_preds = self._filter_docling_predictions(docling_predictions, footnote_groups)
         return filtered_preds, footnote_entries
 
-    def _build_footnote_groups(self, extraction_items, docling_predictions, doc_id, page_num):
+    def _build_footnote_groups(self, extraction_items, docling_predictions, ref_tipe, ref_id, page_num):
         footnote_preds = []
         for idx, pred in enumerate(docling_predictions or []):
             label = str(pred.get('label', '')).lower()
             if label in self.FOOTNOTE_LABELS and pred.get('bbox'):
                 footnote_preds.append((idx, pred))
                 self._append_footnote_log(
-                    doc_id,
+                    ref_tipe,
+                    ref_id,
                     page_num,
                     "docling_footnote",
                     docling_idx=idx,
@@ -277,7 +289,8 @@ class MergingExtractionPersistenceFootnotesMixin:
             })
 
             self._append_footnote_log(
-                doc_id,
+                ref_tipe,
+                ref_id,
                 page_num,
                 "footnote_group",
                 docling_idx=docling_idx,
@@ -321,7 +334,7 @@ class MergingExtractionPersistenceFootnotesMixin:
             return min(len(a), len(b)) / max(len(a), len(b))
         return difflib.SequenceMatcher(None, a, b).ratio()
 
-    def _append_footnote_log(self, doc_id, page_num, event, **fields):
+    def _append_footnote_log(self, ref_tipe, ref_id, page_num, event, **fields):
         os.makedirs(os.path.dirname(self.FOOTNOTE_LOG_PATH), exist_ok=True)
 
         def sanitize(text):
@@ -330,7 +343,13 @@ class MergingExtractionPersistenceFootnotesMixin:
             return str(text or '').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
 
         timestamp = datetime.now().isoformat(timespec='seconds')
-        parts = [timestamp, f"doc_id={doc_id}", f"page={page_num}", f"event={event}"]
+        parts = [
+            timestamp,
+            f"ref_tipe={ref_tipe}",
+            f"ref_id={ref_id}",
+            f"page={page_num}",
+            f"event={event}",
+        ]
         for key, value in fields.items():
             parts.append(f"{key}={sanitize(value)}")
         line = "\t".join(parts) + "\n"

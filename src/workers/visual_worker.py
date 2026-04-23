@@ -12,6 +12,7 @@ New Flow (Backend-Only PDF Processing):
 import time
 import logging
 import os
+import sys
 from database import SessionLocal, engine
 from models import Base, Bab, Dokumen, Aturan
 from services.antrian_service import AntrianService, STORAGE_BASE
@@ -19,13 +20,28 @@ from services.merging_extraction_service import MergingExtractionService
 from services.pdf_image_service import convert_pdf_to_images
 
 # Setup logging
+LOG_DIR = os.getenv("LOG_DIR", "logs")
+LOG_FILE = os.path.join(LOG_DIR, "visual_worker.log")
+
+
+def _build_log_handlers():
+    handlers = [logging.StreamHandler()]
+
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        handlers.insert(0, logging.FileHandler(LOG_FILE))
+    except OSError as exc:
+        sys.stderr.write(
+            f"Warning: file logging disabled for '{LOG_FILE}': {exc}\n"
+        )
+
+    return handlers
+
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/visual_worker.log'),
-        logging.StreamHandler()
-    ]
+    handlers=_build_log_handlers()
 )
 logger = logging.getLogger(__name__)
 
@@ -81,6 +97,11 @@ def process_visual_task():
         # Get next task
         task = antrian_service.get_next_labeling_task()
         if not task:
+            return False
+
+        if antrian_service.is_task_cancelled(task):
+            logger.info(f"Skipping cancelled labeling task ID: {task.antrian_id}")
+            antrian_service.mark_task_cancelled(task)
             return False
         
         try:
@@ -165,6 +186,11 @@ def process_visual_task():
             )
             
             if success:
+                if antrian_service.is_task_cancelled(task):
+                    logger.info(f"Skipping validation handoff for cancelled task ID: {task.antrian_id}")
+                    antrian_service.mark_task_cancelled(task)
+                    return False
+
                 logger.info(f"Labeling flow completed for {ref_tipe}:{ref_id}")
                 antrian_service.update_labeling_status(task, 'completed')
                 # Set validation status to in_queue so it can be picked up by validation worker
@@ -195,6 +221,9 @@ def process_visual_task():
             logger.error(f"Visual task {task.antrian_id} failed: {str(e)}", exc_info=True)
             try:
                 db.rollback()
+                if antrian_service.is_task_cancelled(task):
+                    antrian_service.mark_task_cancelled(task)
+                    return False
                 if task.antrian_tipe == 'aturan' and task.aturan_id:
                     aturan = db.query(Aturan).get(task.aturan_id)
                     if aturan:
@@ -221,9 +250,6 @@ def run_visual_worker(check_interval: int = 5):
     """
     logger.info(f"Starting labeling worker (check every {check_interval} seconds)")
     logger.info("Flow: Labeling (Extraction+Alignment+Docling) -> Validation")
-    
-    # Ensure logs directory exists
-    os.makedirs('logs', exist_ok=True)
     
     try:
         while True:

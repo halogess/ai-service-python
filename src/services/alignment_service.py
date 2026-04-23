@@ -93,7 +93,9 @@ class AlignmentService(
         Args:
             extraction_results: List of extraction results per page
             doc_id: Reference ID (dokumen_id or bab_id)
-            ref_tipe: Reference type ('dokumen' or 'bab'; legacy 'buku' is also supported)
+            ref_tipe: Reference type ('dokumen' or canonical chapter ref 'bab').
+                Queue inputs may still originate from `buku`, but internal chapter
+                reads use `bab`.
 
         Returns:
             List of alignment results per page

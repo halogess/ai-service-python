@@ -40,7 +40,7 @@ class MergingExtractionProcessPipelineMixin:
         ref_tipe: str = 'dokumen'
     ):
         """
-        Process a reference target (dokumen or bab).
+        Process a reference target (dokumen, bab, or aturan).
         1. Extract PDF content page by page
         2. Validate/Align with OpenXML elements
         3. Run Docling classification
@@ -48,11 +48,13 @@ class MergingExtractionProcessPipelineMixin:
         5. Optionally generate visualization images
         
         Args:
-            doc_id: Reference ID to process (dokumen_id for dokumen, bab_id for bab/buku)
+            doc_id: Reference ID to process (dokumen_id, bab_id, or aturan_id
+                depending on ref_tipe)
             generate_visualizations: If True, generate PNG visualizations of alignment and fusion
             save_to_db: If True, commit changes to database. If False, run pipeline but don't save.
             output_dir: If provided, save visualizations to this directory.
-            ref_tipe: Reference type ('dokumen', 'bab', or legacy alias 'buku')
+            ref_tipe: Reference type. Chapter inputs are canonicalized to `bab`
+                before internal read/write/query steps.
         """
         db = SessionLocal()
         try:
@@ -109,6 +111,7 @@ class MergingExtractionProcessPipelineMixin:
             total_pages = extractor.page_count
             
             logger.info(f"Processing {total_pages} pages for {canonical_ref_tipe}:{ref_id}")
+            supports_note_flow = canonical_ref_tipe in ('dokumen', 'bab', 'aturan')
 
             # Track max_openxml_idx across pages to prevent backward matching
             max_openxml_idx = 0
@@ -146,9 +149,9 @@ class MergingExtractionProcessPipelineMixin:
                     page_docling_preds
                 )
                 footnote_groups = []
-                if canonical_ref_tipe == 'dokumen':
+                if supports_note_flow:
                     footnote_groups, footnote_item_idxs = self._build_footnote_groups(
-                        extraction_items, page_docling_preds, ref_id, page_num
+                        extraction_items, page_docling_preds, canonical_ref_tipe, ref_id, page_num
                     )
                     if footnote_item_idxs:
                         extraction_items = [
@@ -178,9 +181,9 @@ class MergingExtractionProcessPipelineMixin:
                     alignments = alignment_result['final_alignments']
                     header_footer_units = alignment_result.get('header_footer_units', [])
                     section_data = alignment_result.get('page_debug', {}).get('section_data')
-                    if canonical_ref_tipe == 'dokumen':
+                    if supports_note_flow:
                         page_docling_preds, footnote_entries = self._assign_docling_footnotes(
-                            db, ref_id, page_num, page_docling_preds, footnote_groups
+                            db, canonical_ref_tipe, ref_id, page_num, page_docling_preds, footnote_groups
                         )
                     else:
                         footnote_entries = []

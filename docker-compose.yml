@@ -5,22 +5,20 @@ services:
       args:
         UV_HTTP_TIMEOUT: 10000
     container_name: visual-worker
+    user: "0:0"
     restart: always
+    env_file:
+      - .env
     environment:
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - VOLUME_BASE_PATH=/app/storage
+      - DB_HOST=${DB_HOST:-host.docker.internal}
+      - DB_PORT=${DB_PORT:-3307}
+      - DB_NAME=${DB_NAME:-db_korektor_buku}
+      - DB_USER=${DB_USER:-korektor_app}
+      - DB_PASSWORD=${DB_PASSWORD:-change-me-app-password}
       - STORAGE_BASE=/app/storage
+      - VOLUME_BASE_PATH=/app/storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./logs:/app/logs
-      - ./src:/app/src
-      - ${VOLUME_BASE_PATH}:/app/storage
-    networks:
-      - app-network
-
-networks:
-  app-network:
-    driver: bridge
+      - ${STORAGE_HOST_PATH:-/srv/cekta/storage}:/app/storage

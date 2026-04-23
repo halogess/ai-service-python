@@ -14,7 +14,7 @@ class AlignmentOpenXmlSectionsMixin:
     @staticmethod
     def _resolve_ref_tipe_for_read(ref_tipe: str):
         if ref_tipe in ('bab', 'buku'):
-            return ('bab', 'buku')
+            return ('bab',)
         return (ref_tipe,)
 
     @staticmethod

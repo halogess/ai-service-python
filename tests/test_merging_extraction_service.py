@@ -4,7 +4,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 os.environ.setdefault("DB_HOST", "localhost")
 os.environ.setdefault("DB_PORT", "3306")
 os.environ.setdefault("DB_NAME", "test_db")
@@ -19,7 +18,6 @@ if str(SRC_DIR) not in sys.path:
 from services.merging_extraction_service import MergingExtractionService
 from services.alignment_service import AlignmentService
 from services.docling_fusion_service import DoclingFusionService
-
 
 class CollapseTableVisualResultsTests(unittest.TestCase):
     def setUp(self):
@@ -121,7 +119,6 @@ class CollapseTableVisualResultsTests(unittest.TestCase):
         self.assertEqual("table", collapsed[0]["label"])
         self.assertEqual("caption", collapsed[1]["label"])
         self.assertEqual("Tabel 1.1 Caption", collapsed[1]["text"])
-
     def test_orphan_table_like_rows_without_element_id_are_not_collapsed(self):
         fused_results = [
             {
@@ -205,7 +202,6 @@ class CollapseTableVisualResultsTests(unittest.TestCase):
         self.assertEqual(1, len(collapsed_page_two))
         self.assertEqual([0.0, 0.0, 10.0, 20.0], collapsed_page_one[0]["bbox"])
         self.assertEqual([0.0, 0.0, 12.0, 24.0], collapsed_page_two[0]["bbox"])
-
 
 class CaptionRegressionGuardTests(unittest.TestCase):
     def test_caption_continuation_rejects_long_section_header(self):
@@ -468,7 +464,6 @@ class CodeTitlePromotionTests(unittest.TestCase):
 
         self.assertEqual("judul_kode", fused_results[0]["dev_label_struktural"])
         self.assertEqual("kode", fused_results[1]["dev_label_struktural"])
-
 
 class HeadingLikeListPromotionTests(unittest.TestCase):
     def test_text_heading_with_bullet_is_treated_as_list(self):

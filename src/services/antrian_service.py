@@ -5,11 +5,12 @@ Handles processing tasks from the antrian table
 
 import os
 import logging
+from datetime import datetime
 from typing import Optional, Tuple
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from models import Antrian, Dokumen, Bab, Aturan
+from models import Antrian, Buku, Dokumen, Bab, Aturan
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,61 @@ class AntrianService:
             task.antrian_error_message = None
         self.db.commit()
         logger.info(f"Task {task.antrian_id} validation status updated to: {status}")
+
+    def is_task_cancelled(self, task: Antrian) -> bool:
+        """Return True when the queue target has been cancelled by the user."""
+        if not task:
+            return False
+
+        if task.antrian_tipe == 'dokumen':
+            if not task.dokumen_id:
+                return False
+            dokumen = self.db.query(Dokumen).filter(
+                Dokumen.dokumen_id == task.dokumen_id
+            ).first()
+            return bool(dokumen and dokumen.dokumen_status == 'dibatalkan')
+
+        if task.antrian_tipe == 'buku':
+            buku_id = task.buku_id
+            if not buku_id and task.bab_id:
+                bab = self.db.query(Bab).filter(
+                    Bab.bab_id == task.bab_id
+                ).first()
+                buku_id = bab.buku_id if bab else None
+
+            if not buku_id:
+                return False
+
+            buku = self.db.query(Buku).filter(
+                Buku.buku_id == buku_id
+            ).first()
+            return bool(buku and buku.buku_status == 'dibatalkan')
+
+        return False
+
+    def mark_task_cancelled(self, task: Antrian, error_message: str = "Dibatalkan oleh pengguna."):
+        """Clear active stages for a cancelled task so workers stop picking it up."""
+        if not task:
+            return
+
+        changed = False
+        for field_name in (
+            'antrian_extraction_status',
+            'antrian_labeling_status',
+            'antrian_validation_status',
+        ):
+            current_value = getattr(task, field_name, None)
+            if current_value in ('in_queue', 'processing'):
+                setattr(task, field_name, None)
+                changed = True
+
+        if not changed:
+            return
+
+        task.antrian_error_message = (error_message or "Dibatalkan oleh pengguna.")[:255]
+        task.antrian_updated_at = datetime.utcnow()
+        self.db.commit()
+        logger.info(f"Task {task.antrian_id} cleared because the resource was cancelled")
 
     def get_task_reference(self, task: Antrian) -> Tuple[str, int]:
         """

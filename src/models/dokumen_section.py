@@ -8,7 +8,6 @@ class DokumenSection(Base):
     dsec_ref_tipe = Column(Enum('dokumen', 'buku', 'bab', 'aturan'), nullable=True)
     dsec_ref_id = Column(Integer, nullable=True)
     dsec_index = Column(Integer, nullable=True)
-    dsec_type = Column(String(50), nullable=True)
     dsec_has_title_page = Column(Boolean, nullable=False, default=False)
     dsec_different_odd_even = Column(Boolean, nullable=False, default=False)
     dsec_page_num_format = Column(String(32), nullable=True)

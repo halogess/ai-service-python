@@ -1,29 +1,57 @@
-FROM python:3.11-slim
+# =========================================
+# Stage 1: Builder (install dependencies)
+# =========================================
+FROM python:3.11-slim AS builder
 
-# Install system dependencies including build tools
-RUN apt-get update && apt-get install -y \
+# Install build tools + curl for uv installer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv using official installer (bypass ghcr.io)
+RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+
+WORKDIR /app
+
+ARG UV_HTTP_TIMEOUT=10000
+ENV UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT} \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PYTHONUNBUFFERED=1
+
+COPY requirements.txt .
+
+# Cache mount for blazing fast repeated builds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt
+
+# =========================================
+# Stage 2: Runtime (minimal)
+# =========================================
+FROM python:3.11-slim AS runtime
+
+# Only runtime libs needed
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy requirements
-COPY requirements.txt .
+# Copy only installed packages (no build tools)
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-ARG UV_HTTP_TIMEOUT=10000
-ENV UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}
+# Non-root user (security best practice)
+RUN useradd --create-home --shell /bin/false --uid 1001 appuser
+USER appuser
 
-# Upgrade pip first, then install uv for dependency resolution
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir uv \
-    && uv pip install --system -r requirements.txt
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser .env .
 
-# Copy source code
-COPY src/ ./src/
-COPY .env .
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Run the worker
-CMD ["python", "src/main.py"]
+CMD ["python", "-u", "src/main.py"]

@@ -253,7 +253,7 @@ class MergingExtractionTargetAssignmentLoadingMixin:
         return elements
 
     def _load_note_targets_for_ref(self, db, canonical_ref_tipe, ref_id):
-        if canonical_ref_tipe != 'dokumen' or not db or ref_id is None:
+        if canonical_ref_tipe not in {'dokumen', 'bab', 'aturan'} or not db or ref_id is None:
             return []
 
         rows = (
@@ -264,7 +264,8 @@ class MergingExtractionTargetAssignmentLoadingMixin:
                 DokumenNote.dnote_json_tree,
             )
             .filter(
-                DokumenNote.dokumen_id == ref_id,
+                DokumenNote.dnote_ref_tipe == canonical_ref_tipe,
+                DokumenNote.dnote_ref_id == ref_id,
                 DokumenNote.dnote_kind.in_(('footnote', 'endnote'))
             )
             .order_by(DokumenNote.dnote_id.asc())

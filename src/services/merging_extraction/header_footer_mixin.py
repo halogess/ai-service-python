@@ -76,14 +76,12 @@ class MergingExtractionHeaderFooterMixin:
         if not db or ref_id is None or section_id is None:
             return None
 
-        ref_tipes = ('bab', 'buku') if canonical_ref_tipe == 'bab' else (canonical_ref_tipe,)
-
         row = (
             db.query(DokumenElemenVisual.dev_page)
             .join(DokumenElemen, DokumenElemenVisual.dokumen_elemen_id == DokumenElemen.delemen_id)
             .join(DokumenPart, DokumenElemen.dpart_id == DokumenPart.dpart_id)
             .filter(
-                DokumenElemenVisual.dev_ref_tipe.in_(ref_tipes),
+                DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe,
                 DokumenElemenVisual.dev_ref_id == ref_id,
                 DokumenElemenVisual.dev_page.isnot(None),
                 DokumenPart.dsec_id == section_id,

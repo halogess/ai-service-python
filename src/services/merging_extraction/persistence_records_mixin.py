@@ -35,11 +35,9 @@ class MergingExtractionPersistenceRecordsMixin:
             DokumenElemenVisual.dokumen_elemen_id.in_(list(element_ids)),
             DokumenElemenVisual.dev_page.isnot(None),
             DokumenElemenVisual.dev_page != page_num
+        ).filter(
+            DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe
         )
-        if canonical_ref_tipe == 'bab':
-            query = query.filter(DokumenElemenVisual.dev_ref_tipe.in_(('bab', 'buku')))
-        else:
-            query = query.filter(DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe)
 
         existing_rows = list(query.all() or [])
         claims_by_element = {}
@@ -195,11 +193,9 @@ class MergingExtractionPersistenceRecordsMixin:
         delete_query = db.query(DokumenElemenVisual).filter(
             DokumenElemenVisual.dev_ref_id == ref_id,
             DokumenElemenVisual.dev_page == page_num
+        ).filter(
+            DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe
         )
-        if canonical_ref_tipe == 'bab':
-            delete_query = delete_query.filter(DokumenElemenVisual.dev_ref_tipe.in_(('bab', 'buku')))
-        else:
-            delete_query = delete_query.filter(DokumenElemenVisual.dev_ref_tipe == canonical_ref_tipe)
         delete_query.delete(synchronize_session=False)
 
         has_header_footer_rows = any(
